@@ -30,7 +30,7 @@
 
 | 模块 | 技术选型 | 职责 |
 |------|----------|------|
-| 本地对话模型 | Qwen3-8b（LM Studio） | 日常对话、摘要生成、记忆合并推理 |
+| 本地对话模型 | qwen/qwen3.5-9b（LM Studio） | 日常对话、摘要生成、记忆合并推理 |
 | 向量嵌入模型 | bge-m3（CPU 运行） | 将文本转换为语义向量坐标 |
 | 向量数据库 | Chroma（本地持久化） | 存储多层向量索引，支持语义检索 |
 | 结构化存储 | SQLite | 存储所有原始消息与结构化记忆数据 |
@@ -135,7 +135,7 @@ demo/
 ### 环境依赖
 
 - Python 3.x
-- [LM Studio](https://lmstudio.ai/)（加载 Qwen3-8b 模型）
+- [LM Studio](https://lmstudio.ai/)（加载 qwen/qwen3.5-9b 模型）
 - Claude API Key（可选，用于复杂任务）
 
 ### 安装依赖
@@ -156,7 +156,7 @@ set ANTHROPIC_API_KEY=sk-ant-xxxxxx      # Windows
 
 ```python
 LOCAL_API_URL   = "http://localhost:1234/v1/chat/completions"
-LOCAL_MODEL_NAME = "qwen3-8b"
+LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"
 ```
 
 ### 初始化数据库

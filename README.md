@@ -1,4 +1,4 @@
-# 虚拟伙伴系统 · Virtual Companion AI
+# 珊瑚菌 · Ramaria ———— 虚拟伙伴系统 · Virtual Companion AI
 
 > 目标不是一个更聪明的助手，而是一个**真正认识你**的虚拟伙伴。
 

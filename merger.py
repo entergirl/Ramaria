@@ -45,14 +45,11 @@ import requests
 from datetime import datetime, timezone
 
 from config import (
-    LOCAL_API_URL,
-    LOCAL_MODEL_NAME,
-    LOCAL_TEMPERATURE,
-    LOCAL_MAX_TOKENS_SUMMARY,   # [修改] 原 LOCAL_MAX_TOKENS，摘要任务用专属常量
     L2_TRIGGER_COUNT,
     L2_TRIGGER_DAYS,
     L2_MERGE_PROMPT,
 )
+from llm_client import call_local_summary
 from database import (
     get_unabsorbed_l1,
     save_l2_summary,
@@ -141,56 +138,6 @@ def _format_l1_list(l1_rows):
         lines.append(f"    关键词：{keywords}")
         lines.append("")
     return "\n".join(lines).strip()
-
-
-# =============================================================================
-# 调用本地模型
-# =============================================================================
-
-def _call_local_model(prompt):
-    """
-    向 LM Studio 发送请求，返回模型的回复文本。
-
-    参数：
-        prompt — 完整的 Prompt 字符串
-
-    返回：
-        str  — 模型回复的文本内容
-        None — 请求失败时返回 None
-
-    [修改说明]
-        max_tokens 改为 LOCAL_MAX_TOKENS_SUMMARY（512）。
-        L2 合并只需要输出一段 JSON（summary + keywords），
-        512 完全足够，与其他摘要任务保持一致。
-    """
-    payload = {
-        "model": LOCAL_MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": "/no_think"},
-            {"role": "user",   "content": prompt},
-        ],
-        "temperature": LOCAL_TEMPERATURE,
-        "max_tokens":  LOCAL_MAX_TOKENS_SUMMARY,   # [修改] 原 LOCAL_MAX_TOKENS
-    }
-
-    try:
-        response = requests.post(LOCAL_API_URL, json=payload, timeout=60)
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-
-    except requests.exceptions.ConnectionError:
-        print("[merger] 错误：无法连接到 LM Studio，请确认模型已启动")
-        return None
-    except requests.exceptions.Timeout:
-        print("[merger] 错误：请求超时（超过 60 秒）")
-        return None
-    except requests.exceptions.HTTPError as e:
-        print(f"[merger] 错误：HTTP 请求失败 — {e}")
-        return None
-    except (KeyError, IndexError) as e:
-        print(f"[merger] 错误：解析模型响应结构失败 — {e}")
-        return None
 
 
 # =============================================================================
@@ -374,7 +321,10 @@ def check_and_merge():
     prompt  = L2_MERGE_PROMPT.format(l1_summaries=l1_text)
 
     # 第三步：调用本地模型
-    raw_output = _call_local_model(prompt)
+    raw_output = call_local_summary(
+        messages=[{"role": "user", "content": prompt}],
+        caller="merger",
+    )
     if raw_output is None:
         print("[merger] 模型调用失败，L2 合并中止")
         return None

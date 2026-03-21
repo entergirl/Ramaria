@@ -21,9 +21,9 @@ main.py — FastAPI 应用入口
   POST /router/toggle  — 切换线上/本地模式
 """
 
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
 from contextlib import asynccontextmanager
-
-import requests
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -31,13 +31,10 @@ from pydantic import BaseModel
 
 from config import (
     DEBUG,
-    LOCAL_API_URL,
-    LOCAL_MAX_TOKENS_CHAT,
-    LOCAL_MODEL_NAME,
-    LOCAL_TEMPERATURE,
     SERVER_HOST,
     SERVER_PORT,
 )
+from llm_client import call_local_chat
 from database import (
     get_messages_as_dicts,
     save_message,
@@ -258,33 +255,10 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
 # =============================================================================
 
 def _call_local(messages: list[dict]) -> str:
-    """
-    向 LM Studio 发送完整对话历史，获取助手回复。
-
-    参数：
-        messages — OpenAI 格式消息列表，首位是 system prompt
-
-    返回：
-        str — 模型回复文本；失败时返回括号包裹的错误说明
-    """
-    payload = {
-        "model":       LOCAL_MODEL_NAME,
-        "messages":    messages,
-        "temperature": LOCAL_TEMPERATURE,
-        "max_tokens":  LOCAL_MAX_TOKENS_CHAT,
-    }
-    try:
-        resp = requests.post(LOCAL_API_URL, json=payload, timeout=120)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except requests.exceptions.ConnectionError:
-        return "（错误：无法连接到本地模型，请确认 LM Studio 已启动）"
-    except requests.exceptions.Timeout:
-        return "（错误：模型响应超时）"
-    except requests.exceptions.HTTPError as e:
-        return f"（错误：{e}）"
-    except (KeyError, IndexError):
-        return "（错误：解析模型响应失败）"
+    result = call_local_chat(messages, caller="main")
+    if result is None:
+        return "（错误：本地模型调用失败，请确认服务已启动）"
+    return result
 
 
 # =============================================================================
@@ -696,10 +670,15 @@ async def chat(req: ChatRequest):
     if action == "confirm_no":
         target  = result["message"]
         history = get_messages_as_dicts(session_id)
-        context = _build_context(session_id, user_message=target)
+        context = _build_context(session_id, user_message=req.content.strip())
         system  = build_system_prompt(context)
-        msgs    = [{"role": "system", "content": system}, *history]
-        reply   = _call_local(msgs)
+        # 去掉最后一条（即刚存入的 user 消息），单独作为当前轮传入
+        msgs = [
+            {"role": "system", "content": system},
+            *history[:-1],
+            {"role": "user", "content": req.content.strip()},
+        ]
+        reply = _call_local(msgs)
         save_message(session_id, "assistant", reply)
         return ChatResponse(reply=reply, session_id=session_id, mode="local")
 
@@ -707,8 +686,12 @@ async def chat(req: ChatRequest):
     history = get_messages_as_dicts(session_id)
     context = _build_context(session_id, user_message=req.content.strip())
     system  = build_system_prompt(context)
-    msgs    = [{"role": "system", "content": system}, *history]
-    reply   = _call_local(msgs)
+    msgs = [
+        {"role": "system", "content": system},
+        *history[:-1],
+        {"role": "user", "content": req.content.strip()},
+    ]
+    reply = _call_local(msgs)
     save_message(session_id, "assistant", reply)
     return ChatResponse(reply=reply, session_id=session_id, mode="local")
 

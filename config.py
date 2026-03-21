@@ -40,7 +40,7 @@ CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 # 当前阶段使用 Chroma 内置默认模型（all-MiniLM-L6-v2），无需额外安装
 # 升级到 bge-m3 时改为 "BAAI/bge-m3"（需先 pip install sentence-transformers）
 # 升级到 Qwen3-Embedding 时改为 "Qwen/Qwen3-Embedding-0.6B"
-EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+EMBEDDING_MODEL = r"F:\9700\model\Qwen3-Embedding-0.6B"
 
 # L0 滑动窗口大小：召回原始消息时，以最相关消息为中心，前后各取几条作为上下文
 # 例如设为 3 时，窗口内包含 3 条连续消息，前后共 N 条覆盖上下文

@@ -69,12 +69,7 @@ import re
 import requests
 from datetime import datetime, timezone
 
-from config import (
-    LOCAL_API_URL,
-    LOCAL_MODEL_NAME,
-    LOCAL_TEMPERATURE,
-    LOCAL_MAX_TOKENS_SUMMARY,
-)
+from llm_client import call_local_summary
 from database import (
     get_current_profile,
     get_l1_by_id,           # [修改] 替换旧的 get_latest_l1，直接按主键查询
@@ -222,51 +217,6 @@ def _format_profile_for_prompt(profile_dict):
             lines.append(f"[{field_key} {label}] {content}")
 
     return "\n".join(lines) if lines else "（暂无画像记录）"
-
-
-# =============================================================================
-# 调用本地模型
-# =============================================================================
-
-def _call_local_model(prompt):
-    """
-    向 LM Studio 发送请求，返回模型的回复文本。
-
-    参数：
-        prompt — 完整的 Prompt 字符串
-
-    返回：
-        str  — 模型回复文本（已去除首尾空白）
-        None — 任何错误时返回 None
-    """
-    payload = {
-        "model": LOCAL_MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": "/no_think"},
-            {"role": "user",   "content": prompt},
-        ],
-        "temperature": LOCAL_TEMPERATURE,
-        "max_tokens":  LOCAL_MAX_TOKENS_SUMMARY,
-    }
-
-    try:
-        response = requests.post(LOCAL_API_URL, json=payload, timeout=60)
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-
-    except requests.exceptions.ConnectionError:
-        print("[profile_manager] 错误：无法连接到 LM Studio，请确认模型已启动")
-        return None
-    except requests.exceptions.Timeout:
-        print("[profile_manager] 错误：请求超时（超过 60 秒）")
-        return None
-    except requests.exceptions.HTTPError as e:
-        print(f"[profile_manager] 错误：HTTP 请求失败 — {e}")
-        return None
-    except (KeyError, IndexError) as e:
-        print(f"[profile_manager] 错误：解析模型响应结构失败 — {e}")
-        return None
 
 
 # =============================================================================
@@ -488,7 +438,10 @@ def extract_and_update(l1_id):
             l1_summary   = l1_summary,
         )
 
-    raw_output = _call_local_model(prompt)
+    raw_output = call_local_summary(
+        messages=[{"role": "user", "content": prompt}],
+        caller="merger",
+    )
 
     if raw_output is None:
         print("[profile_manager] 模型调用失败，画像提取中止")

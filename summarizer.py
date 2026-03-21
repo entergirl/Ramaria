@@ -49,14 +49,11 @@ import re
 import requests
 
 from config import (
-    LOCAL_API_URL,
-    LOCAL_MODEL_NAME,
-    LOCAL_TEMPERATURE,
-    LOCAL_MAX_TOKENS_SUMMARY,
     L1_SUMMARY_PROMPT,
     L1_SUMMARY_PROMPT_WITH_KEYWORDS,
     TIME_PERIOD_OPTIONS,
 )
+from llm_client import call_local_summary
 from database import (
     get_messages,
     save_l1_summary,
@@ -151,51 +148,6 @@ def _extract_keywords_list(keywords_str):
     # 同时兼容中文逗号和英文逗号
     keywords_str = keywords_str.replace("，", ",")
     return [kw.strip() for kw in keywords_str.split(",") if kw.strip()]
-
-
-# =============================================================================
-# 调用本地模型
-# =============================================================================
-
-def _call_local_model(prompt):
-    """
-    向 LM Studio 发送请求，返回模型的回复文本。
-
-    参数：
-        prompt — 完整的 Prompt 字符串（已填入对话内容和候选词）
-
-    返回：
-        str  — 模型回复的文本内容（已去除首尾空白）
-        None — 任何网络或解析错误时返回 None
-    """
-    payload = {
-        "model": LOCAL_MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": "/no_think"},
-            {"role": "user",   "content": prompt},
-        ],
-        "temperature": LOCAL_TEMPERATURE,
-        "max_tokens":  LOCAL_MAX_TOKENS_SUMMARY,
-    }
-
-    try:
-        response = requests.post(LOCAL_API_URL, json=payload, timeout=60)
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
-
-    except requests.exceptions.ConnectionError:
-        print("[summarizer] 错误：无法连接到 LM Studio，请确认模型已启动")
-        return None
-    except requests.exceptions.Timeout:
-        print("[summarizer] 错误：请求超时（超过 60 秒），模型响应过慢")
-        return None
-    except requests.exceptions.HTTPError as e:
-        print(f"[summarizer] 错误：HTTP 请求失败 — {e}")
-        return None
-    except (KeyError, IndexError) as e:
-        print(f"[summarizer] 错误：解析模型响应结构失败 — {e}")
-        return None
 
 
 # =============================================================================
@@ -368,7 +320,10 @@ def generate_l1_summary(session_id):
         )
 
     # 第四步：调用本地模型
-    raw_output = _call_local_model(prompt)
+    raw_output = call_local_summary(
+        messages=[{"role": "user", "content": prompt}],
+        caller="summarizer",
+    )
 
     if raw_output is None:
         print(f"[summarizer] 模型调用失败，session {session_id} 摘要生成中止")

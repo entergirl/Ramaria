@@ -1,4 +1,4 @@
-# 珊瑚菌 · Ramaria ———— 虚拟伙伴系统 · Virtual Companion AI
+ # 珊瑚菌 · Ramaria
 
 > 目标不是一个更聪明的助手，而是一个**真正认识你**的虚拟伙伴。
 
@@ -8,7 +8,7 @@
 
 现有 AI 助手存在一个根本性缺陷：没有记忆。每次对话都从零开始，无论之前交流过多少，下一次都是陌生人。
 
-本项目以「记忆」为核心，构建一套个人 AI 陪伴系统。不只是记住「怎么说话」，而是记住**你经历过什么、关心什么、思考问题的方式是什么**。
+珊瑚菌以「记忆」为核心，构建一套本地运行的个人 AI 陪伴系统。它不只记住「怎么说话」，而是记住**你经历过什么、关心什么、思考问题的方式是什么**。
 
 ---
 
@@ -28,21 +28,35 @@
 
 采用「本地 Agent + 云端 AI」混合架构。本地负责日常对话处理、隐私数据存储与记忆管理；云端负责超出本地模型能力范围的深度推理任务。
 
+```
+用户浏览器
+    ↓↑ HTTP
+FastAPI 服务 (main.py, port:8000)
+    ├── 路由判断 (router.py)
+    │     ├── 本地 Qwen 3.5-9B (LM Studio, localhost:1234)
+    │     └── Claude API (复杂任务，用完即回本地)
+    ├── 记忆注入 (prompt_builder.py)
+    ├── Session 管理 (session_manager.py)
+    └── 数据层
+          ├── SQLite (assistant.db) — 结构化存储
+          └── ChromaDB (chroma_db/) — 向量索引
+```
+
 | 模块 | 技术选型 | 职责 |
 |------|----------|------|
 | 本地对话模型 | qwen/qwen3.5-9b（LM Studio） | 日常对话、摘要生成、记忆合并推理 |
-| 向量嵌入模型 | bge-m3（CPU 运行） | 将文本转换为语义向量坐标 |
+| 向量嵌入模型 | Qwen3-Embedding-0.6B | 将文本转换为语义向量坐标 |
 | 向量数据库 | Chroma（本地持久化） | 存储多层向量索引，支持语义检索 |
 | 结构化存储 | SQLite | 存储所有原始消息与结构化记忆数据 |
 | 云端推理 | Claude API | 复杂推理、长文档分析、深度代码调试 |
 | 调度层 | Python 脚本 | 任务路由、记忆注入、检索协调 |
-| 前端界面 | 最简 Web UI | 跨设备对话入口，局域网 / Tailscale 访问 |
+| 前端界面 | 内嵌 Web UI | 跨设备对话入口，局域网 / Tailscale 访问 |
 
 ### 任务路由策略
 
 - 日常陪伴、情绪对话、记忆摘要生成 → 本地 Qwen
 - 复杂 bug 调试、架构设计、长文档深度分析 → Claude API
-- 发送 `/online` 强制切换至云端；`/local` 切回本地
+- 发送 `/online` 强制切换至云端；`/local` 切回本地；30分钟无消息自动切回
 
 ---
 
@@ -99,9 +113,9 @@ L0 原始消息（永久保留，不删除，不过滤）
 2. **语义检索**：在 L1/L2 向量索引中做语义检索，定位相关摘要节点
 3. **原始回溯**：通过外键穿透至 L0，召回原始对话的具体片段（以最相关消息为中心，前后各取 N 条）
 
-### 记忆冲突检测与主动询问
+### L3 画像半自动维护
 
-L1 生成后，系统自动比对新内容与现有 L3 用户画像，发现矛盾时**以关心而非纠错的方式**询问用户：
+L1 生成后，系统自动从摘要中提取新信息静默写入画像，发现矛盾时才以关心口吻询问用户，不做逐条确认打扰：
 
 > 「之前记得你说毕业设计压力很大，但今天好像轻松很多了？是顺利了吗」
 >
@@ -124,9 +138,27 @@ demo/
 ├── merger.py            # L2 合并模块
 ├── prompt_builder.py    # System Prompt 构建模块
 ├── conflict_checker.py  # 记忆冲突检测模块
+├── profile_manager.py   # L3 画像半自动维护模块
 ├── vector_store.py      # 向量索引与检索模块
+├── router.py            # 任务路由层
 └── assistant.db         # 本地数据库（不上传）
 ```
+
+---
+
+## 数据库结构
+
+| 表名 | 用途 |
+|------|------|
+| `sessions` | 对话 session 生命周期管理 |
+| `messages` | L0 原始消息流水，永久保留 |
+| `memory_l1` | 单次对话摘要（L1 层） |
+| `memory_l2` | 时间段聚合摘要（L2 层） |
+| `l2_sources` | L2 溯源关联，记录合并来源 |
+| `user_profile` | 长期用户画像（L3 层） |
+| `keyword_pool` | 关键词词典，支持复用与频次统计 |
+| `conflict_queue` | 冲突检测待确认队列 |
+| `settings` | 全局运行配置 |
 
 ---
 
@@ -141,7 +173,7 @@ demo/
 ### 安装依赖
 
 ```bash
-pip install fastapi uvicorn requests chromadb
+pip install fastapi uvicorn requests chromadb sentence-transformers
 ```
 
 ### 配置
@@ -155,8 +187,9 @@ set ANTHROPIC_API_KEY=sk-ant-xxxxxx      # Windows
 在 `config.py` 中确认以下参数与你的环境一致：
 
 ```python
-LOCAL_API_URL   = "http://localhost:1234/v1/chat/completions"
+LOCAL_API_URL    = "http://localhost:1234/v1/chat/completions"
 LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"
+EMBEDDING_MODEL  = "Qwen/Qwen3-Embedding-0.6B"
 ```
 
 ### 初始化数据库
@@ -177,30 +210,14 @@ python main.py
 
 ---
 
-## 数据库结构
-
-| 表名 | 用途 |
-|------|------|
-| `sessions` | 对话 session 生命周期管理 |
-| `messages` | L0 原始消息流水，永久保留 |
-| `memory_l1` | 单次对话摘要（L1 层） |
-| `memory_l2` | 时间段聚合摘要（L2 层） |
-| `l2_sources` | L2 溯源关联，记录合并来源 |
-| `user_profile` | 长期用户画像（L3 层） |
-| `keyword_pool` | 关键词词典，支持复用与频次统计 |
-| `conflict_queue` | 冲突检测待确认队列 |
-| `settings` | 全局运行配置 |
-
----
-
 ## 开发阶段规划
 
 - **阶段一（已完成）**：核心对话链路跑通，L1/L2/L3 主线稳定运行，关键词词典，冲突检测，分层 RAG 检索
-- **阶段二（进行中）**：任务路由层，bge-m3 嵌入模型升级，L3 画像半自动维护
+- **阶段二（已完成）**：任务路由层，Qwen3-Embedding 嵌入模型，L3 画像半自动维护，三轮代码审查与修复
 - **阶段三（计划中）**：外部聊天记录导入与人格复刻，LM Studio → Ollama 迁移，记忆老化策略
 
 ---
 
 ## 隐私说明
 
-所有对话数据均存储在本地，不上传至任何服务器。Claude API 仅在用户主动切换或系统判断需要深度推理时调用。
+所有对话数据均存储在本地，不上传至任何服务器。Claude API 仅在用户主动切换或系统判断需要深度推理时调用，调用时只传入当前消息，不携带任何历史记忆数据。

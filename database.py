@@ -7,6 +7,14 @@ database.py — 数据库操作层
   - 每个函数只做一件事，职责单一
   - 每个函数自己开连接、自己关连接，不依赖外部传入的连接对象
   - 所有时间统一使用 UTC ISO 8601 格式存储，如 "2025-03-14T22:00:00+00:00"
+  - _get_connection 是模块私有函数，不对外暴露；外部模块一律通过公开函数访问数据
+
+变更记录：
+  v2 — 新增 get_l1_by_id(l1_id)，修复审查报告问题2（并发竞态风险）
+  v3 — 新增 get_all_l1() / get_all_l2() / get_all_session_ids()，
+       修复审查报告问题A：vector_store.rebuild_all_indexes() 原来直接
+       import 私有函数 _get_connection 并手写原始 SQL，破坏数据层封装。
+       改为通过这三个公开函数访问，彻底消除私有函数外漏。
 
 使用方法（在其他模块里）：
     from database import save_message, get_messages, save_l1_summary, ...
@@ -26,6 +34,9 @@ def _get_connection():
     获取数据库连接（内部使用）。
     - row_factory 让查询结果支持列名访问，如 row["content"]
     - 开启外键约束（SQLite 默认关闭）
+
+    注意：此函数为模块私有，外部模块不应直接 import 使用。
+          外部模块需要查询数据时，请使用下方的公开函数。
     """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -62,7 +73,7 @@ def new_session():
         (_now(),)
     )
     conn.commit()
-    session_id = cursor.lastrowid  # 取自增 id
+    session_id = cursor.lastrowid
     conn.close()
     return session_id
 
@@ -99,10 +110,7 @@ def get_session(session_id):
     """
     conn = _get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM sessions WHERE id = ?",
-        (session_id,)
-    )
+    cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
     row = cursor.fetchone()
     conn.close()
     return row
@@ -242,10 +250,8 @@ def save_l1_summary(session_id, summary, keywords, time_period, atmosphere):
     返回：
         int — 新插入 L1 记录的 id
     """
-    # 校验 time_period 合法性，避免脏数据写入
     from config import TIME_PERIOD_OPTIONS
     if time_period not in TIME_PERIOD_OPTIONS:
-        # 不合法时降级为 None，不阻断流程，只打印警告
         print(f"[database] 警告：time_period 值 {time_period!r} 不在合法列表内，已置为 None")
         time_period = None
 
@@ -259,6 +265,28 @@ def save_l1_summary(session_id, summary, keywords, time_period, atmosphere):
     l1_id = cursor.lastrowid
     conn.close()
     return l1_id
+
+
+def get_l1_by_id(l1_id):
+    """
+    按主键查询一条 L1 摘要记录。
+
+    [v2 新增] 修复审查报告问题2：conflict_checker 和 profile_manager 原来用
+    get_latest_l1() 读取最新一条再比对 id，存在并发竞态风险。
+    改为直接按主键查询，彻底消除竞态风险。
+
+    参数：
+        l1_id — memory_l1 表的主键 id（int）
+
+    返回：
+        sqlite3.Row — 完整的 L1 记录行；id 不存在时返回 None
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM memory_l1 WHERE id = ?", (l1_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
 
 
 def get_unabsorbed_l1(limit=None):
@@ -294,6 +322,85 @@ def get_unabsorbed_l1(limit=None):
     return rows
 
 
+def get_all_l1():
+    """
+    返回 memory_l1 表中的全部记录（id, summary, keywords, session_id）。
+
+    [v3 新增] 修复审查报告问题A：vector_store.rebuild_all_indexes() 原来直接
+    import 私有函数 _get_connection 并手写原始 SQL 查询所有 L1，破坏了
+    database.py 作为数据层统一出口的封装原则。
+
+    改为通过本函数访问，外部模块无需感知表结构细节：
+      旧写法（vector_store.py）：
+        from database import _get_connection          # 私有函数泄漏
+        conn = _get_connection()
+        conn.cursor().execute("SELECT id, summary, keywords, session_id FROM memory_l1")
+      新写法：
+        from database import get_all_l1
+        rows = get_all_l1()
+
+    用途：
+        vector_store.rebuild_all_indexes() 重建 L1 向量索引时调用。
+
+    返回：
+        列表，每个元素是 sqlite3.Row，包含 id / summary / keywords / session_id 字段。
+        表为空时返回空列表。
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, summary, keywords, session_id FROM memory_l1"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def get_all_l2():
+    """
+    返回 memory_l2 表中的全部记录（id, summary, keywords, period_start, period_end）。
+
+    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理，消除 vector_store.py
+    对私有函数 _get_connection 的依赖。
+
+    用途：
+        vector_store.rebuild_all_indexes() 重建 L2 向量索引时调用。
+
+    返回：
+        列表，每个元素是 sqlite3.Row，包含 id / summary / keywords /
+        period_start / period_end 字段。表为空时返回空列表。
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, summary, keywords, period_start, period_end FROM memory_l2"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def get_all_session_ids():
+    """
+    返回 messages 表中全部去重后的 session_id 列表。
+
+    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理，消除 vector_store.py
+    对私有函数 _get_connection 的依赖。
+
+    用途：
+        vector_store.rebuild_all_indexes() 按 session 逐个重建 L0 向量索引时调用。
+
+    返回：
+        list[int] — 去重后的 session_id 整数列表；messages 表为空时返回空列表。
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT session_id FROM messages")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row["session_id"] for row in rows]
+
+
 def mark_l1_absorbed(l1_ids):
     """
     将一批 L1 记录标记为已被 L2 吸收（absorbed = 1）。
@@ -308,7 +415,6 @@ def mark_l1_absorbed(l1_ids):
         return
     conn = _get_connection()
     cursor = conn.cursor()
-    # 用 IN 子句批量更新，避免循环多次开关连接
     placeholders = ",".join("?" * len(l1_ids))
     cursor.execute(
         f"UPDATE memory_l1 SET absorbed = 1 WHERE id IN ({placeholders})",
@@ -341,14 +447,12 @@ def save_l2_summary(summary, keywords, period_start, period_end, l1_ids):
     cursor = conn.cursor()
 
     try:
-        # 写入 memory_l2 主表
         cursor.execute("""
             INSERT INTO memory_l2 (summary, keywords, period_start, period_end, created_at)
             VALUES (?, ?, ?, ?, ?)
         """, (summary, keywords, period_start, period_end, _now()))
         l2_id = cursor.lastrowid
 
-        # 写入 l2_sources 关联表（记录哪些 L1 参与了这次合并）
         l2_source_rows = [(l2_id, l1_id) for l1_id in l1_ids]
         cursor.executemany("""
             INSERT OR IGNORE INTO l2_sources (l2_id, l1_id) VALUES (?, ?)
@@ -399,6 +503,10 @@ def get_latest_l1():
 
     用途：
         构建 system prompt 时注入当日最新 L1，代表最新上下文。
+
+    注意：
+        此函数仅用于 prompt_builder 注入上下文，不应用于
+        conflict_checker / profile_manager 的 L1 校验（请改用 get_l1_by_id）。
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -444,11 +552,6 @@ def get_setting(key, default=None):
     参数：
         key     — 配置项名称
         default — key 不存在时的返回值，默认为 None
-
-    示例：
-        get_setting("l1_idle_minutes")       → "10"
-        int(get_setting("l1_idle_minutes"))  → 10
-        get_setting("不存在的key", "fallback") → "fallback"
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -490,7 +593,6 @@ def get_current_profile():
             "basic_info":      "烧酒，19岁，...",
             "interests":       "编程、...",
             "personal_status": "...",
-            ...
         }
 
     调用时机：
@@ -519,9 +621,6 @@ def upsert_keywords(keywords):
 
     参数：
         keywords — 关键词字符串列表，如 ["数据库", "后端", "FastAPI"]
-
-    用途：
-        L1 摘要生成后，将本次使用的关键词同步写回词典。
     """
     if not keywords:
         return
@@ -551,19 +650,11 @@ def get_all_keywords():
     取出词典表中所有关键词，按使用频次降序排列。
 
     返回：
-        字符串列表，如 ["数据库", "后端", "项目", ...]
-        词典为空时返回空列表。
-
-    用途：
-        L1 摘要生成时，将这个列表作为候选词传入 Prompt，
-        引导模型优先复用已有词条，避免同义词发散。
+        字符串列表；词典为空时返回空列表。
     """
     conn = _get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT keyword FROM keyword_pool
-        ORDER BY use_count DESC
-    """)
+    cursor.execute("SELECT keyword FROM keyword_pool ORDER BY use_count DESC")
     rows = cursor.fetchall()
     conn.close()
     return [row["keyword"] for row in rows]
@@ -578,9 +669,6 @@ def get_top_keywords(limit=50):
 
     返回：
         字符串列表，按 use_count 降序排列。
-
-    用途：
-        词典较大时，只把高频词注入 Prompt，避免候选列表过长占用 token。
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -602,13 +690,10 @@ def save_conflict(source_l1_id, field, old_content, new_content, conflict_desc):
     """
     将一条冲突记录写入 conflict_queue 表，状态初始为 pending。
 
-    调用时机：
-        conflict_checker 检测到 L1 内容与现有画像存在矛盾时调用。
-
     参数：
         source_l1_id  — 触发此冲突的 L1 记录 id
         field         — 涉及的画像板块名，如 "personal_status"
-        old_content   — 现有画像内容（写入时的快照，防止画像后续变更导致对比失真）
+        old_content   — 现有画像内容（写入时的快照）
         new_content   — L1 里检测到的新信息（与旧内容矛盾的部分）
         conflict_desc — 模型生成的冲突描述，供展示给用户时使用
 
@@ -634,10 +719,6 @@ def get_pending_conflicts():
 
     返回：
         列表，每个元素是 sqlite3.Row；没有待确认冲突时返回空列表。
-
-    用途：
-        main.py 的 /chat 路由在构建回复前查询此函数，
-        有待确认冲突时优先向用户展示冲突询问，而非直接回复对话内容。
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -654,13 +735,9 @@ def get_pending_conflicts():
 def resolve_conflict(conflict_id):
     """
     将一条冲突记录标记为 resolved（用户确认接受新内容）。
-    调用方需在调用此函数之前，自行完成对 user_profile 的实际更新。
 
     参数：
         conflict_id — conflict_queue 表的记录 id
-
-    用途：
-        用户在对话中选择"接受新内容"时，由 conflict_checker 调用。
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -679,9 +756,6 @@ def ignore_conflict(conflict_id):
 
     参数：
         conflict_id — conflict_queue 表的记录 id
-
-    用途：
-        用户在对话中选择"保留现状"时，由 conflict_checker 调用。
     """
     conn = _get_connection()
     cursor = conn.cursor()
@@ -714,13 +788,11 @@ def update_profile_field(field, new_content, source_l1_id=None):
     conn = _get_connection()
     cursor = conn.cursor()
 
-    # 第一步：将该板块的所有现有版本标记为历史（is_current = 0）
     cursor.execute("""
         UPDATE user_profile SET is_current = 0
         WHERE field = ? AND is_current = 1
     """, (field,))
 
-    # 第二步：插入新版本，状态直接设为 approved，is_current = 1
     cursor.execute("""
         INSERT INTO user_profile
             (field, content, source_l1_id, status, is_current, updated_at)
@@ -742,46 +814,38 @@ if __name__ == "__main__":
 
     # 1. 新建 session
     sid = new_session()
-    print(f"[1] new_session()         → session id = {sid}")
+    print(f"[1] new_session()              → session id = {sid}")
 
     # 2. 存两条消息
     mid1 = save_message(sid, "user", "database.py 验证消息")
     mid2 = save_message(sid, "assistant", "收到，数据库读写正常。")
-    print(f"[2] save_message()        → message id = {mid1}, {mid2}")
+    print(f"[2] save_message()             → message id = {mid1}, {mid2}")
 
-    # 3. 读回消息（dict 格式）
+    # 3. 读回消息
     msgs = get_messages_as_dicts(sid)
-    print(f"[3] get_messages_as_dicts() → {len(msgs)} 条消息")
-    for m in msgs:
-        print(f"      [{m['role']}] {m['content']}")
+    print(f"[3] get_messages_as_dicts()    → {len(msgs)} 条消息")
 
-    # 4. 读最后一条消息时间
-    last_time = get_last_message_time(sid)
-    print(f"[4] get_last_message_time() → {last_time}")
-
-    # 5. 写一条 L1 摘要
+    # 4. 写一条 L1 摘要
     l1_id = save_l1_summary(
-        session_id  = sid,
-        summary     = "烧酒完成了 database.py 的连通性验证。",
-        keywords    = "数据库,验证,后端",
-        time_period = "夜间",
-        atmosphere  = "专注高效"
+        session_id=sid, summary="烧酒完成了 database.py 的连通性验证。",
+        keywords="数据库,验证,后端", time_period="夜间", atmosphere="专注高效"
     )
-    print(f"[5] save_l1_summary()     → L1 id = {l1_id}")
+    print(f"[4] save_l1_summary()          → L1 id = {l1_id}")
 
-    # 6. 读未吸收 L1
-    l1_rows = get_unabsorbed_l1()
-    print(f"[6] get_unabsorbed_l1()   → {len(l1_rows)} 条未吸收 L1")
-    for row in l1_rows:
-        print(f"      [{row['id']}] {row['summary']} | {row['time_period']} | {row['atmosphere']}")
+    # 5. 按主键查询 L1
+    row = get_l1_by_id(l1_id)
+    print(f"[5] get_l1_by_id({l1_id})         → {row['summary'] if row else None}")
+    print(f"    get_l1_by_id(99999)        → {get_l1_by_id(99999)}（应为 None）")
 
-    # 7. 关闭 session
+    # 6. 验证三个新增公开函数（问题A修复核心）
+    print(f"\n--- 问题A修复验证 ---")
+    print(f"[6] get_all_l1()               → {len(get_all_l1())} 条")
+    print(f"    get_all_l2()               → {len(get_all_l2())} 条")
+    print(f"    get_all_session_ids()      → {get_all_session_ids()}")
+
+    # 7. 关闭 session 并读配置
     close_session(sid)
-    s = get_session(sid)
-    print(f"[7] close_session()       → ended_at = {s['ended_at']}")
-
-    # 8. 读配置
-    val = get_setting("l1_idle_minutes", default="未找到")
-    print(f"[8] get_setting()         → l1_idle_minutes = {val}")
+    print(f"\n[7] close_session()            → ok")
+    print(f"[8] get_setting()              → l1_idle_minutes = {get_setting('l1_idle_minutes', '未找到')}")
 
     print("\n验证通过。")

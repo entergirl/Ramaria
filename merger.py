@@ -2,6 +2,17 @@
 merger.py — L2 时间段摘要合并模块
 负责将多条 L1 摘要压缩合并为一条 L2 时间段摘要，写入 memory_l2 表。
 
+本次修改（对应审查报告问题7）：
+  · 补充 _strip_thinking() 函数
+  · 在 _parse_l2_json() 的第一步之前先调用 _strip_thinking()
+    原来的 _parse_l2_json 直接 json.loads(raw_text)，
+    当 Qwen 输出思考链时 JSON 解析会失败，降级写入错误摘要。
+    修复后：先剥离 <think>...</think> 标签和纯文本思考链前缀，
+    再做 JSON 解析，与 summarizer.py 的处理逻辑保持一致。
+
+本次修改（对应审查报告问题4）：
+  · _call_local_model() 的 max_tokens 改为使用 LOCAL_MAX_TOKENS_SUMMARY
+
 核心流程：
   1. 检查是否满足触发条件（条数触发 或 时间触发）
   2. 读取所有未吸收的 L1 摘要
@@ -37,7 +48,7 @@ from config import (
     LOCAL_API_URL,
     LOCAL_MODEL_NAME,
     LOCAL_TEMPERATURE,
-    LOCAL_MAX_TOKENS,
+    LOCAL_MAX_TOKENS_SUMMARY,   # [修改] 原 LOCAL_MAX_TOKENS，摘要任务用专属常量
     L2_TRIGGER_COUNT,
     L2_TRIGGER_DAYS,
     L2_MERGE_PROMPT,
@@ -88,12 +99,11 @@ def _should_trigger(l1_rows):
     try:
         earliest_time = datetime.fromisoformat(earliest_time_str)
     except ValueError:
-        # 时间格式异常，跳过时间触发检查，不阻断流程
         print(f"[merger] 警告：L1 时间戳格式异常：{earliest_time_str}，跳过时间触发检查")
         return False, "时间格式异常，跳过"
 
     now = datetime.now(timezone.utc)
-    days_elapsed = (now - earliest_time).total_seconds() / 86400   # 转换为天数
+    days_elapsed = (now - earliest_time).total_seconds() / 86400
 
     if days_elapsed >= trigger_days:
         return True, f"最早 L1 距今 {days_elapsed:.1f} 天（阈值 {trigger_days} 天）"
@@ -122,7 +132,6 @@ def _format_l1_list(l1_rows):
     """
     lines = []
     for i, row in enumerate(l1_rows, start=1):
-        # 时间段和氛围允许为空，用占位符补全，避免 Prompt 里出现 None 字样
         time_period = row["time_period"] or "未知时段"
         atmosphere  = row["atmosphere"]  or "未记录"
         keywords    = row["keywords"]    or "无"
@@ -130,7 +139,7 @@ def _format_l1_list(l1_rows):
         lines.append(f"[{i}] {time_period} | 氛围：{atmosphere}")
         lines.append(f"    摘要：{row['summary']}")
         lines.append(f"    关键词：{keywords}")
-        lines.append("")   # 每条之间空一行，方便模型区分
+        lines.append("")
     return "\n".join(lines).strip()
 
 
@@ -141,7 +150,6 @@ def _format_l1_list(l1_rows):
 def _call_local_model(prompt):
     """
     向 LM Studio 发送请求，返回模型的回复文本。
-    与 summarizer._call_local_model 逻辑一致，独立维护避免循环依赖。
 
     参数：
         prompt — 完整的 Prompt 字符串
@@ -149,16 +157,20 @@ def _call_local_model(prompt):
     返回：
         str  — 模型回复的文本内容
         None — 请求失败时返回 None
+
+    [修改说明]
+        max_tokens 改为 LOCAL_MAX_TOKENS_SUMMARY（512）。
+        L2 合并只需要输出一段 JSON（summary + keywords），
+        512 完全足够，与其他摘要任务保持一致。
     """
     payload = {
         "model": LOCAL_MODEL_NAME,
         "messages": [
-            # /no_think 放在 system 层，让 Qwen 跳过思考链直接输出 JSON
             {"role": "system", "content": "/no_think"},
             {"role": "user",   "content": prompt},
         ],
         "temperature": LOCAL_TEMPERATURE,
-        "max_tokens":  LOCAL_MAX_TOKENS,
+        "max_tokens":  LOCAL_MAX_TOKENS_SUMMARY,   # [修改] 原 LOCAL_MAX_TOKENS
     }
 
     try:
@@ -185,9 +197,55 @@ def _call_local_model(prompt):
 # 解析与校验模型输出
 # =============================================================================
 
+def _strip_thinking(raw_text):
+    """
+    剥离模型输出中的思考链内容，只保留 JSON 部分。
+
+    [新增函数] 审查报告问题7：
+        原 _parse_l2_json 没有调用此函数（而 summarizer._parse_summary_json 有）。
+        当 /no_think 指令失效、Qwen 输出了思考链时，_parse_l2_json 的直接 json.loads
+        会失败，降级写入错误摘要（"自动合并失败，原始输出已记录..."）。
+        补充本函数后，_parse_l2_json 在解析前先剥离思考链，与 summarizer 行为一致。
+
+    支持两种思考链格式：
+      - 标签格式：<think>...</think> 整段标签及内容
+      - 纯文本格式：模型直接以推理步骤开头，直到出现 { 字符为止的前缀内容
+
+    逻辑与 summarizer._strip_thinking / conflict_checker._strip_thinking
+    / profile_manager._strip_thinking 完全一致，独立维护避免循环依赖。
+    （注：审查报告问题3 指出这四份重复，计划在后续迭代中抽取为 llm_client.py）
+
+    参数：
+        raw_text — 模型返回的原始文本字符串
+
+    返回：
+        str — 剥离思考链后的文本（已去除首尾空白）
+              原文中没有思考链时，原样返回（去除首尾空白后）
+    """
+    # 处理标签格式：<think>...</think>
+    # re.DOTALL 让 . 能跨行匹配，re.IGNORECASE 兼容大小写变体
+    cleaned = re.sub(r'<think>.*?</think>', '', raw_text,
+                     flags=re.DOTALL | re.IGNORECASE)
+
+    # 处理纯文本格式：找到第一个 { 之前的所有内容，视为思考链前缀截掉
+    brace_pos = cleaned.find('{')
+    if brace_pos > 0:
+        # { 前面有内容，说明存在思考链前缀，截掉它
+        cleaned = cleaned[brace_pos:]
+
+    return cleaned.strip()
+
+
 def _parse_l2_json(raw_text):
     """
     从模型返回的原始文本中解析出 L2 摘要的结构化字段。
+
+    [修改说明] 审查报告问题7：
+        在三步解析流程的最前面加入思考链剥离：
+          原流程：直接解析 → 正则提取
+          新流程：剥离思考链 → 直接解析 → 正则提取
+        这样当 Qwen 输出了 <think>...</think> 或纯文本推理前缀时，
+        不会因为 JSON 解析失败而降级写入错误摘要，行为与 summarizer 一致。
 
     参数：
         raw_text — 模型返回的原始文本
@@ -196,14 +254,29 @@ def _parse_l2_json(raw_text):
         dict — 包含 summary / keywords 两个键
         None — 无论如何都无法解析时返回 None
     """
-    # 第一步：直接尝试解析（模型严格按格式输出时走这里）
+    # ──────────────────────────────────────────
+    # 前置步骤：剥离思考链（新增）
+    # ──────────────────────────────────────────
+    stripped = _strip_thinking(raw_text)
+
+    # 如果内容有变化，说明确实存在思考链，打印提示方便排查
+    if stripped != raw_text.strip():
+        print(f"[merger] 检测到思考链输出，已自动剥离")
+
+    # ──────────────────────────────────────────
+    # 第一步：直接尝试解析剥离后的文本
+    # ──────────────────────────────────────────
     try:
-        return json.loads(raw_text)
+        return json.loads(stripped)
     except json.JSONDecodeError:
         pass
 
-    # 第二步：用正则提取第一个 JSON 对象（应对模型在 JSON 前后加了说明文字的情况）
-    match = re.search(r'\{.*?\}', raw_text, re.DOTALL)
+    # ──────────────────────────────────────────
+    # 第二步：用正则提取第一个 JSON 对象
+    # 应对模型在 JSON 前后加了说明文字的情况
+    # re.DOTALL 让 . 能匹配换行符，处理多行 JSON
+    # ──────────────────────────────────────────
+    match = re.search(r'\{.*?\}', stripped, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
@@ -226,7 +299,7 @@ def _validate_l2(parsed):
     """
     result = {}
 
-    # summary：必填，缺失时用占位文本
+    # summary：必填，缺失时写入占位文本
     result["summary"] = str(parsed.get("summary", "")).strip()
     if not result["summary"]:
         result["summary"] = "（L2 摘要生成失败，内容为空）"
@@ -278,6 +351,7 @@ def check_and_merge():
       5. 解析 JSON，校验字段
       6. 写入 memory_l2 表 + l2_sources 关联表
       7. 批量标记 L1 为已吸收
+      8. 写入 L2 向量索引
 
     返回：
         int  — 成功时返回新写入的 L2 记录 id
@@ -307,7 +381,7 @@ def check_and_merge():
 
     print(f"[merger] 模型原始输出：{raw_output[:200]}")
 
-    # 第四步：解析 JSON
+    # 第四步：解析 JSON（已包含思考链剥离）
     parsed = _parse_l2_json(raw_output)
     if parsed is None:
         # JSON 解析彻底失败，写入降级摘要，不丢失这批 L1 的合并记录
@@ -341,15 +415,7 @@ def check_and_merge():
     print(f"  覆盖时间 : {period_start[:10]} ~ {period_end[:10]}")
     print(f"  吸收 L1  : {l1_ids}")
 
-    # ------------------------------------------------------------------
     # 第八步：写入 L2 向量索引
-    #
-    # L2 写入 SQLite 并标记 L1 已吸收后，同步写入 Chroma 向量索引。
-    # L2 是话题定位层，写入索引后 RAG 检索可以用它做上层导航，
-    # 再穿透到对应的 L1 / L0 拿细节。
-    #
-    # 写入失败只打印警告，不影响 l2_id 的正常返回。
-    # ------------------------------------------------------------------
     try:
         from vector_store import index_l2
         index_l2(
@@ -375,12 +441,11 @@ if __name__ == "__main__":
     print("=== merger.py 验证测试 ===\n")
 
     # ------------------------------------------------------------------
-    # 测试一：格式化逻辑（不依赖模型，纯本地验证）
+    # 测试一：格式化逻辑（不依赖模型）
     # ------------------------------------------------------------------
     print("--- 测试一：L1 格式化输出 ---")
 
     class FakeRow(dict):
-        """模拟 sqlite3.Row 的字典访问方式，仅用于测试"""
         def __getitem__(self, key):
             return super().__getitem__(key)
 
@@ -401,16 +466,50 @@ if __name__ == "__main__":
     print("--- 测试二：触发条件判断 ---")
     trigger, reason = _should_trigger([])
     print(f"空列表：trigger={trigger}（应为 False）")
-    trigger2, reason2 = _should_trigger(fake_rows)   # 只有2条，默认阈值5条，不触发
-    print(f"2条 L1：trigger={trigger2}（应为 False，因为低于5条阈值）")
+    trigger2, reason2 = _should_trigger(fake_rows)
+    print(f"2条 L1：trigger={trigger2}（应为 False，低于5条阈值）")
     print()
 
     # ------------------------------------------------------------------
-    # 测试三：端到端合并（需要 LM Studio 运行中）
+    # 测试三：思考链剥离（不依赖模型）—— 新增测试
     # ------------------------------------------------------------------
-    print("--- 测试三：端到端合并触发（需要 LM Studio 运行中）---")
+    print("--- 测试三：_strip_thinking 验证 ---")
 
-    # 写入5条 L1，触发条数合并
+    # 标签格式思考链
+    mock_think_tag = '<think>\n这是思考过程\n</think>\n{"summary":"合并摘要","keywords":"k1,k2"}'
+    stripped = _strip_thinking(mock_think_tag)
+    print(f"标签格式剥离后：{stripped}（应以 {{ 开头）")
+
+    # 纯文本思考链
+    mock_think_text = 'Thinking:\n1. 分析内容\n2. 输出格式\n{"summary":"合并摘要","keywords":"k1,k2"}'
+    stripped2 = _strip_thinking(mock_think_text)
+    print(f"纯文本格式剥离后：{stripped2}（应以 {{ 开头）")
+
+    # 无思考链（正常输出）
+    mock_clean = '{"summary":"合并摘要","keywords":"k1,k2"}'
+    stripped3 = _strip_thinking(mock_clean)
+    print(f"无思考链（应原样返回）：{stripped3}")
+    print()
+
+    # ------------------------------------------------------------------
+    # 测试四：_parse_l2_json 思考链场景（不依赖模型）
+    # ------------------------------------------------------------------
+    print("--- 测试四：_parse_l2_json 思考链场景 ---")
+
+    mock_with_think = '<think>让我合并一下。</think>\n{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
+    result = _parse_l2_json(mock_with_think)
+    print(f"带思考链解析：{result}（应正常得到 dict）")
+
+    mock_no_think = '{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
+    result2 = _parse_l2_json(mock_no_think)
+    print(f"无思考链解析：{result2}（应正常得到 dict）")
+    print()
+
+    # ------------------------------------------------------------------
+    # 测试五：端到端合并（需要 LM Studio 运行中）
+    # ------------------------------------------------------------------
+    print("--- 测试五：端到端合并触发（需要 LM Studio 运行中）---")
+
     for i in range(5):
         sid = new_session()
         save_message(sid, "user", f"测试消息 {i+1}")
@@ -431,6 +530,6 @@ if __name__ == "__main__":
     if l2_id:
         print(f"\n端到端测试通过，L2 id = {l2_id}")
     else:
-        print("\n模型未响应（LM Studio 未启动），格式化与触发判断已验证，端到端测试跳过")
+        print("\n模型未响应（LM Studio 未启动），本地逻辑测试已通过，端到端测试跳过")
 
     print("\n验证完成。")

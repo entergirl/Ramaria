@@ -3,6 +3,12 @@ config.py — 全局配置中心
 所有模块都从这里读取路径、参数和常量，不在业务代码里硬编码。
 需要调整参数时，只改这一个文件即可。
 
+变更记录：
+    v2 — 将 LOCAL_MAX_TOKENS 拆分为两个场景常量：
+         · LOCAL_MAX_TOKENS_SUMMARY：用于摘要类任务（L1/L2 生成、冲突检测、画像提取）
+         · LOCAL_MAX_TOKENS_CHAT   ：用于日常对话，注入长上下文时不容易截断
+         修复审查报告问题4：token 配置未区分场景。
+
 使用方法（在其他模块里）：
     from config import DB_PATH, L1_IDLE_MINUTES, LOCAL_API_URL
 """
@@ -99,9 +105,35 @@ LOCAL_API_URL = "http://localhost:1234/v1/chat/completions"
 # 示例："qwen/qwen3.5-9b" / "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"
 LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"
 
-# 本地模型调用参数
-LOCAL_TEMPERATURE = 0.3     # 温度：越低输出越稳定，摘要任务保持低温
-LOCAL_MAX_TOKENS  = 512     # 摘要任务不需要长输出，512 足够
+# 本地模型调用参数 — 温度（所有任务共用）
+LOCAL_TEMPERATURE = 0.3     # 越低输出越稳定，保持低温适合结构化输出
+
+# ─────────────────────────────────────────────────────────────
+# [修改] 原 LOCAL_MAX_TOKENS = 512 已拆分为两个场景常量
+#
+#   问题背景（审查报告问题4）：
+#     旧版只有一个 LOCAL_MAX_TOKENS = 512，同时用于摘要任务和日常对话。
+#     摘要任务（L1/L2 生成、冲突检测、画像提取）输出短，512 够用；
+#     日常对话在注入 L3 画像 + RAG 记忆后，上下文已经很长，
+#     512 的回复空间非常容易被截断，体验较差。
+#
+#   修改方案：
+#     LOCAL_MAX_TOKENS_SUMMARY — 摘要类任务用，保持 512
+#     LOCAL_MAX_TOKENS_CHAT    — 日常对话用，调高到 1024
+#
+#   各文件对应改动：
+#     · main.py          → _call_local() 改用 LOCAL_MAX_TOKENS_CHAT
+#     · summarizer.py    → _call_local_model() 改用 LOCAL_MAX_TOKENS_SUMMARY
+#     · merger.py        → _call_local_model() 改用 LOCAL_MAX_TOKENS_SUMMARY
+#     · conflict_checker.py → _call_local_model() 改用 LOCAL_MAX_TOKENS_SUMMARY
+#     · profile_manager.py  → _call_local_model() 改用 LOCAL_MAX_TOKENS_SUMMARY
+# ─────────────────────────────────────────────────────────────
+
+LOCAL_MAX_TOKENS_SUMMARY = 512    # 摘要类任务：L1/L2 生成、冲突检测、画像提取
+                                  # 这类任务只需要短 JSON 输出，512 足够
+
+LOCAL_MAX_TOKENS_CHAT    = 1024   # 日常对话任务：注入长上下文后仍有足够的回复空间
+                                  # 如果回复经常被截断，可适当调高（如 2048）
 
 
 # =============================================================================
@@ -342,19 +374,21 @@ DEBUG = True
 
 if __name__ == "__main__":
     print("=== 当前配置 ===")
-    print(f"项目根目录      : {BASE_DIR}")
-    print(f"数据库路径      : {DB_PATH}")
-    print(f"Chroma 索引目录 : {CHROMA_DIR}")
-    print(f"嵌入模型        : {EMBEDDING_MODEL}")
-    print(f"相似度阈值      : {SIMILARITY_THRESHOLD}")
-    print(f"L0 窗口大小     : {L0_WINDOW_SIZE}")
-    print(f"本地模型地址    : {LOCAL_API_URL}")
-    print(f"本地模型名称    : {LOCAL_MODEL_NAME}")
-    print(f"Claude 模型     : {CLAUDE_MODEL_NAME}")
-    print(f"API Key 已设置  : {'是' if ANTHROPIC_API_KEY else '否（未设置环境变量）'}")
-    print(f"默认模型        : {DEFAULT_MODEL}")
-    print(f"L1 空闲阈值     : {L1_IDLE_MINUTES} 分钟")
-    print(f"L2 触发条数     : {L2_TRIGGER_COUNT} 条")
-    print(f"L2 触发天数     : {L2_TRIGGER_DAYS} 天")
-    print(f"服务地址        : http://{SERVER_HOST}:{SERVER_PORT}")
-    print(f"调试模式        : {'开启' if DEBUG else '关闭'}")
+    print(f"项目根目录         : {BASE_DIR}")
+    print(f"数据库路径         : {DB_PATH}")
+    print(f"Chroma 索引目录    : {CHROMA_DIR}")
+    print(f"嵌入模型           : {EMBEDDING_MODEL}")
+    print(f"相似度阈值         : {SIMILARITY_THRESHOLD}")
+    print(f"L0 窗口大小        : {L0_WINDOW_SIZE}")
+    print(f"本地模型地址       : {LOCAL_API_URL}")
+    print(f"本地模型名称       : {LOCAL_MODEL_NAME}")
+    print(f"摘要任务 max_tokens: {LOCAL_MAX_TOKENS_SUMMARY}")
+    print(f"对话任务 max_tokens: {LOCAL_MAX_TOKENS_CHAT}")
+    print(f"Claude 模型        : {CLAUDE_MODEL_NAME}")
+    print(f"API Key 已设置     : {'是' if ANTHROPIC_API_KEY else '否（未设置环境变量）'}")
+    print(f"默认模型           : {DEFAULT_MODEL}")
+    print(f"L1 空闲阈值        : {L1_IDLE_MINUTES} 分钟")
+    print(f"L2 触发条数        : {L2_TRIGGER_COUNT} 条")
+    print(f"L2 触发天数        : {L2_TRIGGER_DAYS} 天")
+    print(f"服务地址           : http://{SERVER_HOST}:{SERVER_PORT}")
+    print(f"调试模式           : {'开启' if DEBUG else '关闭'}")

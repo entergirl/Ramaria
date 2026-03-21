@@ -38,7 +38,14 @@ from config import (
     SERVER_HOST,
     SERVER_PORT,
 )
-from database import get_messages_as_dicts, save_message
+from database import (
+    get_messages_as_dicts,
+    save_message,
+    get_current_profile,
+    get_latest_l1,
+    get_recent_l2,
+    get_active_sessions,
+)
 from prompt_builder import build_system_prompt
 from session_manager import SessionManager
 from conflict_checker import get_conflict_question, handle_conflict_reply
@@ -153,6 +160,97 @@ def _detect_conflict_action(text):
     # 短消息但未命中关键词（如"嗯""好的""明白"等），也不当作冲突回复
     # 交给正常对话逻辑，避免"好的"这类词在没有冲突待确认时被误触
     return None
+
+
+# =============================================================================
+# context 组装辅助函数
+# =============================================================================
+
+def _build_context(session_id: int, user_message: str | None = None) -> dict:
+    """
+    组装传给 build_system_prompt() 的 context 字典。
+
+    从数据库读取所有动态信息，统一封装后返回。
+    所有 datetime 对象统一转换为带时区版本，避免与数据库 UTC 时间戳相减时
+    触发 "can't subtract offset-naive and offset-aware datetimes" 错误。
+
+    Args:
+        session_id:   当前活跃 session 的 ID。
+        user_message: 用户本次消息（预留，供将来接入 RAG 检索）。
+
+    Returns:
+        context 字典，结构与 prompt_builder.PromptBuilder.build() 一致。
+    """
+    from datetime import datetime, timezone
+
+    # ------------------------------------------------------------------
+    # L3 用户长期画像
+    # ------------------------------------------------------------------
+    profile_dict = get_current_profile()
+    if profile_dict:
+        field_labels = [
+            ("basic_info",      "基础信息"),
+            ("personal_status", "近期状态"),
+            ("interests",       "兴趣爱好"),
+            ("social",          "社交情况"),
+            ("history",         "重要经历"),
+            ("recent_context",  "近期背景"),
+        ]
+        lines = []
+        for key, label in field_labels:
+            val = profile_dict.get(key, "").strip()
+            if val:
+                lines.append(f"{label}：{val}")
+        l3_profile = "\n".join(lines) if lines else None
+    else:
+        l3_profile = None
+
+    # ------------------------------------------------------------------
+    # 近期 L2 + 最新 L1 拼成 retrieved_l1l2
+    # ------------------------------------------------------------------
+    memory_parts = []
+
+    l2_rows = get_recent_l2(limit=3)
+    for row in l2_rows:
+        date_str = row["created_at"][:10]
+        kw = f"（{row['keywords']}）" if row["keywords"] else ""
+        memory_parts.append(f"[时间段摘要 {date_str}] {row['summary']}{kw}")
+
+    l1_row = get_latest_l1()
+    if l1_row:
+        tp  = l1_row["time_period"] or ""
+        atm = l1_row["atmosphere"]  or ""
+        meta = f"（{tp}，{atm}）" if tp or atm else ""
+        memory_parts.append(f"[最近一次对话] {l1_row['summary']}{meta}")
+
+    retrieved_l1l2 = "\n".join(memory_parts) if memory_parts else None
+
+    # ------------------------------------------------------------------
+    # 上次 session 结束时间（用于时间感知和跨日检测）
+    #
+    # 关键：fromisoformat 解析带时区字符串（如 "2026-03-20T23:00:00+00:00"）
+    # 结果是 offset-aware datetime；若字符串不带时区则手动补 UTC，
+    # 确保与 prompt_builder 里 datetime.now(timezone.utc) 可以直接相减。
+    # ------------------------------------------------------------------
+    last_session_time = None
+    if l1_row and l1_row["created_at"]:
+        try:
+            dt = datetime.fromisoformat(l1_row["created_at"])
+            # 若解析结果没有时区信息，补 UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            last_session_time = dt
+        except ValueError:
+            pass  # 时间戳格式异常时降级为 None，不影响主流程
+
+    return {
+        "last_session_time": last_session_time,
+        "l3_profile":        l3_profile,
+        "retrieved_l1l2":    retrieved_l1l2,
+        "raw_fragments":     None,       # L0 穿透暂未接入，预留
+        "session_id":        session_id,
+        "session_index":     session_id, # 用自增主键近似表示第几个 session
+    }
 
 
 # =============================================================================
@@ -598,7 +696,8 @@ async def chat(req: ChatRequest):
     if action == "confirm_no":
         target  = result["message"]
         history = get_messages_as_dicts(session_id)
-        system  = build_system_prompt(query_text=target)
+        context = _build_context(session_id, user_message=target)
+        system  = build_system_prompt(context)
         msgs    = [{"role": "system", "content": system}, *history]
         reply   = _call_local(msgs)
         save_message(session_id, "assistant", reply)
@@ -606,7 +705,8 @@ async def chat(req: ChatRequest):
 
     # D. 默认本地
     history = get_messages_as_dicts(session_id)
-    system  = build_system_prompt(query_text=req.content.strip())
+    context = _build_context(session_id, user_message=req.content.strip())
+    system  = build_system_prompt(context)
     msgs    = [{"role": "system", "content": system}, *history]
     reply   = _call_local(msgs)
     save_message(session_id, "assistant", reply)

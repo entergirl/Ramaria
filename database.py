@@ -23,7 +23,8 @@ database.py — 数据库操作层
 import sqlite3
 from datetime import datetime, timezone
 from config import DB_PATH
-
+from logger import get_logger
+logger = get_logger(__name__)
 
 # =============================================================================
 # 内部工具函数（模块私有，不对外暴露）

@@ -68,8 +68,7 @@ import json
 import re
 import requests
 from datetime import datetime, timezone
-
-from llm_client import call_local_summary
+from llm_client import call_local_summary, strip_thinking
 from database import (
     get_current_profile,
     get_l1_by_id,           # [修改] 替换旧的 get_latest_l1，直接按主键查询
@@ -223,30 +222,6 @@ def _format_profile_for_prompt(profile_dict):
 # 解析模型输出
 # =============================================================================
 
-def _strip_thinking(raw_text):
-    """
-    剥离模型输出中的思考链，只保留 JSON 部分。
-
-    支持两种格式：
-      - 标签格式：<think>...</think>
-      - 纯文本格式：{ 之前的所有前缀内容
-
-    参数：
-        raw_text — 模型返回的原始文本
-
-    返回：
-        str — 剥离后的文本（已去除首尾空白）
-    """
-    cleaned = re.sub(r'<think>.*?</think>', '', raw_text,
-                     flags=re.DOTALL | re.IGNORECASE)
-
-    brace_pos = cleaned.find('{')
-    if brace_pos > 0:
-        cleaned = cleaned[brace_pos:]
-
-    return cleaned.strip()
-
-
 def _parse_extract_json(raw_text):
     """
     从模型返回的原始文本中解析出画像提取结果。
@@ -276,7 +251,7 @@ def _parse_extract_json(raw_text):
         pass
 
     # 第二步：剥离思考链后再解析
-    stripped = _strip_thinking(raw_text)
+    stripped = strip_thinking(raw_text)
     if stripped != raw_text.strip():
         print("[profile_manager] 检测到思考链输出，已自动剥离")
     try:

@@ -55,7 +55,7 @@ from config import (
     CONFLICT_CHECK_PROMPT,
     CONFLICT_ASK_TEMPLATE,
 )
-from llm_client import call_local_summary
+from llm_client import call_local_summary, strip_thinking
 from database import (
     get_current_profile,
     get_l1_by_id,           # [修改] 替换旧的 get_latest_l1，直接按主键查询
@@ -116,31 +116,6 @@ def _format_profile_for_check(profile_dict):
 # 解析模型输出
 # =============================================================================
 
-def _strip_thinking(raw_text):
-    """
-    剥离模型输出中的思考链内容，只保留 JSON 部分。
-
-    支持两种格式：
-      - 标签格式：<think>...</think>
-      - 纯文本格式：[ 之前的所有前缀内容（冲突检测输出是 JSON 数组，找 [）
-
-    参数：
-        raw_text — 模型返回的原始文本
-
-    返回：
-        str — 剥离思考链后的文本（已去除首尾空白）
-    """
-    cleaned = re.sub(r'<think>.*?</think>', '', raw_text,
-                     flags=re.DOTALL | re.IGNORECASE)
-
-    # 冲突检测输出是 JSON 数组，找 [ 而不是 {
-    bracket_pos = cleaned.find('[')
-    if bracket_pos > 0:
-        cleaned = cleaned[bracket_pos:]
-
-    return cleaned.strip()
-
-
 def _parse_conflict_json(raw_text):
     """
     从模型返回的原始文本中解析冲突列表。
@@ -158,7 +133,7 @@ def _parse_conflict_json(raw_text):
         list — 冲突对象列表；无冲突时返回 []；解析失败时返回 None
     """
     # 第一步：剥离思考链
-    stripped = _strip_thinking(raw_text)
+    stripped = strip_thinking(raw_text)
     if stripped != raw_text.strip():
         print(f"[conflict_checker] 检测到思考链输出，已自动剥离")
 

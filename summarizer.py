@@ -53,7 +53,7 @@ from config import (
     L1_SUMMARY_PROMPT_WITH_KEYWORDS,
     TIME_PERIOD_OPTIONS,
 )
-from llm_client import call_local_summary
+from llm_client import call_local_summary, strip_thinking
 from database import (
     get_messages,
     save_l1_summary,
@@ -154,30 +154,6 @@ def _extract_keywords_list(keywords_str):
 # 解析与校验模型输出
 # =============================================================================
 
-def _strip_thinking(raw_text):
-    """
-    剥离模型输出中的思考链内容，只保留 JSON 部分。
-
-    支持两种思考链格式：
-      - 标签格式：<think>...</think> 整段标签及其内容
-      - 纯文本格式：模型直接以推理步骤开头，直到出现 { 字符为止的所有内容
-
-    参数：
-        raw_text — 模型返回的原始文本字符串
-
-    返回：
-        str — 剥离思考链后的文本（已去除首尾空白）
-    """
-    cleaned = re.sub(r'<think>.*?</think>', '', raw_text,
-                     flags=re.DOTALL | re.IGNORECASE)
-
-    brace_pos = cleaned.find('{')
-    if brace_pos > 0:
-        cleaned = cleaned[brace_pos:]
-
-    return cleaned.strip()
-
-
 def _parse_summary_json(raw_text):
     """
     从模型返回的原始文本中解析出结构化摘要字段。
@@ -201,7 +177,7 @@ def _parse_summary_json(raw_text):
         pass
 
     # 第二步：剥离思考链后再次解析
-    stripped = _strip_thinking(raw_text)
+    stripped = strip_thinking(raw_text)
     if stripped != raw_text:
         print(f"[summarizer] 检测到思考链输出，已自动剥离，重新解析")
     try:

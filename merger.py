@@ -43,13 +43,12 @@ import json
 import re
 import requests
 from datetime import datetime, timezone
-
 from config import (
     L2_TRIGGER_COUNT,
     L2_TRIGGER_DAYS,
     L2_MERGE_PROMPT,
 )
-from llm_client import call_local_summary
+from llm_client import call_local_summary, strip_thinking
 from database import (
     get_unabsorbed_l1,
     save_l2_summary,
@@ -144,45 +143,6 @@ def _format_l1_list(l1_rows):
 # 解析与校验模型输出
 # =============================================================================
 
-def _strip_thinking(raw_text):
-    """
-    剥离模型输出中的思考链内容，只保留 JSON 部分。
-
-    [新增函数] 审查报告问题7：
-        原 _parse_l2_json 没有调用此函数（而 summarizer._parse_summary_json 有）。
-        当 /no_think 指令失效、Qwen 输出了思考链时，_parse_l2_json 的直接 json.loads
-        会失败，降级写入错误摘要（"自动合并失败，原始输出已记录..."）。
-        补充本函数后，_parse_l2_json 在解析前先剥离思考链，与 summarizer 行为一致。
-
-    支持两种思考链格式：
-      - 标签格式：<think>...</think> 整段标签及内容
-      - 纯文本格式：模型直接以推理步骤开头，直到出现 { 字符为止的前缀内容
-
-    逻辑与 summarizer._strip_thinking / conflict_checker._strip_thinking
-    / profile_manager._strip_thinking 完全一致，独立维护避免循环依赖。
-    （注：审查报告问题3 指出这四份重复，计划在后续迭代中抽取为 llm_client.py）
-
-    参数：
-        raw_text — 模型返回的原始文本字符串
-
-    返回：
-        str — 剥离思考链后的文本（已去除首尾空白）
-              原文中没有思考链时，原样返回（去除首尾空白后）
-    """
-    # 处理标签格式：<think>...</think>
-    # re.DOTALL 让 . 能跨行匹配，re.IGNORECASE 兼容大小写变体
-    cleaned = re.sub(r'<think>.*?</think>', '', raw_text,
-                     flags=re.DOTALL | re.IGNORECASE)
-
-    # 处理纯文本格式：找到第一个 { 之前的所有内容，视为思考链前缀截掉
-    brace_pos = cleaned.find('{')
-    if brace_pos > 0:
-        # { 前面有内容，说明存在思考链前缀，截掉它
-        cleaned = cleaned[brace_pos:]
-
-    return cleaned.strip()
-
-
 def _parse_l2_json(raw_text):
     """
     从模型返回的原始文本中解析出 L2 摘要的结构化字段。
@@ -191,7 +151,7 @@ def _parse_l2_json(raw_text):
         在三步解析流程的最前面加入思考链剥离：
           原流程：直接解析 → 正则提取
           新流程：剥离思考链 → 直接解析 → 正则提取
-        这样当 Qwen 输出了 <think>...</think> 或纯文本推理前缀时，
+        这样当 Qwen 输出了 <tool_call>...<tool_call> 或纯文本推理前缀时，
         不会因为 JSON 解析失败而降级写入错误摘要，行为与 summarizer 一致。
 
     参数：
@@ -202,9 +162,9 @@ def _parse_l2_json(raw_text):
         None — 无论如何都无法解析时返回 None
     """
     # ──────────────────────────────────────────
-    # 前置步骤：剥离思考链（新增）
+    # 前置步骤：剥离思考链
     # ──────────────────────────────────────────
-    stripped = _strip_thinking(raw_text)
+    stripped = strip_thinking(raw_text)
 
     # 如果内容有变化，说明确实存在思考链，打印提示方便排查
     if stripped != raw_text.strip():
@@ -426,18 +386,18 @@ if __name__ == "__main__":
     print("--- 测试三：_strip_thinking 验证 ---")
 
     # 标签格式思考链
-    mock_think_tag = '<think>\n这是思考过程\n</think>\n{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped = _strip_thinking(mock_think_tag)
+    mock_think_tag = '<tool_call>\n这是思考过程\n<tool_call>\n{"summary":"合并摘要","keywords":"k1,k2"}'
+    stripped = strip_thinking(mock_think_tag)
     print(f"标签格式剥离后：{stripped}（应以 {{ 开头）")
 
     # 纯文本思考链
     mock_think_text = 'Thinking:\n1. 分析内容\n2. 输出格式\n{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped2 = _strip_thinking(mock_think_text)
+    stripped2 = strip_thinking(mock_think_text)
     print(f"纯文本格式剥离后：{stripped2}（应以 {{ 开头）")
 
     # 无思考链（正常输出）
     mock_clean = '{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped3 = _strip_thinking(mock_clean)
+    stripped3 = strip_thinking(mock_clean)
     print(f"无思考链（应原样返回）：{stripped3}")
     print()
 
@@ -446,7 +406,7 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     print("--- 测试四：_parse_l2_json 思考链场景 ---")
 
-    mock_with_think = '<think>让我合并一下。</think>\n{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
+    mock_with_think = '<tool_call>让我合并一下。<tool_call>\n{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
     result = _parse_l2_json(mock_with_think)
     print(f"带思考链解析：{result}（应正常得到 dict）")
 

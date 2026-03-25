@@ -11,6 +11,10 @@ config.py — 全局配置中心
 
 使用方法（在其他模块里）：
     from config import DB_PATH, L1_IDLE_MINUTES, LOCAL_API_URL
+
+注意：DEBUG 标志同时被 logger.py 读取，用于决定控制台日志级别。
+DEBUG=True 时控制台输出 DEBUG 级别；DEBUG=False 时只输出 INFO 及以上。
+
 """
 
 import os

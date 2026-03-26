@@ -15,6 +15,14 @@ session_manager.py — Session 生命周期管理
        → 调用 merger.check_and_merge()
        → merger 内部判断时间触发条件（路径B）
 
+变更记录：
+  v2 — 修复代码优化清单 P1-2：
+       __main__ 测试块中移除对 database._get_connection() 私有函数的直接调用。
+       原来为了模拟空闲超时，测试块直接用私有函数连接数据库并手写 UPDATE SQL，
+       造成封装原则不一致，且若 _get_connection 内部实现变更会波及此处。
+       修复方案：database.py 新增公开函数 update_message_time_for_test()，
+       测试块改为通过该函数修改时间戳，不再直接接触私有函数。
+
 与其他模块的关系：
   - 读写数据库：database.py
   - 读取配置：config.py
@@ -88,9 +96,9 @@ class SessionManager:
     """
 
     def __init__(self):
-        self._current_session_id = None
-        self._lock               = threading.Lock()
-        self._stop_event         = threading.Event()
+        self._current_session_id  = None
+        self._lock                = threading.Lock()
+        self._stop_event          = threading.Event()
         self._idle_checker_thread = None
         self._l2_checker_thread   = None
 
@@ -266,8 +274,10 @@ class SessionManager:
         if last_time_str is None:
             return
 
-        last_time    = datetime.fromisoformat(last_time_str)
-        now          = datetime.now(timezone.utc)
+        last_time = datetime.fromisoformat(last_time_str)
+        if last_time.tzinfo is None:
+            last_time = last_time.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
         idle_minutes = (now - last_time).total_seconds() / 60
 
         logger.debug(f"检测 session {sid}，已空闲 {idle_minutes:.1f} 分钟")
@@ -355,8 +365,10 @@ class SessionManager:
 # =============================================================================
 
 if __name__ == "__main__":
-    from database import save_message
-    import database
+    from database import (
+        save_message,
+        update_message_time_for_test,   # 【P1-2 修复】用公开函数替换私有函数调用
+    )
 
     print("=== session_manager.py 验证测试 ===\n")
 
@@ -365,7 +377,26 @@ if __name__ == "__main__":
     print()
 
     # ------------------------------------------------------------------
-    # 测试一：空闲超时自动关闭（monkey-patch 时间，绕开线程等待）
+    # 测试一：空闲超时自动关闭
+    #
+    # 【P1-2 修复说明】
+    # 原来直接调用私有函数 database._get_connection()：
+    #
+    #   import database
+    #   conn = database._get_connection()          # ← 直接访问私有函数，破坏封装
+    #   conn.execute(
+    #       "UPDATE messages SET created_at = ? WHERE session_id = ?",
+    #       (fake_time, sid)
+    #   )
+    #   conn.commit()
+    #   conn.close()
+    #
+    # 修复后，通过 database.py 新增的公开函数访问：
+    #
+    #   from database import update_message_time_for_test
+    #   update_message_time_for_test(sid, fake_time)
+    #
+    # 两者效果完全一致，但后者不依赖私有实现，封装性更好。
     # ------------------------------------------------------------------
     print("--- 测试一：空闲超时自动关闭 ---")
 
@@ -374,14 +405,11 @@ if __name__ == "__main__":
     save_message(sid, "assistant", "收到！")
     print(f"消息已写入 session {sid}")
 
+    # 模拟空闲超时：将该 session 的所有消息时间改为 15 分钟前
     fake_time = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-    conn = database._get_connection()
-    conn.execute(
-        "UPDATE messages SET created_at = ? WHERE session_id = ?",
-        (fake_time, sid)
-    )
-    conn.commit()
-    conn.close()
+
+    # 【P1-2 修复】改为调用公开函数，不再直接访问 _get_connection
+    update_message_time_for_test(sid, fake_time)
     print(f"已将 session {sid} 的消息时间改为 15 分钟前，模拟超时")
 
     sm._check_idle_timeout()

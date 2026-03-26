@@ -2,16 +2,35 @@
 merger.py — L2 时间段摘要合并模块
 负责将多条 L1 摘要压缩合并为一条 L2 时间段摘要，写入 memory_l2 表。
 
-本次修改（对应审查报告问题7）：
-  · 补充 _strip_thinking() 函数
-  · 在 _parse_l2_json() 的第一步之前先调用 _strip_thinking()
-    原来的 _parse_l2_json 直接 json.loads(raw_text)，
-    当 Qwen 输出思考链时 JSON 解析会失败，降级写入错误摘要。
-    修复后：先剥离 <think>...</think> 标签和纯文本思考链前缀，
-    再做 JSON 解析，与 summarizer.py 的处理逻辑保持一致。
+变更记录：
+  v1（审查报告问题7）：
+    · 补充 strip_thinking() 调用，修复模型输出思考链时 JSON 解析失败的问题。
+    · _call_local_model() 的 max_tokens 改为使用 LOCAL_MAX_TOKENS_SUMMARY。
 
-本次修改（对应审查报告问题4）：
-  · _call_local_model() 的 max_tokens 改为使用 LOCAL_MAX_TOKENS_SUMMARY
+  v2（代码优化清单第三轮）：
+    · 修复 _should_trigger() 中 naive / aware datetime 混用导致的崩溃风险。
+
+    问题代码（merger.py:99）：
+        earliest_time = datetime.fromisoformat(earliest_time_str)
+        # ↑ SQLite 存储的时间戳可能是 naive（无时区信息）
+        now = datetime.now(timezone.utc)
+        # ↑ 一定是 aware（带 UTC 时区）
+        days_elapsed = (now - earliest_time).total_seconds() / 86400
+        # ↑ naive 与 aware 直接相减 → TypeError 崩溃！
+
+    根本原因：
+        Python 的 datetime 分为两种：
+          · naive  — 不含时区信息（tzinfo=None），如从 SQLite 直接读出的时间戳
+          · aware  — 含时区信息，如 datetime.now(timezone.utc)
+        两种 datetime 直接做算术运算会抛出 TypeError，无法比较大小。
+        只要 L2 的时间触发条件被检查，且数据库里存有旧格式的 naive 时间戳，
+        就会必然崩溃。
+
+    修复方案（参考 main.py:287-294 已有的正确写法）：
+        在 fromisoformat() 之后立即检查 tzinfo，若为 None 则补上 UTC：
+            if earliest_time.tzinfo is None:
+                earliest_time = earliest_time.replace(tzinfo=timezone.utc)
+        只需 3 行，其余代码不变。
 
 核心流程：
   1. 检查是否满足触发条件（条数触发 或 时间触发）
@@ -41,8 +60,8 @@ merger.py — L2 时间段摘要合并模块
 
 import json
 import re
-import requests
 from datetime import datetime, timezone
+
 from config import (
     L2_TRIGGER_COUNT,
     L2_TRIGGER_DAYS,
@@ -89,10 +108,10 @@ def _should_trigger(l1_rows):
 
     # ------------------------------------------------------------------
     # 条件二：时间触发
-    # 取最早一条 L1 的创建时间，计算距今天数
-    # l1_rows 已按 created_at ASC 排序，第一条就是最早的
+    # 取最早一条 L1 的创建时间，计算距今天数。
+    # l1_rows 已按 created_at ASC 排序，第一条就是最早的。
     # ------------------------------------------------------------------
-    trigger_days = int(get_setting("l2_trigger_days") or L2_TRIGGER_DAYS)
+    trigger_days      = int(get_setting("l2_trigger_days") or L2_TRIGGER_DAYS)
     earliest_time_str = l1_rows[0]["created_at"]
 
     try:
@@ -101,7 +120,27 @@ def _should_trigger(l1_rows):
         logger.warning(f"L1 时间戳格式异常：{earliest_time_str}，跳过时间触发检查")
         return False, "时间格式异常，跳过"
 
-    now = datetime.now(timezone.utc)
+    # ------------------------------------------------------------------
+    # 【P1-A 修复】补充 naive / aware 时区统一处理
+    #
+    # 问题根源：
+    #     SQLite 存储的时间戳字符串可能没有时区信息（如 "2026-03-01T14:30:00"），
+    #     fromisoformat() 解析后得到 naive datetime（tzinfo=None）。
+    #     而 datetime.now(timezone.utc) 返回的是 aware datetime（带 UTC 时区）。
+    #     两者直接相减会抛出：
+    #         TypeError: can't subtract offset-naive and offset-aware datetimes
+    #
+    # 修复方案：
+    #     解析后立即检查 tzinfo，若为 None（naive）则补上 UTC 时区。
+    #     这与数据库写入时使用 UTC 的约定一致——历史数据即使没有时区标记，
+    #     也应当被视为 UTC 处理。
+    #
+    #     参考：main.py _build_context() 第 287-294 行已有完全相同的处理逻辑。
+    # ------------------------------------------------------------------
+    if earliest_time.tzinfo is None:
+        earliest_time = earliest_time.replace(tzinfo=timezone.utc)
+
+    now          = datetime.now(timezone.utc)
     days_elapsed = (now - earliest_time).total_seconds() / 86400
 
     if days_elapsed >= trigger_days:
@@ -150,12 +189,10 @@ def _parse_l2_json(raw_text):
     """
     从模型返回的原始文本中解析出 L2 摘要的结构化字段。
 
-    [修改说明] 审查报告问题7：
-        在三步解析流程的最前面加入思考链剥离：
-          原流程：直接解析 → 正则提取
-          新流程：剥离思考链 → 直接解析 → 正则提取
-        这样当 Qwen 输出了 <tool_call>...<tool_call> 或纯文本推理前缀时，
-        不会因为 JSON 解析失败而降级写入错误摘要，行为与 summarizer 一致。
+    解析策略（三步递进）：
+      前置步骤：剥离思考链（<think>...</think> 标签及纯文本前缀）
+      第一步：直接尝试解析剥离后的文本
+      第二步：用正则提取第一个 JSON 对象
 
     参数：
         raw_text — 模型返回的原始文本
@@ -164,28 +201,24 @@ def _parse_l2_json(raw_text):
         dict — 包含 summary / keywords 两个键
         None — 无论如何都无法解析时返回 None
     """
-    # ──────────────────────────────────────────
+    # ------------------------------------------------------------------
     # 前置步骤：剥离思考链
-    # ──────────────────────────────────────────
+    # 当 Qwen 输出 <think>...</think> 或纯文本推理前缀时，
+    # 直接 json.loads 会失败，需要先剥离再解析。
+    # ------------------------------------------------------------------
     stripped = strip_thinking(raw_text)
-
-    # 如果内容有变化，说明确实存在思考链，打印提示方便排查
     if stripped != raw_text.strip():
         logger.debug("检测到思考链输出，已自动剥离")
 
-    # ──────────────────────────────────────────
     # 第一步：直接尝试解析剥离后的文本
-    # ──────────────────────────────────────────
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
         pass
 
-    # ──────────────────────────────────────────
     # 第二步：用正则提取第一个 JSON 对象
     # 应对模型在 JSON 前后加了说明文字的情况
     # re.DOTALL 让 . 能匹配换行符，处理多行 JSON
-    # ──────────────────────────────────────────
     match = re.search(r'\{.*?\}', stripped, re.DOTALL)
     if match:
         try:
@@ -209,10 +242,10 @@ def _validate_l2(parsed):
     """
     result = {}
 
-    # summary：必填，缺失时写入占位文本
+    # summary：必填，缺失时写入占位文本（不携带原始输出，避免污染记忆层）
     result["summary"] = str(parsed.get("summary", "")).strip()
     if not result["summary"]:
-        result["summary"] = "（L2 摘要生成失败，内容为空）"
+        result["summary"] = "（本次时间段摘要生成失败，请参考原始对话记录）"
 
     # keywords：允许为空
     keywords = str(parsed.get("keywords", "")).strip()
@@ -297,10 +330,11 @@ def check_and_merge():
     # 第四步：解析 JSON（已包含思考链剥离）
     parsed = _parse_l2_json(raw_output)
     if parsed is None:
-        # JSON 解析彻底失败，写入降级摘要，不丢失这批 L1 的合并记录
-        logger.error("JSON 解析失败，写入降级 L2 摘要")
+        # JSON 解析彻底失败，写入降级摘要，原始输出记录到日志而非 SQLite
+        # 避免乱码或思考链碎片污染记忆层（参考代码优化清单 P3-3）
+        logger.error(f"JSON 解析失败，原始输出：{raw_output[:500]}")
         parsed = {
-            "summary":  f"（自动合并失败，原始输出已记录）{raw_output[:100]}",
+            "summary":  "（本次时间段摘要生成失败，请参考原始对话记录）",
             "keywords": None,
         }
 
@@ -323,7 +357,10 @@ def check_and_merge():
     mark_l1_absorbed(l1_ids)
 
     logger.info(f"L2 摘要已写入，id = {l2_id}")
-    logger.debug(f"summary={validated['summary']} | keywords={validated['keywords']} | 覆盖时间={period_start[:10]}~{period_end[:10]} | 吸收L1={l1_ids}")
+    logger.debug(
+        f"summary={validated['summary']} | keywords={validated['keywords']} | "
+        f"覆盖时间={period_start[:10]}~{period_end[:10]} | 吸收L1={l1_ids}"
+    )
 
     # 第八步：写入 L2 向量索引
     try:
@@ -371,7 +408,7 @@ if __name__ == "__main__":
     print()
 
     # ------------------------------------------------------------------
-    # 测试二：触发条件判断
+    # 测试二：触发条件判断（不依赖模型）
     # ------------------------------------------------------------------
     print("--- 测试二：触发条件判断 ---")
     trigger, reason = _should_trigger([])
@@ -381,32 +418,53 @@ if __name__ == "__main__":
     print()
 
     # ------------------------------------------------------------------
-    # 测试三：思考链剥离（不依赖模型）—— 新增测试
+    # 测试三：【P1-A 修复核心】naive/aware 时区混用场景验证
     # ------------------------------------------------------------------
-    print("--- 测试三：_strip_thinking 验证 ---")
+    print("--- 测试三：时区修复验证（P1-A）---")
 
-    # 标签格式思考链
-    mock_think_tag = '<tool_call>\n这是思考过程\n<tool_call>\n{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped = strip_thinking(mock_think_tag)
-    print(f"标签格式剥离后：{stripped}（应以 {{ 开头）")
+    # 模拟数据库中存储的旧格式 naive 时间戳（不含时区，16天前）
+    naive_time_str = "2026-03-10T14:00:00"   # 无时区信息
 
-    # 纯文本思考链
-    mock_think_text = 'Thinking:\n1. 分析内容\n2. 输出格式\n{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped2 = strip_thinking(mock_think_text)
-    print(f"纯文本格式剥离后：{stripped2}（应以 {{ 开头）")
+    # 验证修复前的崩溃场景（注释掉，仅作说明）：
+    #   dt = datetime.fromisoformat(naive_time_str)         # naive
+    #   now = datetime.now(timezone.utc)                    # aware
+    #   diff = (now - dt).total_seconds()                   # ← TypeError!
 
-    # 无思考链（正常输出）
-    mock_clean = '{"summary":"合并摘要","keywords":"k1,k2"}'
-    stripped3 = strip_thinking(mock_clean)
-    print(f"无思考链（应原样返回）：{stripped3}")
+    # 验证修复后的正确处理：
+    dt_naive = datetime.fromisoformat(naive_time_str)
+    print(f"解析结果（修复前）：tzinfo={dt_naive.tzinfo}（None = naive，会崩溃）")
+
+    if dt_naive.tzinfo is None:
+        dt_aware = dt_naive.replace(tzinfo=timezone.utc)
+    else:
+        dt_aware = dt_naive
+    print(f"修复后：tzinfo={dt_aware.tzinfo}（已补充 UTC）")
+
+    now  = datetime.now(timezone.utc)
+    diff = (now - dt_aware).total_seconds() / 86400
+    print(f"距今 {diff:.1f} 天（应为正数，无 TypeError）✓")
+    print()
+
+    # 构造带 naive 时间的 fake row，验证 _should_trigger 不再崩溃
+    old_row = FakeRow({
+        "id": 99, "summary": "旧记录，带 naive 时间戳。",
+        "keywords": "测试", "time_period": "夜间",
+        "atmosphere": "专注高效",
+        "created_at": "2026-03-01T10:00:00",   # naive，无时区
+    })
+    try:
+        trigger3, reason3 = _should_trigger([old_row])
+        print(f"naive 时间戳场景：trigger={trigger3}，reason='{reason3}'")
+        print("_should_trigger() 未崩溃 ✓")
+    except TypeError as e:
+        print(f"❌ 仍然崩溃（修复未生效）：{e}")
     print()
 
     # ------------------------------------------------------------------
-    # 测试四：_parse_l2_json 思考链场景（不依赖模型）
+    # 测试四：思考链剥离（不依赖模型）
     # ------------------------------------------------------------------
     print("--- 测试四：_parse_l2_json 思考链场景 ---")
-
-    mock_with_think = '<tool_call>让我合并一下。<tool_call>\n{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
+    mock_with_think = '<think>让我合并一下。</think>\n{"summary":"烧酒这周完成了多个后端模块。","keywords":"后端,模块,开发"}'
     result = _parse_l2_json(mock_with_think)
     print(f"带思考链解析：{result}（应正常得到 dict）")
 

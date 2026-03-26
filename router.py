@@ -2,20 +2,30 @@
 router.py — 任务路由层
 =====================================================================
 
+版本：v3
+
 变更记录：
   v2 — force_online() 新增时间戳记录，_handle_confirm_reply() 入口处检测
        是否超时（默认30分钟），超时自动 reset 回本地模式。
        修复审查报告问题C：原来 force_online 后若用户关闭浏览器，
        _waiting_confirm 状态会一直挂着，下次重开时第一条消息会意外直达 Claude。
 
-       新增内部属性：
-         _force_online_time — 记录 force_online() 的触发时刻（datetime 对象）
-         FORCE_ONLINE_TIMEOUT_MINUTES — 超时阈值（默认30分钟，可在此文件顶部调整）
+  v3 — 新增 disable_online() 公开方法。
+       修复代码优化清单 P1-4：main.py 原来直接调用 router._reset()（私有方法），
+       破坏了封装性。现在暴露语义明确的公开方法 disable_online()，
+       main.py 改为调用该方法，_reset() 保持私有。
 
-负责判断当前消息是否需要切换到 Claude API 处理，
-并管理线上/本地模式的全局状态。
+─────────────────────────────────────────────────────────────
+职责
+─────────────────────────────────────────────────────────────
 
-核心设计原则：
+  负责判断当前消息是否需要切换到 Claude API 处理，
+  并管理线上/本地模式的全局状态。
+
+─────────────────────────────────────────────────────────────
+设计原则
+─────────────────────────────────────────────────────────────
+
   · 本地 Qwen 是主体，负责日常对话和记忆维护
   · Claude 是一次性专家工具，处理完当前消息立即回到本地模式
   · Claude 不注入任何记忆上下文，只拿到用户的当前消息
@@ -49,7 +59,7 @@ router.py — 任务路由层
 与其他模块的关系
 ─────────────────────────────────────────────────────────────
 
-  · 被调用：main.py 的 /chat 路由
+  · 被调用：main.py 的 /chat 路由 和 /router/toggle 路由
   · 调用：Claude API（通过 requests）
   · 读配置：config.py
 
@@ -89,31 +99,18 @@ TRIGGER_KEYWORDS = [
     "怎么设计", "架构", "方案", "怎么实现",
 ]
 
-# 用户确认调用 Claude 的关键词
+# 用户确认调用 Claude 的关键词（包含匹配）
 CONFIRM_YES_KEYWORDS = {"好", "好的", "行", "是", "是的", "要", "可以", "嗯", "ok", "yes"}
 
-# 用户拒绝调用 Claude 的关键词
+# 用户拒绝调用 Claude 的关键词（包含匹配）
 CONFIRM_NO_KEYWORDS = {"不用", "不", "算了", "不要", "不行", "no", "本地", "本地处理"}
 
 # 自动检测触发时，发给用户的确认询问文本
 CONFIRM_ASK_TEXT = "要不我用线上 API 为你解决？"
 
-# ─────────────────────────────────────────────────────────────
-# [新增] force_online 超时阈值（分钟）
-#
-# 问题背景（审查报告问题C）：
-#   force_online() 触发后，_waiting_confirm=True 和
-#   _pending_message="__FORCE_ONLINE__" 状态会一直保持，
-#   直到用户发下一条消息。如果用户切换线上模式后关闭浏览器，
-#   下次重开时状态仍挂着，第一条消息会意外直达 Claude。
-#
-# 修复方案：
-#   force_online() 记录触发时刻（_force_online_time），
-#   _handle_confirm_reply() 每次处理消息前检查是否超时，
-#   超时则自动 reset 回本地模式，再正常处理当前消息。
-#
-# 调整此阈值：如果希望线上模式等待窗口更长或更短，修改这个数字即可。
-# ─────────────────────────────────────────────────────────────
+# force_online 超时阈值（分钟）
+# force_online() 触发后超过此时长无新消息，自动 reset 回本地模式，
+# 避免状态因用户关闭浏览器而长期残留
 FORCE_ONLINE_TIMEOUT_MINUTES = 30
 
 # Claude API 端点
@@ -128,20 +125,18 @@ class Router:
     """
     任务路由管理器。
 
-    内部状态：
-        _api_enabled       — 线上 API 总开关
-        _waiting_confirm   — 是否正在等待用户确认是否调用 Claude
-        _pending_message   — 触发确认时缓存的原始用户消息
-        _force_online_time — [新增] force_online() 的触发时刻（datetime 或 None）
-                             用于超时检测：超过 FORCE_ONLINE_TIMEOUT_MINUTES 分钟
-                             无新消息时自动 reset 回本地模式
+    内部状态（均不对外直接暴露）：
+        _api_enabled        — 线上 API 总开关
+        _waiting_confirm    — 是否正在等待用户确认是否调用 Claude
+        _pending_message    — 触发确认时缓存的原始用户消息
+        _force_online_time  — force_online() 的触发时刻（用于超时检测）
     """
 
     def __init__(self):
-        self._api_enabled      = True
-        self._waiting_confirm  = False
-        self._pending_message  = None
-        self._force_online_time = None   # [新增] 记录 force_online 触发时刻
+        self._api_enabled       = True
+        self._waiting_confirm   = False
+        self._pending_message   = None
+        self._force_online_time = None
 
     # -------------------------------------------------------------------------
     # 公开接口：状态查询
@@ -149,17 +144,20 @@ class Router:
 
     @property
     def api_enabled(self):
+        """线上 API 总开关当前状态。"""
         return self._api_enabled
 
     @property
     def waiting_confirm(self):
+        """是否正在等待用户对确认询问的回复。"""
         return self._waiting_confirm
 
     @property
     def pending_message(self):
+        """触发确认询问时缓存的原始用户消息。"""
         return self._pending_message
 
-    def get_status(self):
+    def get_status(self) -> dict:
         """
         返回当前路由状态字典，供前端 UI 轮询显示。
 
@@ -170,11 +168,7 @@ class Router:
                 "mode":            str,   # "local" / "pending"
             }
         """
-        if self._waiting_confirm:
-            mode = "pending"
-        else:
-            mode = "local"
-
+        mode = "pending" if self._waiting_confirm else "local"
         return {
             "api_enabled":     self._api_enabled,
             "waiting_confirm": self._waiting_confirm,
@@ -189,20 +183,19 @@ class Router:
         """
         设置线上 API 开关（由前端 UI 的 toggle 调用）。
         关闭时同时清除等待确认状态，避免残留。
+
+        参数：
+            enabled — True 开启，False 关闭
         """
         self._api_enabled = enabled
         if not enabled:
             self._reset()
         logger.info(f"线上 API {'开启' if enabled else '关闭'}")
 
-    def force_online(self):
+    def force_online(self) -> str:
         """
         手动强制切换到线上模式（由前端"切换"按钮触发）。
-        标记下一条消息走 Claude，并记录触发时刻用于超时检测。
-
-        [v2 修改] 新增 _force_online_time = datetime.now(utc)：
-            _handle_confirm_reply() 在处理消息前会检查触发时刻是否超过
-            FORCE_ONLINE_TIMEOUT_MINUTES，超时则自动 reset，避免状态残留。
+        标记下一条真实消息走 Claude，并记录触发时刻用于超时检测。
 
         返回：
             str — 提示文本，供 main.py 展示给用户
@@ -213,17 +206,30 @@ class Router:
             return "未检测到 ANTHROPIC_API_KEY，请先配置环境变量。"
 
         self._waiting_confirm   = True
-        self._pending_message   = "__FORCE_ONLINE__"
-        self._force_online_time = datetime.now(timezone.utc)   # [新增] 记录触发时刻
+        self._pending_message   = "__FORCE_ONLINE__"   # 特殊标记，区分手动切换和自动触发
+        self._force_online_time = datetime.now(timezone.utc)
 
         logger.info(f"手动切换到线上模式，超时阈值 {FORCE_ONLINE_TIMEOUT_MINUTES} 分钟")
         return "好，下一条消息我会用线上 API 处理。"
+
+    def disable_online(self):
+        """
+        手动关闭线上模式，回到本地（前端 toggle 置 False 时调用）。
+
+        【v3 新增】修复代码优化清单 P1-4：
+            原来 main.py 在 /router/toggle 路由里直接调用 router._reset()，
+            _reset() 是私有方法，外部直接调用破坏了封装性。
+            现在通过此公开方法暴露该能力，语义也更明确：
+              「禁用线上模式」vs「内部重置状态」两个意图得到区分。
+        """
+        self._reset()
+        logger.info("线上模式已手动关闭，回到本地模式")
 
     # -------------------------------------------------------------------------
     # 公开接口：消息路由判断
     # -------------------------------------------------------------------------
 
-    def route(self, message: str):
+    def route(self, message: str) -> dict:
         """
         判断当前消息的处理路径。
 
@@ -253,9 +259,9 @@ class Router:
             return {"action": "local", "message": message}
 
         if self._should_trigger(message):
-            self._pending_message  = message
-            self._waiting_confirm  = True
-            self._force_online_time = datetime.now(timezone.utc)   # 自动触发也记录时刻
+            self._pending_message   = message
+            self._waiting_confirm   = True
+            self._force_online_time = datetime.now(timezone.utc)
             logger.info("自动检测触发，等待用户确认")
             return {
                 "action":  "ask_confirm",
@@ -269,21 +275,20 @@ class Router:
     # 公开接口：调用 Claude API
     # -------------------------------------------------------------------------
 
-    def call_claude(self, message: str):
+    def call_claude(self, message: str) -> str:
         """
         调用 Claude API 处理单条消息，返回回复文本。
 
         Claude 作为无状态工具：
-          · 不注入任何记忆上下文
+          · 不注入任何记忆上下文（隐私保护）
           · 只带一个简短的角色说明 system prompt
-          · 处理完后路由自动回到本地模式
+          · 处理完后路由自动回到本地模式（无论成功还是失败）
 
         参数：
             message — 需要 Claude 处理的用户消息
 
         返回：
-            str — Claude 的回复文本
-            str — 调用失败时返回括号包裹的错误信息
+            str — Claude 的回复文本；调用失败时返回括号包裹的错误信息
         """
         logger.info(f"调用 Claude API，消息长度={len(message)}")
 
@@ -334,16 +339,19 @@ class Router:
             self._reset()
 
     # -------------------------------------------------------------------------
-    # 内部方法
+    # 内部方法：自动触发检测
     # -------------------------------------------------------------------------
 
-    def _should_trigger(self, message: str):
+    def _should_trigger(self, message: str) -> bool:
         """
         检测消息是否满足自动触发条件。
 
         两个条件满足其一即触发：
           1. 包含代码块（``` 包裹）
           2. 包含触发关键词（不区分大小写）
+
+        参数：
+            message — 用户消息文本
         """
         if "```" in message:
             logger.debug("检测到代码块，触发确认")
@@ -357,17 +365,27 @@ class Router:
 
         return False
 
-    def _handle_confirm_reply(self, message: str):
+    # -------------------------------------------------------------------------
+    # 内部方法：处理确认回复
+    # -------------------------------------------------------------------------
+
+    def _handle_confirm_reply(self, message: str) -> dict:
         """
         处理用户对确认询问的回复。
 
-        [v2 修改] 在处理任何回复之前，先检查 force_online 触发时刻是否超时：
-          · 未超时：正常执行确认/拒绝逻辑
-          · 已超时：自动 reset，把当前消息当作普通消息走本地模式，
-                    并打印提示避免用户困惑
+        超时检查（v2 引入）：
+            如果 force_online 触发后超过 FORCE_ONLINE_TIMEOUT_MINUTES 分钟
+            才收到消息，自动 reset 并把当前消息按普通本地流程处理，
+            避免用户关闭浏览器后状态长期残留。
 
-        超时阈值：FORCE_ONLINE_TIMEOUT_MINUTES（默认30分钟）
-        触发时刻：_force_online_time（force_online() 或自动触发时写入）
+        正常确认/拒绝流程：
+            · _pending_message == "__FORCE_ONLINE__" → 直接走 Claude
+            · 回复命中确认词 → confirm_yes，走 Claude
+            · 回复命中拒绝词 → confirm_no，走本地（用缓存的原始消息）
+            · 其他回复 → 视为取消，清除等待状态，按普通消息走本地
+
+        注意：关键词匹配统一使用包含匹配（any(kw in ...))，
+        与 main.py 的 _detect_conflict_action 策略一致。
 
         参数：
             message — 用户的回复消息
@@ -376,7 +394,7 @@ class Router:
             dict — route() 标准返回格式
         """
         # ------------------------------------------------------------------
-        # [新增] 超时检查：force_online 触发后超过阈值未发消息，自动 reset
+        # 超时检查：force_online 触发后超过阈值未发消息，自动 reset
         # ------------------------------------------------------------------
         if self._force_online_time is not None:
             now     = datetime.now(timezone.utc)
@@ -388,11 +406,10 @@ class Router:
                     f"{FORCE_ONLINE_TIMEOUT_MINUTES} 分钟），自动 reset 回本地模式"
                 )
                 self._reset()
-                # 超时后把当前消息按普通本地流程处理，不触发 Claude
                 return {"action": "local", "message": message}
 
         # ------------------------------------------------------------------
-        # 正常确认/拒绝流程（未超时）
+        # 正常确认/拒绝流程
         # ------------------------------------------------------------------
         message_lower = message.lower().strip()
         cached        = self._pending_message
@@ -402,33 +419,42 @@ class Router:
             self._reset()
             return {"action": "online", "message": message}
 
-        # 用户确认
-        if message_lower in CONFIRM_YES_KEYWORDS:
+        # 用户确认（包含匹配，兼容"好啊"/"嗯嗯"等变体）
+        if any(kw in message_lower for kw in CONFIRM_YES_KEYWORDS):
             logger.info("用户确认，走 Claude API")
             self._reset()
             return {"action": "confirm_yes", "message": cached}
 
-        # 用户拒绝
-        if message_lower in CONFIRM_NO_KEYWORDS:
+        # 用户拒绝（包含匹配，兼容"那不用了"/"算了吧"等变体）
+        if any(kw in message_lower for kw in CONFIRM_NO_KEYWORDS):
             logger.info("用户拒绝，走本地 Qwen")
             self._reset()
             return {"action": "confirm_no", "message": cached}
 
-        # 用户说了其他话（既不是确认也不是拒绝），视为取消
+        # 用户说了其他话（既不是确认也不是拒绝），视为取消，按正常消息处理
         logger.debug("未识别的确认回复，清除等待状态，按正常消息处理")
         self._reset()
         return {"action": "local", "message": message}
 
+    # -------------------------------------------------------------------------
+    # 内部方法：重置状态
+    # -------------------------------------------------------------------------
+
     def _reset(self):
         """
         重置等待确认状态，回到本地模式。
-        每次 Claude 调用完成（无论成功失败）或用户拒绝后调用。
 
-        [v2 修改] 同时清除 _force_online_time，避免时间戳残留。
+        调用时机：
+          · call_claude() 完成后（无论成功失败）
+          · 用户拒绝确认后
+          · force_online 超时后
+          · disable_online() 被调用时
+
+        注意：此方法保持私有（_reset），外部调用应使用 disable_online()。
         """
         self._waiting_confirm   = False
         self._pending_message   = None
-        self._force_online_time = None   # [新增] 清除触发时刻
+        self._force_online_time = None
 
 
 # =============================================================================
@@ -450,12 +476,12 @@ if __name__ == "__main__":
     print(f"text={result.get('text')}\n")
 
     print("--- 测试三：用户确认 → confirm_yes ---")
-    result2 = router.route("好")
+    result2 = router.route("好的")
     print(f"action={result2['action']}（应为 confirm_yes）\n")
 
     print("--- 测试四：触发后用户拒绝 → confirm_no ---")
     router.route("帮我优化这段代码")
-    result3 = router.route("不用")
+    result3 = router.route("不用了")
     print(f"action={result3['action']}（应为 confirm_no）\n")
 
     print("--- 测试五：代码块触发 ---")
@@ -475,19 +501,32 @@ if __name__ == "__main__":
     tip = router.force_online()
     print(f"提示：{tip}")
     result6 = router.route("帮我写一个快速排序")
-    print(f"action={result6['action']}（应为 online）")
+    print(f"action={result6['action']}（应为 online）\n")
+
+    print("--- 测试八：disable_online()（P1-4 修复核心）---")
+    router.force_online()
+    router.disable_online()
+    print(f"disable_online() 后 _waiting_confirm={router._waiting_confirm}（应为 False）")
+    print(f"disable_online() 后 _pending_message={router._pending_message}（应为 None）")
     print()
 
-    print("--- 测试八：超时自动 reset（问题C修复核心）---")
-    # 模拟 force_online 触发后超过30分钟
+    print("--- 测试九：超时自动 reset ---")
     router.force_online()
-    # 手动把触发时刻倒推35分钟，模拟超时
-    from datetime import timedelta
     router._force_online_time = datetime.now(timezone.utc) - timedelta(minutes=35)
     result7 = router.route("这条消息应该走本地，因为超时了")
     print(f"action={result7['action']}（应为 local，force_online 已超时自动 reset）")
     print(f"_waiting_confirm={router._waiting_confirm}（应为 False）")
     print(f"_force_online_time={router._force_online_time}（应为 None）")
+    print()
+
+    print("--- 测试十：包含匹配验证（P2-6 相关）---")
+    router.route("帮我看看这里为什么报错")
+    result8 = router.route("好啊好啊")   # 包含"好"，应命中
+    print(f"'好啊好啊' → action={result8['action']}（应为 confirm_yes）")
+
+    router.route("帮我看看这里为什么报错")
+    result9 = router.route("那不用了吧")   # 包含"不用"，应命中
+    print(f"'那不用了吧' → action={result9['action']}（应为 confirm_no）")
     print()
 
     print("验证完成（Claude API 实际调用未测试，需要有效的 API Key）")

@@ -9,9 +9,15 @@
 # Block 结构（按拼接顺序）：
 #   [A] 角色核心人设     ← 从 persona.toml 读取，静态
 #   [B] 时间与状态上下文 ← 每次对话动态生成
-#   [C] 记忆上下文       ← RAG 检索结果注入
+#   [C] 记忆上下文       ← RAG 检索结果注入（由 main._build_context() 组装）
 #   [D] 当前 session 信息← session 元信息
 #   [E] 交互规则与格式   ← 从 persona.toml 读取，静态
+#
+# 变更记录：
+#   v2 — 新增 reset_builder()，修复代码优化清单第三轮 P3-C：
+#        原来模块级单例 _default_builder 没有重置机制，
+#        在单元测试中切换 persona 文件时无法重置，总是复用第一次初始化的实例。
+#        新增 reset_builder() 将单例置为 None，下次调用 get_builder() 时重新初始化。
 #
 # 使用方式：
 #   builder = PromptBuilder()           # 启动时初始化一次
@@ -164,26 +170,22 @@ class PromptBuilder:
         Returns:
             格式化的时间上下文字符串。
         """
-        # 使用带时区的本地时间，确保与数据库解析出的 UTC datetime 可以直接相减
-        # datetime.now() 是 naive datetime（无时区），会导致
-        # "can't subtract offset-naive and offset-aware datetimes" 错误
         from datetime import timezone as _tz
-        now = datetime.now(_tz.utc).astimezone()   # 带本地时区的当前时间
+        now     = datetime.now(_tz.utc).astimezone()   # 带本地时区的当前时间
         weekday = WEEKDAY_ZH[now.weekday()]
         current_time_str = (
             f"现在是 {now.strftime('%Y年%m月%d日 %H:%M')}，{weekday}。"
         )
 
-        # 计算距上次对话的时间差
         if last_session_time is None:
-            gap_str = "这是与烧酒的第一次对话，没有历史时间参照。"
+            gap_str           = "这是与烧酒的第一次对话，没有历史时间参照。"
             cross_day_warning = ""
         else:
-            delta = now - last_session_time
+            delta         = now - last_session_time
             total_seconds = int(delta.total_seconds())
-            days = delta.days
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
+            days          = delta.days
+            hours         = total_seconds // 3600
+            minutes       = (total_seconds % 3600) // 60
 
             if days >= 1:
                 gap_str = f"距离上次对话已过去约 {days} 天。"
@@ -195,9 +197,8 @@ class PromptBuilder:
                 gap_str = "与上次对话间隔极短（不足1分钟）。"
 
             # 跨日检测：上次对话日期 != 今天
-            # 这是修复"连续工作跨日"感知问题的关键字段
             if last_session_time.date() < now.date():
-                last_date_str = last_session_time.strftime("%m月%d日")
+                last_date_str     = last_session_time.strftime("%m月%d日")
                 cross_day_warning = (
                     "[注意] 上次对话发生在 " + last_date_str + "，"
                     "本次对话已跨越自然日。烧酒可能经历了连续工作或熬夜，"
@@ -207,7 +208,6 @@ class PromptBuilder:
             else:
                 cross_day_warning = ""
 
-        # 组装 Block B
         lines = ["## 时间背景", current_time_str, gap_str]
         if cross_day_warning:
             lines.append(cross_day_warning)
@@ -225,14 +225,19 @@ class PromptBuilder:
         raw_fragments: str | None,
     ) -> str:
         """
-        生成 Block C：三层记忆内容（L3 画像 / L1-L2 摘要 / L0 原始片段）。
+        生成 Block C：三层记忆内容。
+
+        retrieved_l1l2 由 main._build_context() 组装，在 P2-A 修复后包含：
+          · RAG 语义检索结果（与本次消息最相关的历史，已格式化）
+          · 时间序内容（最近 L2 + 最新 L1，追加在 RAG 结果后）
+        本函数直接将其注入，不做二次处理。
 
         任意层级为 None 时自动跳过，全部为 None 时返回空字符串（Block 被跳过）。
 
         Args:
             l3_profile:     L3 用户长期画像的文本内容。
-            retrieved_l1l2: RAG 检索到的 L1/L2 摘要文本。
-            raw_fragments:  从 L0 穿透召回的原始对话片段。
+            retrieved_l1l2: RAG 检索到的 L1/L2 摘要文本（已含时间序内容）。
+            raw_fragments:  从 L0 穿透召回的原始对话片段（预留，当前为 None）。
 
         Returns:
             格式化的记忆上下文字符串，或空字符串。
@@ -249,7 +254,7 @@ class PromptBuilder:
         if retrieved_l1l2:
             parts.append(
                 "### 相关历史摘要（L1/L2）\n"
-                "以下是与当前对话语义相关的历史摘要：\n"
+                "以下是与当前对话语义相关的历史摘要及近期动态：\n"
                 f"{retrieved_l1l2}"
             )
 
@@ -285,6 +290,7 @@ class PromptBuilder:
         Args:
             session_id:    数据库中的 session ID。
             session_index: 这是第几个 session（从1计）。
+                           P2-4 修复后传 None，此块不显示编号。
 
         Returns:
             格式化的 session 信息字符串，或空字符串。
@@ -318,6 +324,7 @@ def get_builder(persona_path: str | Path = DEFAULT_PERSONA_PATH) -> PromptBuilde
 
     Args:
         persona_path: persona.toml 路径，仅首次调用时生效。
+                      若需要切换 persona 文件，请先调用 reset_builder()。
 
     Returns:
         PromptBuilder 实例。
@@ -326,6 +333,34 @@ def get_builder(persona_path: str | Path = DEFAULT_PERSONA_PATH) -> PromptBuilde
     if _default_builder is None:
         _default_builder = PromptBuilder(persona_path)
     return _default_builder
+
+
+def reset_builder():
+    """
+    重置模块级单例，下次调用 get_builder() 时重新从文件初始化。
+
+    【P3-C 新增】修复代码优化清单第三轮 P3-C：
+        原来 _default_builder 一旦初始化就无法重置，
+        在单元测试中切换 persona 文件时会复用旧实例，导致测试相互污染。
+
+        典型使用场景：
+            # 测试场景一：使用默认 persona
+            prompt_a = build_system_prompt(context_a)
+
+            # 切换到另一个 persona 文件进行测试
+            reset_builder()
+            prompt_b = get_builder(persona_path="test_persona.toml").build(context_b)
+
+            # 恢复默认
+            reset_builder()
+            prompt_c = build_system_prompt(context_c)   # 重新从默认路径加载
+
+        注意：正常业务运行中不需要调用此函数。
+              此函数主要面向测试代码和需要动态切换 persona 的场景。
+    """
+    global _default_builder
+    _default_builder = None
+    logger.debug("PromptBuilder 单例已重置，下次调用将重新从文件初始化")
 
 
 def build_system_prompt(context: dict | None = None) -> str:
@@ -354,7 +389,7 @@ if __name__ == "__main__":
     print("【调试模式】预览生成的 System Prompt")
     print("=" * 60)
 
-    # 模拟一个跨日场景（2.5小时前的 session，带时区）
+    # 模拟跨日场景（2.5小时前的 session，带时区）
     fake_last_session = datetime.now(timezone.utc) - timedelta(hours=2, minutes=30)
 
     test_context = {
@@ -364,15 +399,43 @@ if __name__ == "__main__":
             "近期状态：正在开发珊瑚菌虚拟伙伴系统，压力较大但状态积极\n"
             "兴趣爱好：编程、AI 系统设计"
         ),
+        # 模拟 P2-A 接通 RAG 后的融合格式
         "retrieved_l1l2": (
-            "[2026-03-20] 讨论了数据库初始化脚本的测试，顺利通过验证。"
+            "[语义相关 · L1 单次摘要]\n"
+            "烧酒完成了 vector_store 的多线程初始化修复。（相关度：0.31）\n"
+            "\n── 近期动态 ──\n"
+            "[时间段摘要 2026-03-25] 烧酒这周持续推进珊瑚菌代码审查修复工作。\n"
+            "[最近一次对话] 烧酒完成了第二批代码修复，包括 merger 时区修复。（夜间，专注高效）"
         ),
-        "raw_fragments": None,   # 本次无 L0 穿透
-        "session_id": 4,
-        "session_index": 4,
+        "raw_fragments": None,
+        "session_id":    5,
+        "session_index": None,   # P2-4：不显示编号
     }
 
     prompt = build_system_prompt(test_context)
     print(prompt)
     print("\n" + "=" * 60)
     print(f"总字符数：{len(prompt)}")
+
+    # ------------------------------------------------------------------
+    # 验证 reset_builder()（P3-C 修复核心）
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("【P3-C 验证】reset_builder() 测试")
+    print("=" * 60)
+
+    b1 = get_builder()
+    print(f"第一次 get_builder() → id={id(b1)}")
+
+    b2 = get_builder()
+    print(f"第二次 get_builder() → id={id(b2)}（应与第一次相同，复用单例）")
+    assert b1 is b2, "单例复用失败"
+
+    reset_builder()
+    print("reset_builder() 已调用")
+
+    b3 = get_builder()
+    print(f"reset 后 get_builder() → id={id(b3)}（应与之前不同，重新初始化）")
+    assert b3 is not b1, "reset 后应创建新实例"
+
+    print("reset_builder() 验证通过 ✓")

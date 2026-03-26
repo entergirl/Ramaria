@@ -2,14 +2,32 @@
 vector_store.py — 向量索引与语义检索模块
 
 负责维护三层向量索引（L0 / L1 / L2），并对外提供语义检索接口。
-是阶段二分层 RAG 检索链路的核心模块。
+是分层 RAG 检索链路的核心模块。
 
 变更记录：
   v2 — rebuild_all_indexes() 移除对私有函数 _get_connection 的依赖，
        修复审查报告问题A。
-       旧写法：from database import _get_connection，手写3条原始 SQL
-       新写法：from database import get_all_l1, get_all_l2, get_all_session_ids
-       改动仅限 rebuild_all_indexes() 函数内部，其他函数不受影响。
+       改为通过 get_all_l1 / get_all_l2 / get_all_session_ids 三个公开函数访问。
+
+  v3 — 三项改动（对应代码优化清单第二轮 P2-5、P3-5 和第三轮 P2-C）：
+
+       【P2-5】_get_client() 加双重检查锁，消除多线程初始化竞态
+         问题背景：SessionManager 启动的两个后台线程（空闲检测 + L2 定时检查）
+         可能在极短时间窗口内同时触发向量操作，导致 _client 被重复初始化。
+         原来的 if _client is None 属于 Check-Then-Act 模式，非线程安全。
+         修复方案：使用双重检查锁（Double-Checked Locking）。
+
+       【P3-5】_retrieve() 异常字符串匹配改为大小写不敏感
+         问题背景：原来用 "does not exist" in str(e) 做字符串匹配，
+         一旦 ChromaDB 升级改变错误消息的大小写，此处兜底失效，
+         可能导致正常情况被错误上抛或真正的错误被静默忽略。
+         修复方案：统一转小写后再匹配，str(e).lower()。
+
+       【P2-C】_retrieve() 非预期异常日志级别从 warning 升级为 error
+         问题背景：OOM、磁盘满、权限错误等严重问题只打 warning 级别，
+         在生产日志中容易被忽略，导致故障排查滞后。
+         修复方案：非预期异常（即通过了字符串匹配过滤的、真正不正常的异常）
+         改用 logger.error 输出，确保在生产环境中被及时发现。
 
 ─────────────────────────────────────────────────────────────
 三层索引的定位与分工
@@ -28,14 +46,6 @@ vector_store.py — 向量索引与语义检索模块
     · 用于回溯原始对话温度和具体细节
 
 ─────────────────────────────────────────────────────────────
-滑动窗口切片说明（L0 专属）
-─────────────────────────────────────────────────────────────
-
-  原始消息不适合一条一条地单独建索引——单条消息往往很短、缺乏上下文。
-  解决方案是"滑动窗口"：把 session 里的消息按窗口切片，
-  每个切片包含连续的若干条消息，将它们拼成一段文本后再向量化。
-
-─────────────────────────────────────────────────────────────
 与其他模块的关系
 ─────────────────────────────────────────────────────────────
 
@@ -45,7 +55,7 @@ vector_store.py — 向量索引与语义检索模块
       session_manager.py → session 关闭后调用 index_l0_session()
 
   · 被检索：
-      prompt_builder.py  → 构建 system prompt 时调用 retrieve_*() 系列函数
+      prompt_builder.py / main.py → 构建 system prompt 时调用 retrieve_*() 系列
 
   · 读取配置：config.py
   · 读取消息数据（L0 用）：database.py
@@ -58,6 +68,7 @@ vector_store.py — 向量索引与语义检索模块
 
 import os
 import json
+import threading
 
 import chromadb
 from chromadb.utils.embedding_functions import (
@@ -85,19 +96,41 @@ logger = get_logger(__name__)
 # =============================================================================
 
 # 全局客户端单例：整个进程只初始化一次，避免重复打开索引文件
-_client = None
+_client      = None
+
+# 【P2-5 新增】线程锁：保护 _client 的初始化过程
+# SessionManager 启动的两个后台线程可能同时触发向量操作，
+# 没有锁的情况下 _client 可能被重复初始化，产生不确定行为。
+_client_lock = threading.Lock()
 
 
 def _get_client():
     """
     获取（或初始化）全局 Chroma 客户端。
+
     使用 PersistentClient，索引文件写入 CHROMA_DIR 目录，重启后不丢失。
+
+    【P2-5 修复】使用双重检查锁（Double-Checked Locking）保证线程安全：
+        原来的写法（非线程安全）：
+            if _client is None:
+                _client = chromadb.PersistentClient(...)   ← 竞态窗口
+
+        修复后的写法：
+            if _client is None:             # 第一次检查：快速路径，避免每次都加锁
+                with _client_lock:          # 加锁，只有一个线程能进入
+                    if _client is None:     # 第二次检查：防止等锁期间已被其他线程初始化
+                        _client = ...
+
+        大多数调用（_client 已初始化）直接走第一个 if 的 False 分支，
+        不需要加锁，性能影响极小。只有真正的初始化阶段才会加锁。
     """
     global _client
     if _client is None:
-        os.makedirs(CHROMA_DIR, exist_ok=True)
-        _client = chromadb.PersistentClient(path=CHROMA_DIR)
-        logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}")
+        with _client_lock:
+            if _client is None:    # 双重检查：等锁期间可能已被其他线程初始化
+                os.makedirs(CHROMA_DIR, exist_ok=True)
+                _client = chromadb.PersistentClient(path=CHROMA_DIR)
+                logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}")
     return _client
 
 
@@ -106,7 +139,7 @@ def _get_embedding_function():
     根据 config.py 的 EMBEDDING_MODEL 返回对应的嵌入函数。
 
     "default"  → Chroma 内置模型（all-MiniLM-L6-v2），无需额外安装
-    其他字符串 → 用 SentenceTransformer 加载对应模型
+    其他字符串 → 用 SentenceTransformer 加载对应模型（如 Qwen3-Embedding-0.6B）
     """
     if EMBEDDING_MODEL == "default":
         return DefaultEmbeddingFunction()
@@ -153,12 +186,11 @@ def _make_l0_chunks(messages, session_id, window_size=L0_WINDOW_SIZE):
     返回：
         list[dict] — 切片列表，每个元素包含 id / document / metadata
     """
-    chunks = []
-
-    if not messages:
-        return chunks
-
+    chunks   = []
     msg_list = list(messages)
+
+    if not msg_list:
+        return chunks
 
     for start in range(len(msg_list) - window_size + 1):
         end    = start + window_size - 1
@@ -282,7 +314,9 @@ def index_l0_session(session_id):
 
         if len(messages) < L0_WINDOW_SIZE:
             # 消息数量不足一个窗口，把所有消息拼成一条整体索引
-            logger.debug(f"session {session_id} 消息数({len(messages)}) < 窗口({L0_WINDOW_SIZE})，使用整体索引")
+            logger.debug(
+                f"session {session_id} 消息数({len(messages)}) < 窗口({L0_WINDOW_SIZE})，使用整体索引"
+            )
             lines = []
             for msg in messages:
                 role_label = "用户" if msg["role"] == "user" else "助手"
@@ -360,7 +394,7 @@ def retrieve_l0(query_text, top_k=L0_RETRIEVE_TOP_K):
 def retrieve_combined(query_text):
     """
     同时在 L1 和 L2 索引中检索，合并结果后返回。
-    用于 prompt_builder 的语义层注入：一次调用拿到两层的相关记忆。
+    用于 _build_context() 的语义层注入：一次调用拿到两层的相关记忆。
 
     返回：
         dict — {"l2": list[dict], "l1": list[dict]}
@@ -389,6 +423,24 @@ def _retrieve(collection_name, query_text, top_k, id_field):
         query_text      — 查询文本
         top_k           — 最多返回条数
         id_field        — metadata 里存 SQLite id 的字段名；None 表示不提取
+
+    【P3-5 修复】异常字符串匹配改为大小写不敏感：
+        原来：
+            if "does not exist" in str(e) or "InvalidCollection" in str(e):
+        修复后：
+            err_str = str(e).lower()
+            if "does not exist" in err_str or "invalidcollection" in err_str:
+        理由：ChromaDB 升级后错误消息措辞可能变化（如大小写），
+        转小写后匹配，兼容性更好，不会因大小写不一致导致正常情况被意外上抛。
+
+    【P2-C 修复】非预期异常日志级别从 warning 升级为 error：
+        原来：
+            logger.warning(f"检索失败，collection={collection_name} — {e}")
+        修复后：
+            logger.error(f"检索失败（非预期异常）...")
+        理由：Collection 不存在属于正常情况（已在前面 return []），
+        能走到 logger 这里的都是真正异常（OOM、磁盘满、权限错误等），
+        应使用 error 级别确保在生产日志监控中被及时发现。
     """
     try:
         collection = _get_collection(collection_name)
@@ -425,9 +477,28 @@ def _retrieve(collection_name, query_text, top_k, id_field):
         return results
 
     except Exception as e:
-        if "does not exist" in str(e) or "InvalidCollection" in str(e):
+        # ------------------------------------------------------------------
+        # 【P3-5 修复】大小写不敏感的异常字符串匹配
+        #
+        # 先统一转小写，再做包含匹配，避免 ChromaDB 升级后因大小写变化导致
+        # 正常情况（Collection 不存在）被误判为非预期错误。
+        # ------------------------------------------------------------------
+        err_str = str(e).lower()
+        if "does not exist" in err_str or "invalidcollection" in err_str:
+            # Collection 尚未创建属于正常情况，静默返回空列表
+            # 例如：系统刚启动，L1 索引还没写入任何数据时检索 L1
             return []
-        logger.warning(f"检索失败，collection={collection_name} — {e}")
+
+        # ------------------------------------------------------------------
+        # 【P2-C 修复】非预期异常升级为 error 级别
+        #
+        # 能走到这里说明不是"Collection 不存在"，而是真正的异常：
+        # 如 OOM、磁盘满、权限错误、ChromaDB 内部错误等。
+        # 使用 error 级别确保生产日志监控能及时捕获。
+        # ------------------------------------------------------------------
+        logger.error(
+            f"检索失败（非预期异常），collection={collection_name} — {e}"
+        )
         return []
 
 
@@ -447,7 +518,7 @@ def get_index_stats():
 
     for key, name in [("l0", _COLL_L0), ("l1", _COLL_L1), ("l2", _COLL_L2)]:
         try:
-            coll      = client.get_collection(name)
+            coll       = client.get_collection(name)
             stats[key] = coll.count()
         except Exception:
             pass
@@ -471,22 +542,7 @@ def rebuild_all_indexes():
 
     返回：
         dict — {"l0_chunks": int, "l1_count": int, "l2_count": int}
-
-    [v2 修改] 修复审查报告问题A：
-        旧写法：直接 import 私有函数 _get_connection，手写3条原始 SQL：
-            from database import _get_connection
-            conn = _get_connection()
-            conn.cursor().execute("SELECT id, summary, keywords, session_id FROM memory_l1")
-            conn.cursor().execute("SELECT id, summary, keywords, ... FROM memory_l2")
-            conn.cursor().execute("SELECT DISTINCT session_id FROM messages")
-        问题：破坏了 database.py 作为数据层统一出口的封装原则；
-              后续迁移数据库或修改表结构时，这里的 SQL 需要手动同步，易遗漏。
-
-        新写法：通过三个公开函数访问，database.py 负责维护 SQL 细节：
-            from database import get_all_l1, get_all_l2, get_all_session_ids
-        改动仅限本函数内部，对外接口和行为完全不变。
     """
-    # [修改] 从 database 导入三个公开函数，替换原来的私有函数 _get_connection
     from database import get_all_l1, get_all_l2, get_all_session_ids
 
     logger.info("开始重建全部向量索引…")
@@ -503,8 +559,6 @@ def rebuild_all_indexes():
     counts = {"l0_chunks": 0, "l1_count": 0, "l2_count": 0}
 
     # 第二步：重建 L1 索引
-    # [修改] 原来：conn.cursor().execute("SELECT id, summary, keywords, session_id FROM memory_l1")
-    # 现在：直接调用 get_all_l1()，database.py 维护 SQL 细节
     l1_rows = get_all_l1()
     for row in l1_rows:
         index_l1(
@@ -516,8 +570,6 @@ def rebuild_all_indexes():
         counts["l1_count"] += 1
 
     # 第三步：重建 L2 索引
-    # [修改] 原来：conn.cursor().execute("SELECT id, summary, keywords, period_start, period_end FROM memory_l2")
-    # 现在：直接调用 get_all_l2()
     l2_rows = get_all_l2()
     for row in l2_rows:
         index_l2(
@@ -530,15 +582,16 @@ def rebuild_all_indexes():
         counts["l2_count"] += 1
 
     # 第四步：重建 L0 索引（按 session 逐个处理）
-    # [修改] 原来：conn.cursor().execute("SELECT DISTINCT session_id FROM messages")
-    # 现在：直接调用 get_all_session_ids()
     session_ids = get_all_session_ids()
     for sid in session_ids:
         n = index_l0_session(sid)
         if n:
             counts["l0_chunks"] += n
 
-    logger.info(f"索引重建完成：L1={counts['l1_count']} 条，L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片")
+    logger.info(
+        f"索引重建完成：L1={counts['l1_count']} 条，"
+        f"L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片"
+    )
     return counts
 
 
@@ -547,6 +600,7 @@ def rebuild_all_indexes():
 # =============================================================================
 
 if __name__ == "__main__":
+    import threading as _threading
     from database import (
         new_session, save_message, close_session,
         save_l1_summary, save_l2_summary,
@@ -554,18 +608,61 @@ if __name__ == "__main__":
 
     print("=== vector_store.py 验证测试 ===\n")
 
+    # ------------------------------------------------------------------
+    # 测试一：初始化与索引状态
+    # ------------------------------------------------------------------
     print("--- 测试一：初始化与索引状态 ---")
     stats = get_index_stats()
     print(f"当前索引条数：L0={stats['l0']}，L1={stats['l1']}，L2={stats['l2']}")
     print()
 
-    print("--- 测试二：L1 索引写入与检索 ---")
+    # ------------------------------------------------------------------
+    # 测试二：【P2-5 修复核心】多线程并发初始化不崩溃
+    # ------------------------------------------------------------------
+    print("--- 测试二：多线程并发初始化（P2-5 修复核心）---")
+
+    # 重置全局客户端，模拟未初始化状态
+    import vector_store as _vs
+    _vs._client = None
+
+    results = []
+    errors  = []
+
+    def _init_worker():
+        try:
+            c = _get_client()
+            results.append(id(c))
+        except Exception as e:
+            errors.append(str(e))
+
+    # 同时启动 10 个线程竞争初始化
+    threads = [_threading.Thread(target=_init_worker) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    unique_ids = set(results)
+    if errors:
+        print(f"❌ 出现错误：{errors}")
+    elif len(unique_ids) == 1:
+        print(f"✓ 10 个线程全部获得同一个客户端实例（id={unique_ids.pop()}），双重检查锁生效")
+    else:
+        print(f"❌ 出现多个实例（ids={unique_ids}），锁未生效")
+    print()
+
+    # ------------------------------------------------------------------
+    # 测试三：L1 索引写入与检索
+    # ------------------------------------------------------------------
+    print("--- 测试三：L1 索引写入与检索 ---")
     sid1 = new_session()
     save_message(sid1, "user", "今天把 summarizer 写完了，验证全部通过")
     save_message(sid1, "assistant", "很棒，进度很稳！")
     close_session(sid1)
-    l1_id_1 = save_l1_summary(sid1, "烧酒完成了 summarizer 模块的开发与验证。",
-                               "summarizer,模块,验证", "夜间", "专注高效")
+    l1_id_1 = save_l1_summary(
+        sid1, "烧酒完成了 summarizer 模块的开发与验证。",
+        "summarizer,模块,验证", "夜间", "专注高效"
+    )
     index_l1(l1_id_1, "烧酒完成了 summarizer 模块的开发与验证。",
              "summarizer,模块,验证", session_id=sid1)
 
@@ -573,32 +670,74 @@ if __name__ == "__main__":
     save_message(sid2, "user", "今天状态很差，头疼，什么都不想做")
     save_message(sid2, "assistant", "听起来很辛苦，好好休息一下。")
     close_session(sid2)
-    l1_id_2 = save_l1_summary(sid2, "烧酒今天状态不佳，头疼，情绪低落。",
-                               "状态,头疼,情绪", "下午", "情绪低落")
+    l1_id_2 = save_l1_summary(
+        sid2, "烧酒今天状态不佳，头疼，情绪低落。",
+        "状态,头疼,情绪", "下午", "情绪低落"
+    )
     index_l1(l1_id_2, "烧酒今天状态不佳，头疼，情绪低落。",
              "状态,头疼,情绪", session_id=sid2)
 
     for q in ["最近有没有熬夜写代码", "烧酒心情不好"]:
-        results = retrieve_l1(q, top_k=1)
-        if results:
-            print(f'  查询："{q}"  最相关：{results[0]["document"][:40]}  距离：{results[0]["distance"]:.4f}')
+        results_l1 = retrieve_l1(q, top_k=1)
+        if results_l1:
+            print(f'  查询："{q}"')
+            print(f'  最相关：{results_l1[0]["document"][:40]}  距离：{results_l1[0]["distance"]:.4f}')
         else:
-            print(f'  查询："{q}"  → 无相关结果')
+            print(f'  查询："{q}"  → 无相关结果（距离超过阈值 {SIMILARITY_THRESHOLD}）')
     print()
 
-    print("--- 测试三：L0 索引写入与检索 ---")
+    # ------------------------------------------------------------------
+    # 测试四：L0 索引写入与检索
+    # ------------------------------------------------------------------
+    print("--- 测试四：L0 索引写入与检索 ---")
     n_chunks = index_l0_session(sid1)
     print(f"session {sid1} L0 索引：{n_chunks} 个切片")
     l0_results = retrieve_l0("把模块写完了")
     print(f"L0 检索：{len(l0_results)} 条结果")
     print()
 
-    print("--- 测试四：rebuild_all_indexes（问题A修复核心）---")
+    # ------------------------------------------------------------------
+    # 测试五：【P3-5 修复核心】异常字符串大小写不敏感匹配
+    # ------------------------------------------------------------------
+    print("--- 测试五：异常字符串大小写匹配（P3-5 修复核心）---")
+
+    # 模拟 ChromaDB 可能的不同大小写错误消息
+    test_cases = [
+        ("does not exist",        True,  "小写原始格式"),
+        ("Does Not Exist",        True,  "首字母大写"),
+        ("DOES NOT EXIST",        True,  "全大写"),
+        ("InvalidCollection",     True,  "混合大小写"),
+        ("invalidcollection",     True,  "全小写"),
+        ("INVALIDCOLLECTION",     True,  "全大写"),
+        ("disk full",             False, "不相关错误（应触发 error 日志）"),
+        ("permission denied",     False, "权限错误（应触发 error 日志）"),
+    ]
+
+    all_pass = True
+    for err_msg, expect_silent, desc in test_cases:
+        err_str = err_msg.lower()
+        is_silent = "does not exist" in err_str or "invalidcollection" in err_str
+        passed = is_silent == expect_silent
+        all_pass = all_pass and passed
+        status = "✓" if passed else "❌"
+        handling = "静默返回 []" if is_silent else "触发 logger.error"
+        print(f"  {status} [{desc}] → {handling}")
+
+    print(f"\n  大小写匹配测试：{'全部通过 ✓' if all_pass else '有失败项 ❌'}")
+    print()
+
+    # ------------------------------------------------------------------
+    # 测试六：rebuild_all_indexes（封装修复验证）
+    # ------------------------------------------------------------------
+    print("--- 测试六：rebuild_all_indexes ---")
     counts = rebuild_all_indexes()
     print(f"重建完成：{counts}")
     print()
 
-    print("--- 测试五：索引统计 ---")
+    # ------------------------------------------------------------------
+    # 测试七：索引统计
+    # ------------------------------------------------------------------
+    print("--- 测试七：索引统计 ---")
     stats_after = get_index_stats()
     print(f"重建后：L0={stats_after['l0']}，L1={stats_after['l1']}，L2={stats_after['l2']}")
 

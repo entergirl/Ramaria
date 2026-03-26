@@ -15,6 +15,13 @@ database.py — 数据库操作层
        修复审查报告问题A：vector_store.rebuild_all_indexes() 原来直接
        import 私有函数 _get_connection 并手写原始 SQL，破坏数据层封装。
        改为通过这三个公开函数访问，彻底消除私有函数外漏。
+  v4 — 新增 update_message_time_for_test()，修复代码优化清单 P1-2：
+       session_manager.py 的 __main__ 测试块原来直接调用私有函数
+       _get_connection() 来篡改消息时间戳，造成封装原则不一致。
+       现在将该操作封装为仅限测试使用的公开函数，测试块改为调用此函数。
+     — get_unabsorbed_l1() 合并重复 SQL，修复代码优化清单 P3-1：
+       原来 limit 有无两段 SQL 字面几乎完全相同，只是末尾 LIMIT 子句不同，
+       违反 DRY 原则。改为条件拼接 SQL，合并为一段。
 
 使用方法（在其他模块里）：
     from database import save_message, get_messages, save_l1_summary, ...
@@ -233,6 +240,41 @@ def get_last_message_time(session_id):
     return row["created_at"] if row else None
 
 
+def update_message_time_for_test(session_id, fake_time_str):
+    """
+    将某 session 所有消息的时间戳改为指定值。
+
+    【v4 新增】修复代码优化清单 P1-2：
+        session_manager.py 的 __main__ 测试块原来直接调用私有函数
+        _get_connection() 来篡改消息时间戳，用于模拟空闲超时场景：
+
+            旧写法（违反封装原则）：
+                conn = database._get_connection()          # ← 直接访问私有函数
+                conn.execute("UPDATE messages SET ...", ...)
+                conn.commit()
+                conn.close()
+
+            新写法（通过公开函数访问）：
+                from database import update_message_time_for_test
+                update_message_time_for_test(sid, fake_time)
+
+    ⚠️  此函数仅限测试使用，不应在正式业务代码中调用。
+        函数名后缀 _for_test 是有意为之的警示标记。
+
+    参数：
+        session_id    — 要修改的 session id
+        fake_time_str — 目标时间戳字符串，ISO 8601 格式，
+                        如 "2026-03-25T10:00:00+00:00"
+    """
+    conn = _get_connection()
+    conn.execute(
+        "UPDATE messages SET created_at = ? WHERE session_id = ?",
+        (fake_time_str, session_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 # =============================================================================
 # memory_l1 表操作
 # =============================================================================
@@ -302,22 +344,20 @@ def get_unabsorbed_l1(limit=None):
 
     用途：
         L2 触发判断 + L2 合并时读取待处理的 L1 列表。
+
+    【v4 修复】代码优化清单 P3-1：合并重复 SQL，消除 DRY 违反。
+ 
     """
     conn = _get_connection()
     cursor = conn.cursor()
+
+    sql    = "SELECT * FROM memory_l1 WHERE absorbed = 0 ORDER BY created_at ASC"
+    params = ()
     if limit:
-        cursor.execute("""
-            SELECT * FROM memory_l1
-            WHERE absorbed = 0
-            ORDER BY created_at ASC
-            LIMIT ?
-        """, (limit,))
-    else:
-        cursor.execute("""
-            SELECT * FROM memory_l1
-            WHERE absorbed = 0
-            ORDER BY created_at ASC
-        """)
+        sql   += " LIMIT ?"
+        params = (limit,)
+
+    cursor.execute(sql, params)
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -330,15 +370,6 @@ def get_all_l1():
     [v3 新增] 修复审查报告问题A：vector_store.rebuild_all_indexes() 原来直接
     import 私有函数 _get_connection 并手写原始 SQL 查询所有 L1，破坏了
     database.py 作为数据层统一出口的封装原则。
-
-    改为通过本函数访问，外部模块无需感知表结构细节：
-      旧写法（vector_store.py）：
-        from database import _get_connection          # 私有函数泄漏
-        conn = _get_connection()
-        conn.cursor().execute("SELECT id, summary, keywords, session_id FROM memory_l1")
-      新写法：
-        from database import get_all_l1
-        rows = get_all_l1()
 
     用途：
         vector_store.rebuild_all_indexes() 重建 L1 向量索引时调用。
@@ -361,8 +392,7 @@ def get_all_l2():
     """
     返回 memory_l2 表中的全部记录（id, summary, keywords, period_start, period_end）。
 
-    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理，消除 vector_store.py
-    对私有函数 _get_connection 的依赖。
+    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理。
 
     用途：
         vector_store.rebuild_all_indexes() 重建 L2 向量索引时调用。
@@ -385,8 +415,7 @@ def get_all_session_ids():
     """
     返回 messages 表中全部去重后的 session_id 列表。
 
-    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理，消除 vector_store.py
-    对私有函数 _get_connection 的依赖。
+    [v3 新增] 修复审查报告问题A：与 get_all_l1() 同理。
 
     用途：
         vector_store.rebuild_all_indexes() 按 session 逐个重建 L0 向量索引时调用。
@@ -789,11 +818,13 @@ def update_profile_field(field, new_content, source_l1_id=None):
     conn = _get_connection()
     cursor = conn.cursor()
 
+    # 先把该字段旧的「当前版本」标记为历史
     cursor.execute("""
         UPDATE user_profile SET is_current = 0
         WHERE field = ? AND is_current = 1
     """, (field,))
 
+    # 再插入新版本，is_current = 1 表示当前生效
     cursor.execute("""
         INSERT INTO user_profile
             (field, content, source_l1_id, status, is_current, updated_at)
@@ -815,38 +846,55 @@ if __name__ == "__main__":
 
     # 1. 新建 session
     sid = new_session()
-    print(f"[1] new_session()              → session id = {sid}")
+    print(f"[1] new_session()                    → session id = {sid}")
 
     # 2. 存两条消息
     mid1 = save_message(sid, "user", "database.py 验证消息")
     mid2 = save_message(sid, "assistant", "收到，数据库读写正常。")
-    print(f"[2] save_message()             → message id = {mid1}, {mid2}")
+    print(f"[2] save_message()                   → message id = {mid1}, {mid2}")
 
     # 3. 读回消息
     msgs = get_messages_as_dicts(sid)
-    print(f"[3] get_messages_as_dicts()    → {len(msgs)} 条消息")
+    print(f"[3] get_messages_as_dicts()          → {len(msgs)} 条消息")
 
     # 4. 写一条 L1 摘要
     l1_id = save_l1_summary(
         session_id=sid, summary="烧酒完成了 database.py 的连通性验证。",
         keywords="数据库,验证,后端", time_period="夜间", atmosphere="专注高效"
     )
-    print(f"[4] save_l1_summary()          → L1 id = {l1_id}")
+    print(f"[4] save_l1_summary()                → L1 id = {l1_id}")
 
     # 5. 按主键查询 L1
     row = get_l1_by_id(l1_id)
-    print(f"[5] get_l1_by_id({l1_id})         → {row['summary'] if row else None}")
-    print(f"    get_l1_by_id(99999)        → {get_l1_by_id(99999)}（应为 None）")
+    print(f"[5] get_l1_by_id({l1_id})               → {row['summary'] if row else None}")
+    print(f"    get_l1_by_id(99999)              → {get_l1_by_id(99999)}（应为 None）")
 
-    # 6. 验证三个新增公开函数（问题A修复核心）
+    # 6. 验证 get_unabsorbed_l1() 的 P3-1 修复：有无 limit 都走同一段 SQL
+    print(f"\n--- P3-1 修复验证：get_unabsorbed_l1() ---")
+    rows_all   = get_unabsorbed_l1()
+    rows_limit = get_unabsorbed_l1(limit=1)
+    print(f"[6] get_unabsorbed_l1()              → {len(rows_all)} 条（全量）")
+    print(f"    get_unabsorbed_l1(limit=1)       → {len(rows_limit)} 条（应为 1）")
+
+    # 7. 验证三个公开函数（v3 问题A修复）
     print(f"\n--- 问题A修复验证 ---")
-    print(f"[6] get_all_l1()               → {len(get_all_l1())} 条")
-    print(f"    get_all_l2()               → {len(get_all_l2())} 条")
-    print(f"    get_all_session_ids()      → {get_all_session_ids()}")
+    print(f"[7] get_all_l1()                     → {len(get_all_l1())} 条")
+    print(f"    get_all_l2()                     → {len(get_all_l2())} 条")
+    print(f"    get_all_session_ids()            → {get_all_session_ids()}")
 
-    # 7. 关闭 session 并读配置
+    # 8. 验证 update_message_time_for_test()（P1-2 修复核心）
+    print(f"\n--- P1-2 修复验证：update_message_time_for_test() ---")
+    from datetime import timedelta
+    fake_time = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+    update_message_time_for_test(sid, fake_time)
+    new_time = get_last_message_time(sid)
+    print(f"[8] update_message_time_for_test()   → 改后最后消息时间 = {new_time[:19]}")
+    assert fake_time[:19] == new_time[:19], "时间戳修改未生效"
+    print(f"    时间戳修改验证通过 ✓")
+
+    # 9. 关闭 session 并读配置
     close_session(sid)
-    print(f"\n[7] close_session()            → ok")
-    print(f"[8] get_setting()              → l1_idle_minutes = {get_setting('l1_idle_minutes', '未找到')}")
+    print(f"\n[9] close_session()                  → ok")
+    print(f"[10] get_setting()                   → l1_idle_minutes = {get_setting('l1_idle_minutes', '未找到')}")
 
     print("\n验证通过。")

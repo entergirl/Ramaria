@@ -61,6 +61,9 @@ from config import (
     LOCAL_MAX_TOKENS_CHAT,
 )
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 工具函数：思考链剥离
@@ -247,19 +250,19 @@ def _call(messages: list[dict], max_tokens: int, caller: str) -> str | None:
         return data["choices"][0]["message"]["content"].strip()
 
     except requests.exceptions.ConnectionError:
-        print(f"[{caller}] 错误：无法连接到本地模型（{LOCAL_API_URL}），请确认服务已启动")
+        logger.error(f"[caller={caller}] 无法连接到本地模型（{LOCAL_API_URL}），请确认服务已启动")
         return None
 
     except requests.exceptions.Timeout:
-        print(f"[{caller}] 错误：请求超时（超过 120 秒），模型响应过慢")
+        logger.error(f"[caller={caller}] 请求超时（超过 120 秒），模型响应过慢")
         return None
 
     except requests.exceptions.HTTPError as e:
-        print(f"[{caller}] 错误：HTTP 请求失败 — {e}")
+        logger.error(f"[caller={caller}] HTTP 请求失败 — {e}")
         return None
 
     except (KeyError, IndexError) as e:
-        print(f"[{caller}] 错误：解析模型响应结构失败 — {e}")
+        logger.error(f"[caller={caller}] 解析模型响应结构失败 — {e}")
         return None
 
 

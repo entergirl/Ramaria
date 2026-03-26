@@ -76,6 +76,9 @@ from config import (
 )
 from database import get_messages
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 内部：Chroma 客户端与 Collection 管理
@@ -94,7 +97,7 @@ def _get_client():
     if _client is None:
         os.makedirs(CHROMA_DIR, exist_ok=True)
         _client = chromadb.PersistentClient(path=CHROMA_DIR)
-        print(f"[vector_store] Chroma 客户端已初始化，索引目录：{CHROMA_DIR}")
+        logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}")
     return _client
 
 
@@ -216,10 +219,10 @@ def index_l1(l1_id, summary, keywords=None, session_id=None):
             documents = [document],
             metadatas = [metadata],
         )
-        print(f"[vector_store] L1 索引写入成功，l1_id={l1_id}")
+        logger.info(f"L1 索引写入成功，l1_id={l1_id}")
 
     except Exception as e:
-        print(f"[vector_store] 警告：L1 索引写入失败，l1_id={l1_id} — {e}")
+        logger.warning(f"L1 索引写入失败，l1_id={l1_id} — {e}")
 
 
 def index_l2(l2_id, summary, keywords=None, period_start=None, period_end=None):
@@ -252,10 +255,10 @@ def index_l2(l2_id, summary, keywords=None, period_start=None, period_end=None):
             documents = [document],
             metadatas = [metadata],
         )
-        print(f"[vector_store] L2 索引写入成功，l2_id={l2_id}")
+        logger.info(f"L2 索引写入成功，l2_id={l2_id}")
 
     except Exception as e:
-        print(f"[vector_store] 警告：L2 索引写入失败，l2_id={l2_id} — {e}")
+        logger.warning(f"L2 索引写入失败，l2_id={l2_id} — {e}")
 
 
 def index_l0_session(session_id):
@@ -274,12 +277,12 @@ def index_l0_session(session_id):
         messages = get_messages(session_id)
 
         if not messages:
-            print(f"[vector_store] session {session_id} 无消息，跳过 L0 索引")
+            logger.debug(f"session {session_id} 无消息，跳过 L0 索引")
             return None
 
         if len(messages) < L0_WINDOW_SIZE:
             # 消息数量不足一个窗口，把所有消息拼成一条整体索引
-            print(f"[vector_store] session {session_id} 消息数({len(messages)}) < 窗口({L0_WINDOW_SIZE})，使用整体索引")
+            logger.debug(f"session {session_id} 消息数({len(messages)}) < 窗口({L0_WINDOW_SIZE})，使用整体索引")
             lines = []
             for msg in messages:
                 role_label = "用户" if msg["role"] == "user" else "助手"
@@ -312,11 +315,11 @@ def index_l0_session(session_id):
             metadatas = [c["metadata"] for c in chunks],
         )
 
-        print(f"[vector_store] L0 索引写入成功，session_id={session_id}，共 {len(chunks)} 个切片")
+        logger.info(f"L0 索引写入成功，session_id={session_id}，共 {len(chunks)} 个切片")
         return len(chunks)
 
     except Exception as e:
-        print(f"[vector_store] 警告：L0 索引写入失败，session_id={session_id} — {e}")
+        logger.warning(f"L0 索引写入失败，session_id={session_id} — {e}")
         return None
 
 
@@ -424,7 +427,7 @@ def _retrieve(collection_name, query_text, top_k, id_field):
     except Exception as e:
         if "does not exist" in str(e) or "InvalidCollection" in str(e):
             return []
-        print(f"[vector_store] 警告：检索失败，collection={collection_name} — {e}")
+        logger.warning(f"检索失败，collection={collection_name} — {e}")
         return []
 
 
@@ -486,14 +489,14 @@ def rebuild_all_indexes():
     # [修改] 从 database 导入三个公开函数，替换原来的私有函数 _get_connection
     from database import get_all_l1, get_all_l2, get_all_session_ids
 
-    print("[vector_store] 开始重建全部向量索引…")
+    logger.info("开始重建全部向量索引…")
     client = _get_client()
 
     # 第一步：删除旧 Collection
     for name in [_COLL_L0, _COLL_L1, _COLL_L2]:
         try:
             client.delete_collection(name)
-            print(f"[vector_store] 已删除旧 Collection：{name}")
+            logger.info(f"已删除旧 Collection：{name}")
         except Exception:
             pass
 
@@ -535,8 +538,7 @@ def rebuild_all_indexes():
         if n:
             counts["l0_chunks"] += n
 
-    print(f"[vector_store] 索引重建完成：L1={counts['l1_count']} 条，"
-          f"L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片")
+    logger.info(f"索引重建完成：L1={counts['l1_count']} 条，L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片")
     return counts
 
 

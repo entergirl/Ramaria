@@ -253,7 +253,7 @@ def save_l1_summary(session_id, summary, keywords, time_period, atmosphere):
     """
     from config import TIME_PERIOD_OPTIONS
     if time_period not in TIME_PERIOD_OPTIONS:
-        print(f"[database] 警告：time_period 值 {time_period!r} 不在合法列表内，已置为 None")
+        logger.warning(f"time_period 值 {time_period!r} 不在合法列表内，已置为 None")
         time_period = None
 
     conn = _get_connection()
@@ -462,7 +462,7 @@ def save_l2_summary(summary, keywords, period_start, period_end, l1_ids):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"[database] 错误：save_l2_summary 事务失败，已回滚 — {e}")
+        logger.error(f"save_l2_summary 事务失败，已回滚 — {e}")
         raise
     finally:
         conn.close()

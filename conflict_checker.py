@@ -66,6 +66,9 @@ from database import (
     update_profile_field,
 )
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 用户画像格式化
@@ -135,7 +138,7 @@ def _parse_conflict_json(raw_text):
     # 第一步：剥离思考链
     stripped = strip_thinking(raw_text)
     if stripped != raw_text.strip():
-        print(f"[conflict_checker] 检测到思考链输出，已自动剥离")
+        logger.debug("检测到思考链输出，已自动剥离")
 
     # 第二步：直接尝试解析
     try:
@@ -143,7 +146,7 @@ def _parse_conflict_json(raw_text):
         if isinstance(result, list):
             return result
         if isinstance(result, dict):
-            print(f"[conflict_checker] 警告：模型返回了对象而非数组，已自动包装")
+            logger.warning("模型返回了对象而非数组，已自动包装")
             return [result]
     except json.JSONDecodeError:
         pass
@@ -158,7 +161,7 @@ def _parse_conflict_json(raw_text):
         except json.JSONDecodeError:
             pass
 
-    print(f"[conflict_checker] 警告：无法解析模型输出\n原始输出：{raw_text[:200]}")
+    logger.warning(f"无法解析模型输出，原始输出：{raw_text[:200]}")
     return None
 
 
@@ -179,11 +182,11 @@ def _validate_conflict_item(item):
 
     for key in ("field", "old_content", "new_content", "conflict_desc"):
         if not str(item.get(key, "")).strip():
-            print(f"[conflict_checker] 警告：冲突条目缺少字段 {key!r}，已丢弃")
+            logger.warning(f"冲突条目缺少字段 {key!r}，已丢弃")
             return False
 
     if item["field"] not in valid_fields:
-        print(f"[conflict_checker] 警告：field 值 {item['field']!r} 不合法，已丢弃")
+        logger.warning(f"field 值 {item['field']!r} 不合法，已丢弃")
         return False
 
     return True
@@ -214,7 +217,7 @@ def check_conflicts(l1_id):
         int  — 本次检测写入的冲突条数（0 表示无冲突或检测跳过）
         None — 模型调用失败时返回 None
     """
-    print(f"[conflict_checker] 开始对 L1 {l1_id} 执行冲突检测")
+    logger.info(f"开始对 L1 {l1_id} 执行冲突检测")
 
     # ------------------------------------------------------------------
     # 第一步：按主键读取这条 L1 的摘要内容
@@ -233,17 +236,17 @@ def check_conflicts(l1_id):
     l1_row = get_l1_by_id(l1_id)
 
     if l1_row is None:
-        print(f"[conflict_checker] 警告：找不到 L1 id={l1_id}，跳过冲突检测")
+        logger.warning(f"找不到 L1 id={l1_id}，跳过冲突检测")
         return 0
 
     l1_summary = l1_row["summary"]
-    print(f"[conflict_checker] 读取 L1 摘要：{l1_summary[:80]}")
+    logger.debug(f"读取 L1 摘要：{l1_summary[:80]}")
 
     # 第二步：读取当前生效的用户画像
     profile_dict = get_current_profile()
 
     if not profile_dict:
-        print(f"[conflict_checker] 用户画像为空，跳过冲突检测（冷启动阶段）")
+        logger.debug("用户画像为空，跳过冲突检测（冷启动阶段）")
         return 0
 
     # 第三步：格式化内容，填入 Prompt
@@ -260,23 +263,23 @@ def check_conflicts(l1_id):
     )
 
     if raw_output is None:
-        print(f"[conflict_checker] 模型调用失败，冲突检测中止")
+        logger.error("模型调用失败，冲突检测中止")
         return None
 
-    print(f"[conflict_checker] 模型原始输出：{raw_output[:200]}")
+    logger.debug(f"模型原始输出：{raw_output[:200]}")
 
     # 第五步：解析冲突列表
     conflicts = _parse_conflict_json(raw_output)
 
     if conflicts is None:
-        print(f"[conflict_checker] 冲突列表解析失败，本次检测结果丢弃")
+        logger.error("冲突列表解析失败，本次检测结果丢弃")
         return 0
 
     if not conflicts:
-        print(f"[conflict_checker] 未检测到冲突")
+        logger.debug("未检测到冲突")
         return 0
 
-    print(f"[conflict_checker] 检测到 {len(conflicts)} 条潜在冲突，开始写入")
+    logger.info(f"检测到 {len(conflicts)} 条潜在冲突，开始写入")
 
     # 第六步：校验并写入每条冲突
     written = 0
@@ -291,10 +294,10 @@ def check_conflicts(l1_id):
             new_content   = item["new_content"].strip(),
             conflict_desc = item["conflict_desc"].strip(),
         )
-        print(f"[conflict_checker] 冲突已写入 id={conflict_id}，field={item['field']}")
+        logger.info(f"冲突已写入 id={conflict_id}，field={item['field']}")
         written += 1
 
-    print(f"[conflict_checker] 本次共写入 {written} 条冲突")
+    logger.info(f"本次共写入 {written} 条冲突")
     return written
 
 
@@ -341,7 +344,7 @@ def handle_conflict_reply(conflict_id, action):
     target = next((c for c in pending if c["id"] == conflict_id), None)
 
     if target is None:
-        print(f"[conflict_checker] 警告：找不到 conflict_id={conflict_id}，可能已处理")
+        logger.warning(f"找不到 conflict_id={conflict_id}，可能已处理")
         return "这条记录好像已经处理过了。"
 
     field_label = _FIELD_LABELS.get(target["field"], target["field"])
@@ -353,16 +356,16 @@ def handle_conflict_reply(conflict_id, action):
             source_l1_id = target["source_l1_id"],
         )
         resolve_conflict(conflict_id)
-        print(f"[conflict_checker] 冲突 {conflict_id} 已 resolve，画像 {target['field']} 已更新")
+        logger.info(f"冲突 {conflict_id} 已 resolve，画像 {target['field']} 已更新")
         return f'好的，我已经把"{field_label}"更新成新的情况了。'
 
     elif action == "ignore":
         ignore_conflict(conflict_id)
-        print(f"[conflict_checker] 冲突 {conflict_id} 已 ignore，画像保持不变")
+        logger.info(f"冲突 {conflict_id} 已 ignore，画像保持不变")
         return f'好的，我会继续记住之前的"{field_label}"，这次的变化先不更新。'
 
     else:
-        print(f"[conflict_checker] 警告：未知 action {action!r}，不做任何操作")
+        logger.warning(f"未知 action {action!r}，不做任何操作")
         return '没有理解你的选择，可以回复"更新"或"忽略"。'
 
 
@@ -392,7 +395,7 @@ if __name__ == "__main__":
     r1 = _parse_conflict_json(mock_conflict)
     print(f"有冲突：{len(r1)} 条（应为 1），field={r1[0]['field']}")
     print(f"无冲突：{_parse_conflict_json('[]')}（应为 []）")
-    mock_think = '<think>分析。</think>\n[{"field":"personal_status","old_content":"压力大","new_content":"压力小","conflict_desc":"变化了？"}]'
+    mock_think = '<think>分析。</think>\\n[{"field":"personal_status","old_content":"压力大","new_content":"压力小","conflict_desc":"变化了？"}]'
     print(f"带思考链：{len(_parse_conflict_json(mock_think))} 条（应为 1）")
     print()
 

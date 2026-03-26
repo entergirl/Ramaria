@@ -74,6 +74,8 @@ from database import (
     get_l1_by_id,           # [修改] 替换旧的 get_latest_l1，直接按主键查询
     update_profile_field,
 )
+from logger import get_logger
+logger = get_logger(__name__)
 
 
 # =============================================================================
@@ -253,7 +255,7 @@ def _parse_extract_json(raw_text):
     # 第二步：剥离思考链后再解析
     stripped = strip_thinking(raw_text)
     if stripped != raw_text.strip():
-        print("[profile_manager] 检测到思考链输出，已自动剥离")
+        logger.debug("检测到思考链输出，已自动剥离")
     try:
         result = json.loads(stripped)
         if isinstance(result, dict):
@@ -271,7 +273,7 @@ def _parse_extract_json(raw_text):
         except json.JSONDecodeError:
             pass
 
-    print(f"[profile_manager] 警告：无法解析模型输出\n原始输出：{raw_text[:200]}")
+    logger.warning(f"无法解析模型输出，原始输出：{raw_text[:200]}")
     return None
 
 
@@ -289,12 +291,12 @@ def _validate_extract_result(result_dict):
 
     for field, content in result_dict.items():
         if field not in VALID_FIELDS:
-            print(f"[profile_manager] 警告：字段名 {field!r} 不合法，已跳过")
+            logger.warning(f"字段名 {field!r} 不合法，已跳过")
             continue
 
         content = str(content).strip()
         if not content:
-            print(f"[profile_manager] 警告：字段 {field} 内容为空，已跳过")
+            logger.warning(f"字段 {field} 内容为空，已跳过")
             continue
 
         validated[field] = content
@@ -331,10 +333,10 @@ def _append_to_profile_field(field, new_content, source_l1_id, profile_dict):
 
     if existing:
         merged_content = f"{existing}；{timestamped_content}"
-        print(f"[profile_manager] 字段 {field} 追加：{timestamped_content[:50]}")
+        logger.info(f"字段 {field} 追加：{timestamped_content[:50]}")
     else:
         merged_content = timestamped_content
-        print(f"[profile_manager] 字段 {field} 新建：{timestamped_content[:50]}")
+        logger.info(f"字段 {field} 新建：{timestamped_content[:50]}")
 
     return update_profile_field(
         field        = field,
@@ -370,7 +372,7 @@ def extract_and_update(l1_id):
         int  — 成功写入的字段数量（0 表示无新信息或跳过）
         None — 模型调用失败时返回 None
     """
-    print(f"[profile_manager] 开始为 L1 {l1_id} 提取画像候选条目")
+    logger.info(f"开始为 L1 {l1_id} 提取画像候选条目")
 
     # ------------------------------------------------------------------
     # Step 1：按主键读取 L1 摘要内容
@@ -388,20 +390,20 @@ def extract_and_update(l1_id):
     l1_row = get_l1_by_id(l1_id)
 
     if l1_row is None:
-        print(f"[profile_manager] 警告：找不到 L1 id={l1_id}，跳过画像提取")
+        logger.warning(f"找不到 L1 id={l1_id}，跳过画像提取")
         return 0
 
     l1_summary = l1_row["summary"]
-    print(f"[profile_manager] 读取 L1 摘要：{l1_summary[:80]}")
+    logger.debug(f"读取 L1 摘要：{l1_summary[:80]}")
 
     # Step 2：读取当前 L3 画像
     profile_dict = get_current_profile()
     is_cold_start = not profile_dict
 
     if is_cold_start:
-        print("[profile_manager] 画像为空，使用冷启动 Prompt")
+        logger.debug("画像为空，使用冷启动 Prompt")
     else:
-        print(f"[profile_manager] 当前画像已有 {len(profile_dict)} 个字段，使用标准 Prompt")
+        logger.debug(f"当前画像已有 {len(profile_dict)} 个字段，使用标准 Prompt")
 
     # Step 3：构建 Prompt，调用本地模型
     if is_cold_start:
@@ -415,33 +417,33 @@ def extract_and_update(l1_id):
 
     raw_output = call_local_summary(
         messages=[{"role": "user", "content": prompt}],
-        caller="merger",
+        caller="profile_manager",
     )
 
     if raw_output is None:
-        print("[profile_manager] 模型调用失败，画像提取中止")
+        logger.error("模型调用失败，画像提取中止")
         return None
 
-    print(f"[profile_manager] 模型原始输出：{raw_output[:200]}")
+    logger.debug(f"模型原始输出：{raw_output[:200]}")
 
     # Step 4：解析并校验模型输出
     result = _parse_extract_json(raw_output)
 
     if result is None:
-        print("[profile_manager] 解析失败，本次画像提取跳过")
+        logger.error("解析失败，本次画像提取跳过")
         return 0
 
     if not result:
-        print("[profile_manager] L1 中无新画像信息，画像保持不变")
+        logger.debug("L1 中无新画像信息，画像保持不变")
         return 0
 
     validated = _validate_extract_result(result)
 
     if not validated:
-        print("[profile_manager] 校验后无合法条目，画像保持不变")
+        logger.debug("校验后无合法条目，画像保持不变")
         return 0
 
-    print(f"[profile_manager] 提取到 {len(validated)} 条新信息，开始写入")
+    logger.info(f"提取到 {len(validated)} 条新信息，开始写入")
 
     # Step 5：逐字段写入
     written = 0
@@ -455,9 +457,9 @@ def extract_and_update(l1_id):
             )
             written += 1
         except Exception as e:
-            print(f"[profile_manager] 警告：字段 {field} 写入失败 — {e}")
+            logger.warning(f"字段 {field} 写入失败 — {e}")
 
-    print(f"[profile_manager] 画像更新完成，共写入 {written} 个字段")
+    logger.info(f"画像更新完成，共写入 {written} 个字段")
     return written
 
 

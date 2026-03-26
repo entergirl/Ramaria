@@ -56,6 +56,9 @@ from database import (
     get_setting,
 )
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 触发条件检查
@@ -95,7 +98,7 @@ def _should_trigger(l1_rows):
     try:
         earliest_time = datetime.fromisoformat(earliest_time_str)
     except ValueError:
-        print(f"[merger] 警告：L1 时间戳格式异常：{earliest_time_str}，跳过时间触发检查")
+        logger.warning(f"L1 时间戳格式异常：{earliest_time_str}，跳过时间触发检查")
         return False, "时间格式异常，跳过"
 
     now = datetime.now(timezone.utc)
@@ -168,7 +171,7 @@ def _parse_l2_json(raw_text):
 
     # 如果内容有变化，说明确实存在思考链，打印提示方便排查
     if stripped != raw_text.strip():
-        print(f"[merger] 检测到思考链输出，已自动剥离")
+        logger.debug("检测到思考链输出，已自动剥离")
 
     # ──────────────────────────────────────────
     # 第一步：直接尝试解析剥离后的文本
@@ -190,7 +193,7 @@ def _parse_l2_json(raw_text):
         except json.JSONDecodeError:
             pass
 
-    print(f"[merger] 警告：无法从模型输出中解析 JSON\n原始输出：{raw_text[:200]}")
+    logger.warning(f"无法从模型输出中解析 JSON，原始输出：{raw_text[:200]}")
     return None
 
 
@@ -264,17 +267,17 @@ def check_and_merge():
         int  — 成功时返回新写入的 L2 记录 id
         None — 未触发或任何步骤失败时返回 None
     """
-    print("[merger] 开始检查 L2 合并触发条件")
+    logger.debug("开始检查 L2 合并触发条件")
 
     # 第一步：读取所有未吸收 L1
     l1_rows = get_unabsorbed_l1()
     should_trigger, reason = _should_trigger(l1_rows)
-    print(f"[merger] 触发判断：{reason}")
+    logger.debug(f"触发判断：{reason}")
 
     if not should_trigger:
         return None
 
-    print(f"[merger] 触发 L2 合并，共 {len(l1_rows)} 条 L1 待合并")
+    logger.info(f"触发 L2 合并，共 {len(l1_rows)} 条 L1 待合并")
 
     # 第二步：格式化 L1 内容，填入 Prompt
     l1_text = _format_l1_list(l1_rows)
@@ -286,16 +289,16 @@ def check_and_merge():
         caller="merger",
     )
     if raw_output is None:
-        print("[merger] 模型调用失败，L2 合并中止")
+        logger.error("模型调用失败，L2 合并中止")
         return None
 
-    print(f"[merger] 模型原始输出：{raw_output[:200]}")
+    logger.debug(f"模型原始输出：{raw_output[:200]}")
 
     # 第四步：解析 JSON（已包含思考链剥离）
     parsed = _parse_l2_json(raw_output)
     if parsed is None:
         # JSON 解析彻底失败，写入降级摘要，不丢失这批 L1 的合并记录
-        print("[merger] JSON 解析失败，写入降级 L2 摘要")
+        logger.error("JSON 解析失败，写入降级 L2 摘要")
         parsed = {
             "summary":  f"（自动合并失败，原始输出已记录）{raw_output[:100]}",
             "keywords": None,
@@ -319,11 +322,8 @@ def check_and_merge():
     # 第七步：批量标记 L1 为已吸收
     mark_l1_absorbed(l1_ids)
 
-    print(f"[merger] L2 摘要已写入，id = {l2_id}")
-    print(f"  summary  : {validated['summary']}")
-    print(f"  keywords : {validated['keywords']}")
-    print(f"  覆盖时间 : {period_start[:10]} ~ {period_end[:10]}")
-    print(f"  吸收 L1  : {l1_ids}")
+    logger.info(f"L2 摘要已写入，id = {l2_id}")
+    logger.debug(f"summary={validated['summary']} | keywords={validated['keywords']} | 覆盖时间={period_start[:10]}~{period_end[:10]} | 吸收L1={l1_ids}")
 
     # 第八步：写入 L2 向量索引
     try:
@@ -336,7 +336,7 @@ def check_and_merge():
             period_end   = period_end,
         )
     except Exception as e:
-        print(f"[merger] 警告：L2 向量索引写入失败 — {e}")
+        logger.warning(f"L2 向量索引写入失败 — {e}")
 
     return l2_id
 

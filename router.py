@@ -69,6 +69,8 @@ from config import (
     CLAUDE_MAX_TOKENS,
     CLAUDE_TEMPERATURE,
 )
+from logger import get_logger
+logger = get_logger(__name__)
 
 
 # =============================================================================
@@ -191,7 +193,7 @@ class Router:
         self._api_enabled = enabled
         if not enabled:
             self._reset()
-        print(f"[router] 线上 API {'开启' if enabled else '关闭'}")
+        logger.info(f"线上 API {'开启' if enabled else '关闭'}")
 
     def force_online(self):
         """
@@ -214,7 +216,7 @@ class Router:
         self._pending_message   = "__FORCE_ONLINE__"
         self._force_online_time = datetime.now(timezone.utc)   # [新增] 记录触发时刻
 
-        print(f"[router] 手动切换到线上模式，超时阈值 {FORCE_ONLINE_TIMEOUT_MINUTES} 分钟")
+        logger.info(f"手动切换到线上模式，超时阈值 {FORCE_ONLINE_TIMEOUT_MINUTES} 分钟")
         return "好，下一条消息我会用线上 API 处理。"
 
     # -------------------------------------------------------------------------
@@ -254,7 +256,7 @@ class Router:
             self._pending_message  = message
             self._waiting_confirm  = True
             self._force_online_time = datetime.now(timezone.utc)   # 自动触发也记录时刻
-            print(f"[router] 自动检测触发，等待用户确认")
+            logger.info("自动检测触发，等待用户确认")
             return {
                 "action":  "ask_confirm",
                 "text":    CONFIRM_ASK_TEXT,
@@ -283,7 +285,7 @@ class Router:
             str — Claude 的回复文本
             str — 调用失败时返回括号包裹的错误信息
         """
-        print(f"[router] 调用 Claude API，消息长度={len(message)}")
+        logger.info(f"调用 Claude API，消息长度={len(message)}")
 
         system_prompt = (
             "你是一个专业、精准的 AI 助手。"
@@ -314,7 +316,7 @@ class Router:
             response.raise_for_status()
             data  = response.json()
             reply = data["content"][0]["text"].strip()
-            print(f"[router] Claude 回复成功，长度={len(reply)}")
+            logger.info(f"Claude 回复成功，长度={len(reply)}")
             return reply
 
         except requests.exceptions.ConnectionError:
@@ -344,13 +346,13 @@ class Router:
           2. 包含触发关键词（不区分大小写）
         """
         if "```" in message:
-            print("[router] 检测到代码块，触发确认")
+            logger.debug("检测到代码块，触发确认")
             return True
 
         message_lower = message.lower()
         for kw in TRIGGER_KEYWORDS:
             if kw in message_lower:
-                print(f"[router] 检测到关键词 [{kw}]，触发确认")
+                logger.debug(f"检测到关键词 [{kw}]，触发确认")
                 return True
 
         return False
@@ -381,8 +383,8 @@ class Router:
             elapsed = (now - self._force_online_time).total_seconds() / 60
 
             if elapsed >= FORCE_ONLINE_TIMEOUT_MINUTES:
-                print(
-                    f"[router] force_online 已超时（{elapsed:.1f} 分钟 >= "
+                logger.warning(
+                    f"force_online 已超时（{elapsed:.1f} 分钟 >= "
                     f"{FORCE_ONLINE_TIMEOUT_MINUTES} 分钟），自动 reset 回本地模式"
                 )
                 self._reset()
@@ -402,18 +404,18 @@ class Router:
 
         # 用户确认
         if message_lower in CONFIRM_YES_KEYWORDS:
-            print("[router] 用户确认，走 Claude API")
+            logger.info("用户确认，走 Claude API")
             self._reset()
             return {"action": "confirm_yes", "message": cached}
 
         # 用户拒绝
         if message_lower in CONFIRM_NO_KEYWORDS:
-            print("[router] 用户拒绝，走本地 Qwen")
+            logger.info("用户拒绝，走本地 Qwen")
             self._reset()
             return {"action": "confirm_no", "message": cached}
 
         # 用户说了其他话（既不是确认也不是拒绝），视为取消
-        print(f"[router] 未识别的确认回复，清除等待状态，按正常消息处理")
+        logger.debug("未识别的确认回复，清除等待状态，按正常消息处理")
         self._reset()
         return {"action": "local", "message": message}
 

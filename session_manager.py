@@ -45,6 +45,9 @@ from database import (
     get_last_message_time,
 )
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # L1 摘要触发函数
@@ -58,7 +61,7 @@ def trigger_l1_summary(session_id):
     参数：
         session_id — 需要生成摘要的 session id
     """
-    print(f"[session_manager] 触发 session {session_id} 的 L1 摘要生成")
+    logger.info(f"触发 session {session_id} 的 L1 摘要生成")
     generate_l1_summary(session_id)
 
 
@@ -107,7 +110,7 @@ class SessionManager:
         self._recover_active_sessions()
         self._start_idle_checker()
         self._start_l2_checker()
-        print("[session_manager] 已启动，线程A（空闲检测）+ 线程B（L2 定时检查）均运行中")
+        logger.info("已启动，线程A（空闲检测）+ 线程B（L2 定时检查）均运行中")
 
     def stop(self):
         """
@@ -125,7 +128,7 @@ class SessionManager:
         if self._l2_checker_thread and self._l2_checker_thread.is_alive():
             self._l2_checker_thread.join(timeout=L2_CHECK_INTERVAL_SECONDS + 1)
 
-        print("[session_manager] 已停止")
+        logger.info("已停止")
 
     def on_message(self):
         """
@@ -145,7 +148,7 @@ class SessionManager:
         with self._lock:
             if self._current_session_id is None:
                 self._current_session_id = new_session()
-                print(f"[session_manager] 新建 session，id = {self._current_session_id}")
+                logger.info(f"新建 session，id = {self._current_session_id}")
             return self._current_session_id
 
     def get_current_session_id(self):
@@ -166,7 +169,7 @@ class SessionManager:
         with self._lock:
             sid = self._current_session_id
             if sid is None:
-                print("[session_manager] 没有活跃 session，无需关闭")
+                logger.debug("没有活跃 session，无需关闭")
                 return
             self._close_and_summarize(sid)
             self._current_session_id = None
@@ -187,20 +190,20 @@ class SessionManager:
         active = get_active_sessions()
 
         if len(active) == 0:
-            print("[session_manager] 启动检查：无遗留 session")
+            logger.debug("启动检查：无遗留 session")
 
         elif len(active) == 1:
             sid = active[0]["id"]
             self._current_session_id = sid
-            print(f"[session_manager] 启动检查：恢复遗留 session，id = {sid}")
+            logger.info(f"启动检查：恢复遗留 session，id = {sid}")
 
         else:
-            print(f"[session_manager] 启动检查：发现 {len(active)} 个未关闭 session，全部关闭")
+            logger.warning(f"启动检查：发现 {len(active)} 个未关闭 session，全部关闭")
             for s in active:
                 sid = s["id"]
                 close_session(sid)
                 trigger_l1_summary(sid)
-                print(f"[session_manager] 已关闭遗留 session {sid}")
+                logger.info(f"已关闭遗留 session {sid}")
 
     def _start_idle_checker(self):
         """
@@ -233,7 +236,7 @@ class SessionManager:
         """
         线程A主循环：每隔 IDLE_CHECK_INTERVAL_SECONDS 秒执行一次空闲检测。
         """
-        print(f"[session_manager] 线程A（空闲检测）启动，轮询间隔 {IDLE_CHECK_INTERVAL_SECONDS} 秒")
+        logger.debug(f"线程A（空闲检测）启动，轮询间隔 {IDLE_CHECK_INTERVAL_SECONDS} 秒")
 
         while not self._stop_event.is_set():
             self._stop_event.wait(timeout=IDLE_CHECK_INTERVAL_SECONDS)
@@ -241,7 +244,7 @@ class SessionManager:
                 break
             self._check_idle_timeout()
 
-        print("[session_manager] 线程A（空闲检测）已退出")
+        logger.debug("线程A（空闲检测）已退出")
 
     def _check_idle_timeout(self):
         """
@@ -267,10 +270,10 @@ class SessionManager:
         now          = datetime.now(timezone.utc)
         idle_minutes = (now - last_time).total_seconds() / 60
 
-        print(f"[session_manager] 检测 session {sid}，已空闲 {idle_minutes:.1f} 分钟")
+        logger.debug(f"检测 session {sid}，已空闲 {idle_minutes:.1f} 分钟")
 
         if idle_minutes >= L1_IDLE_MINUTES:
-            print(f"[session_manager] session {sid} 空闲超时（{idle_minutes:.1f} 分钟），触发关闭")
+            logger.info(f"session {sid} 空闲超时（{idle_minutes:.1f} 分钟），触发关闭")
             with self._lock:
                 # 二次确认：避免拿到锁之前 session 已被其他路径关闭
                 if self._current_session_id == sid:
@@ -286,7 +289,7 @@ class SessionManager:
         线程B主循环：每隔 L2_CHECK_INTERVAL_SECONDS 秒执行一次 L2 触发检查。
         这是 L2 合并的路径B（时间触发），负责检查"最早 L1 距今 ≥ 7天"的条件。
         """
-        print(f"[session_manager] 线程B（L2 定时检查）启动，轮询间隔 {L2_CHECK_INTERVAL_SECONDS} 秒")
+        logger.debug(f"线程B（L2 定时检查）启动，轮询间隔 {L2_CHECK_INTERVAL_SECONDS} 秒")
 
         while not self._stop_event.is_set():
             self._stop_event.wait(timeout=L2_CHECK_INTERVAL_SECONDS)
@@ -294,7 +297,7 @@ class SessionManager:
                 break
             self._trigger_l2_check()
 
-        print("[session_manager] 线程B（L2 定时检查）已退出")
+        logger.debug("线程B（L2 定时检查）已退出")
 
     def _trigger_l2_check(self):
         """
@@ -303,12 +306,12 @@ class SessionManager:
 
         使用懒加载 import 避免循环依赖。
         """
-        print("[session_manager] 线程B 触发 L2 定时检查")
+        logger.debug("线程B 触发 L2 定时检查")
         try:
             from merger import check_and_merge
             check_and_merge()
         except Exception as e:
-            print(f"[session_manager] 警告：L2 定时检查出现异常 — {e}")
+            logger.warning(f"L2 定时检查出现异常 — {e}")
 
     # -------------------------------------------------------------------------
     # 内部方法 — 关闭 session 并触发摘要
@@ -332,7 +335,7 @@ class SessionManager:
             调用此函数前必须已持有 self._lock，或在单线程环境中调用。
         """
         close_session(session_id)
-        print(f"[session_manager] session {session_id} 已关闭")
+        logger.info(f"session {session_id} 已关闭")
 
         # L0 向量索引：对原始消息做滑动窗口切片写入 Chroma
         # 放在 L1 摘要生成之前，确保 L0 层先就位
@@ -341,7 +344,7 @@ class SessionManager:
             from vector_store import index_l0_session
             index_l0_session(session_id)
         except Exception as e:
-            print(f"[session_manager] 警告：L0 向量索引写入失败，session_id={session_id} — {e}")
+            logger.warning(f"L0 向量索引写入失败，session_id={session_id} — {e}")
 
         # L1 摘要生成（summarizer 内部会继续触发 L1 索引写入和 L2 条数检查）
         trigger_l1_summary(session_id)

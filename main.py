@@ -60,6 +60,9 @@ from session_manager import SessionManager
 from conflict_checker import get_conflict_question, handle_conflict_reply
 from router import Router
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 静态文件路径
@@ -90,13 +93,13 @@ router          = Router()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("[main] 应用启动中…")
+    logger.info("应用启动中…")
     session_manager.start()
-    print("[main] 就绪，访问 http://localhost:8000")
+    logger.info("就绪，访问 http://localhost:8000")
     yield
-    print("[main] 关闭中…")
+    logger.info("关闭中…")
     session_manager.stop()
-    print("[main] 已停止")
+    logger.info("已停止")
 
 
 app = FastAPI(

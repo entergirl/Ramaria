@@ -62,6 +62,9 @@ from database import (
     upsert_keywords,
 )
 
+from logger import get_logger
+logger = get_logger(__name__)
+
 
 # =============================================================================
 # 词典注入参数
@@ -128,7 +131,7 @@ def _get_keyword_candidates():
         return "，".join(candidates)
 
     except Exception as e:
-        print(f"[summarizer] 警告：读取关键词词典失败，将使用无候选词版 Prompt — {e}")
+        logger.warning(f"读取关键词词典失败，将使用无候选词版 Prompt — {e}")
         return ""
 
 
@@ -179,7 +182,7 @@ def _parse_summary_json(raw_text):
     # 第二步：剥离思考链后再次解析
     stripped = strip_thinking(raw_text)
     if stripped != raw_text:
-        print(f"[summarizer] 检测到思考链输出，已自动剥离，重新解析")
+        logger.debug("检测到思考链输出，已自动剥离，重新解析")
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
@@ -193,7 +196,7 @@ def _parse_summary_json(raw_text):
         except json.JSONDecodeError:
             pass
 
-    print(f"[summarizer] 警告：无法从模型输出中解析 JSON\n原始输出：{raw_text[:200]}")
+    logger.warning(f"无法从模型输出中解析 JSON，原始输出：{raw_text[:200]}")
     return None
 
 
@@ -222,12 +225,12 @@ def _validate_and_fix(parsed):
     tp = str(parsed.get("time_period", "")).strip()
     result["time_period"] = tp if tp in TIME_PERIOD_OPTIONS else None
     if result["time_period"] is None and tp:
-        print(f"[summarizer] 警告：time_period 值 {tp!r} 不合法，已置为 None")
+        logger.warning(f"time_period 值 {tp!r} 不合法，已置为 None")
 
     # atmosphere：四字以内，超长时截断
     atm = str(parsed.get("atmosphere", "")).strip()
     if len(atm) > 4:
-        print(f"[summarizer] 警告：atmosphere 值 {atm!r} 超过四字，已截断")
+        logger.warning(f"atmosphere 值 {atm!r} 超过四字，已截断")
         atm = atm[:4]
     result["atmosphere"] = atm if atm else None
 
@@ -263,24 +266,24 @@ def generate_l1_summary(session_id):
         int  — 成功时返回新写入的 L1 记录 id
         None — 任何步骤失败时返回 None（不抛出异常，不阻断主流程）
     """
-    print(f"[summarizer] 开始为 session {session_id} 生成 L1 摘要")
+    logger.info(f"开始为 session {session_id} 生成 L1 摘要")
 
     # 第一步：读取消息
     messages = get_messages(session_id)
 
     if not messages:
-        print(f"[summarizer] session {session_id} 没有消息，跳过摘要生成")
+        logger.debug(f"session {session_id} 没有消息，跳过摘要生成")
         return None
 
-    print(f"[summarizer] 读取到 {len(messages)} 条消息")
+    logger.debug(f"读取到 {len(messages)} 条消息")
 
     # 第二步：读取关键词候选列表
     keyword_candidates = _get_keyword_candidates()
 
     if keyword_candidates:
-        print(f"[summarizer] 词典候选词已注入（共 {len(keyword_candidates.split('，'))} 个）")
+        logger.debug(f"词典候选词已注入（共 {len(keyword_candidates.split('，'))} 个）")
     else:
-        print(f"[summarizer] 词典为空（冷启动阶段），使用基础 Prompt")
+        logger.debug("词典为空（冷启动阶段），使用基础 Prompt")
 
     # 第三步：格式化对话文本，选择 Prompt 模板
     conversation_text = _format_conversation(messages)
@@ -302,16 +305,16 @@ def generate_l1_summary(session_id):
     )
 
     if raw_output is None:
-        print(f"[summarizer] 模型调用失败，session {session_id} 摘要生成中止")
+        logger.error(f"模型调用失败，session {session_id} 摘要生成中止")
         return None
 
-    print(f"[summarizer] 模型原始输出：{raw_output[:200]}")
+    logger.debug(f"模型原始输出：{raw_output[:200]}")
 
     # 第五步：解析 JSON
     parsed = _parse_summary_json(raw_output)
 
     if parsed is None:
-        print(f"[summarizer] JSON 解析失败，写入降级摘要")
+        logger.error("JSON 解析失败，写入降级摘要")
         l1_id = save_l1_summary(
             session_id  = session_id,
             summary     = f"（自动摘要失败，原始输出已记录）{raw_output[:100]}",
@@ -332,20 +335,17 @@ def generate_l1_summary(session_id):
         atmosphere  = validated["atmosphere"],
     )
 
-    print(f"[summarizer] L1 摘要已写入，id = {l1_id}")
-    print(f"  summary     : {validated['summary']}")
-    print(f"  keywords    : {validated['keywords']}")
-    print(f"  time_period : {validated['time_period']}")
-    print(f"  atmosphere  : {validated['atmosphere']}")
+    logger.info(f"L1 摘要已写入，id = {l1_id}")
+    logger.debug(f"summary={validated['summary']} | keywords={validated['keywords']} | time_period={validated['time_period']} | atmosphere={validated['atmosphere']}")
 
     # 第七步：将本次关键词写回 keyword_pool 词典
     if validated["keywords"]:
         try:
             kw_list = _extract_keywords_list(validated["keywords"])
             upsert_keywords(kw_list)
-            print(f"[summarizer] 关键词已写回词典：{kw_list}")
+            logger.debug(f"关键词已写回词典：{kw_list}")
         except Exception as e:
-            print(f"[summarizer] 警告：关键词写回词典失败 — {e}")
+            logger.warning(f"关键词写回词典失败 — {e}")
 
     # 第八步：将 L1 摘要写入向量索引
     try:
@@ -357,7 +357,7 @@ def generate_l1_summary(session_id):
             session_id = session_id,
         )
     except Exception as e:
-        print(f"[summarizer] 警告：L1 向量索引写入失败 — {e}")
+        logger.warning(f"L1 向量索引写入失败 — {e}")
 
     # ------------------------------------------------------------------
     # 第九步：提取新信息，静默写入 L3 用户画像
@@ -371,7 +371,7 @@ def generate_l1_summary(session_id):
         from profile_manager import extract_and_update
         extract_and_update(l1_id)
     except Exception as e:
-        print(f"[summarizer] 警告：画像提取时出现异常 — {e}")
+        logger.warning(f"画像提取时出现异常 — {e}")
 
     # ------------------------------------------------------------------
     # 第十步：触发冲突检测
@@ -386,7 +386,7 @@ def generate_l1_summary(session_id):
         from conflict_checker import check_conflicts
         check_conflicts(l1_id)
     except Exception as e:
-        print(f"[summarizer] 警告：冲突检测时出现异常 — {e}")
+        logger.warning(f"冲突检测时出现异常 — {e}")
 
     # ------------------------------------------------------------------
     # 第十一步：触发路径A — L1 写入后立即检查是否需要触发 L2 合并（条数触发）
@@ -397,7 +397,7 @@ def generate_l1_summary(session_id):
         from merger import check_and_merge
         check_and_merge()
     except Exception as e:
-        print(f"[summarizer] 警告：L2 合并检查时出现异常 — {e}")
+        logger.warning(f"L2 合并检查时出现异常 — {e}")
 
     return l1_id
 
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     validated3 = _validate_and_fix(result3)
     print(f"time_period 不合法：{validated3['time_period']}（应为 None）")
 
-    mock_think = '<think>分析请求。</think>\n{"summary":"烧酒完成了验证。","keywords":"验证","time_period":"夜间","atmosphere":"专注高效"}'
+    mock_think = '<think>分析请求。</think>\\n{"summary":"烧酒完成了验证。","keywords":"验证","time_period":"夜间","atmosphere":"专注高效"}'
     result5 = _parse_summary_json(mock_think)
     print(f"思考链剥离：summary={result5['summary'] if result5 else None}（应正常解析）")
     print()

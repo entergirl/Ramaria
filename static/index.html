@@ -2,863 +2,173 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!--
+    视口配置说明：
+    · width=device-width：使用设备实际宽度，不缩放
+    · initial-scale=1.0：初始缩放比例 1:1
+    · maximum-scale=1.0, user-scalable=no：禁止用户手动缩放，
+      防止双击/捏合导致布局错乱（移动端聊天应用的常见做法）
+    · viewport-fit=cover：适配 iPhone 的刘海/安全区域（iOS 11+）
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+  <!-- PWA 相关 meta，让页面在移动端"添加到主屏幕"时表现更像原生 App -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="珊瑚菌">
+  <meta name="theme-color" content="#f7f4ef">
+
   <title>珊瑚菌 · 个人 AI 陪伴助手</title>
 
   <!--
-    字体：Noto Serif SC
-    从 Google Fonts 加载，需要联网。
-    如需离线使用，可以把字体文件下载到 static/ 目录，
-    改成 @font-face 本地引用。
+    字体加载策略：
+    1. preconnect：提前与 Google Fonts 建立连接，减少 DNS + TCP 延迟
+    2. 主字体 link：实际加载 Noto Serif SC（300/400/500 三个字重）
+    如需离线使用，将字体文件下载到 static/fonts/ 并在 variables.css 中
+    改为 @font-face 本地引用，同时删除这两个 link 标签。
   -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
 
-  <style>
-    /* ================================================================
-       全局重置
-       ================================================================ */
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    /* ================================================================
-       CSS 变量（主题色板）
-       需要调整配色时只改这里，下方所有样式自动跟随。
-       ================================================================ */
-    :root {
-      --bg:           #f7f4ef;   /* 页面背景，米白色 */
-      --surface:      #ffffff;   /* 卡片/气泡背景，纯白 */
-      --surface-alt:  #fdf8f3;   /* 用户气泡背景，浅暖白 */
-      --border:       #e8e0d4;   /* 普通边框 */
-      --border-light: #ede7dd;   /* 浅边框 */
-      --text:         #2d2720;   /* 主文字，深棕 */
-      --text-mid:     #7a6e63;   /* 次级文字 */
-      --text-dim:     #b0a89e;   /* 弱化文字，时间戳/标签等 */
-      --coral:        #c97c5a;   /* 品牌主色，珊瑚橙 */
-      --coral-light:  #e8c4b0;   /* 品牌主色浅版，用于边框/高亮 */
-      --coral-dim:    #d4956f;   /* 品牌主色深版，hover 状态 */
-      --dot-local:    #7cad7c;   /* 本地模式状态点，绿色 */
-      --dot-online:   #c97c5a;   /* 线上模式状态点，珊瑚色 */
-      --dot-pending:  #7fafd4;   /* 等待确认状态点，蓝色 */
-      --font-title:   'Noto Serif SC', Georgia, serif;
-      --font-body:    'Noto Serif SC', Georgia, serif;
-      --font-mono:    'SFMono-Regular', 'Consolas', monospace;
-      --radius:       16px;      /* 气泡圆角 */
-      --radius-sm:    8px;       /* 按钮圆角 */
-    }
-
-    html, body {
-      height: 100%;
-    }
-
-    body {
-      background: var(--bg);
-      /* 细腻的纸张噪点纹理，纯 CSS SVG 实现，不依赖外部图片 */
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-      color: var(--text);
-      font-family: var(--font-body);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 0 16px;
-    }
-
-    /* ================================================================
-       顶部导航栏
-       position: sticky 让它在滚动时始终固定在顶部。
-       ================================================================ */
-    header {
-      width: 100%;
-      max-width: 740px;
-      padding: 16px 0 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      background: var(--bg);
-      z-index: 10;               /* 确保浮在消息气泡上方 */
-    }
-
-    /* 标题区：项目名 + 副标题 */
-    .header-title {
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-      flex-shrink: 0;
-    }
-
-    .title-main {
-      font-family: var(--font-title);
-      font-size: .98rem;
-      font-weight: 500;
-      color: var(--coral);
-      letter-spacing: .06em;
-      line-height: 1;
-    }
-
-    .title-sub {
-      font-size: .62rem;
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-      letter-spacing: .05em;
-    }
-
-    /* session 编号标签 */
-    #session-label {
-      font-size: .66rem;
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-      background: var(--border-light);
-      padding: 2px 8px;
-      border-radius: 20px;
-      flex-shrink: 0;
-    }
-
-    /* 右侧控件区（模式徽章 + toggle + 保存按钮） */
-    #controls {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 9px;
-    }
-
-    /* ================================================================
-       模式状态徽章（本地 / 线上 / 等待确认）
-       ================================================================ */
-    #mode-badge {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: .66rem;
-      font-family: var(--font-mono);
-      color: var(--text-mid);
-      flex-shrink: 0;
-    }
-
-    /* 状态指示圆点 */
-    #mode-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--dot-local);   /* 默认绿色（本地模式） */
-      transition: background .4s;
-      flex-shrink: 0;
-    }
-
-    #mode-dot.online  { background: var(--dot-online); }
-    #mode-dot.pending { background: var(--dot-pending); animation: blink 1.4s ease-in-out infinite; }
-
-    /* 等待确认时圆点闪烁 */
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: .2; }
-    }
-
-    /* 分隔竖线 */
-    .sep {
-      width: 1px;
-      height: 14px;
-      background: var(--border);
-      flex-shrink: 0;
-    }
-
-    /* ================================================================
-       线上模式 Toggle 开关
-       用纯 CSS checkbox 实现，不依赖任何 JS 库。
-       ================================================================ */
-    .toggle-wrap {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .toggle-label-text {
-      font-size: .66rem;
-      font-family: var(--font-mono);
-      color: var(--text-mid);
-      white-space: nowrap;
-    }
-
-    /* 隐藏原生 checkbox，完全由 .toggle-track 的伪元素呈现 */
-    .toggle-input { display: none; }
-
-    .toggle-track {
-      position: relative;
-      width: 34px;
-      height: 18px;
-      border-radius: 9px;
-      background: var(--border);
-      transition: background .25s;
-      flex-shrink: 0;
-    }
-
-    /* 滑块圆点 */
-    .toggle-track::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      transition: transform .25s, background .25s;
-    }
-
-    /* checkbox 选中时：轨道变浅珊瑚色，圆点滑到右侧 */
-    .toggle-input:checked + .toggle-track              { background: var(--coral-light); }
-    .toggle-input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--coral); }
-
-    /* 保存对话按钮 */
-    #save-btn {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--text-mid);
-      font-size: .66rem;
-      font-family: var(--font-mono);
-      padding: 3px 10px;
-      border-radius: 20px;
-      cursor: pointer;
-      white-space: nowrap;
-      flex-shrink: 0;
-      transition: border-color .2s, color .2s, background .2s;
-    }
-
-    #save-btn:hover {
-      border-color: var(--coral-light);
-      color: var(--coral);
-      background: rgba(201, 124, 90, .06);
-    }
-
-    /* ================================================================
-       消息列表区
-       flex-direction: column 让消息从上到下堆叠，
-       overflow-y: auto 让它独立滚动（不是整个页面滚动）。
-       ================================================================ */
-    #messages {
-      width: 100%;
-      max-width: 740px;
-      flex: 1;                   /* 占据 header 和 input-area 之间的全部剩余空间 */
-      overflow-y: auto;
-      padding: 26px 0 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-
-    /* ================================================================
-       消息气泡
-       ================================================================ */
-    .msg {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      animation: rise .2s ease both;   /* 新消息出现时的上浮动画 */
-    }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(5px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    /* 发言方标签（"你" / "助手"） */
-    .msg-label {
-      font-size: .63rem;
-      font-family: var(--font-mono);
-      color: var(--text-dim);
-      letter-spacing: .05em;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    /* 用户消息：标签和气泡右对齐 */
-    .msg.user .msg-label { justify-content: flex-end; color: var(--coral-light); }
-
-    /* Claude API 标签（线上模式回复时显示） */
-    .tag-online {
-      font-size: .58rem;
-      color: var(--coral);
-      border: 1px solid var(--coral-light);
-      border-radius: 3px;
-      padding: 0 3px;
-      line-height: 1.5;
-    }
-
-    /* 气泡本体 */
-    .msg-bubble {
-      padding: 11px 16px;
-      border-radius: var(--radius);
-      line-height: 1.78;
-      font-size: .92rem;
-      white-space: pre-wrap;     /* 保留换行符，同时自动折行 */
-      word-break: break-word;
-      max-width: 84%;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, .05);
-    }
-
-    /* 用户消息：右对齐 + 浅暖白背景 */
-    .msg.user                  { align-items: flex-end; }
-    .msg.user .msg-bubble      { background: var(--surface-alt); border: 1px solid var(--border-light); }
-
-    /* 助手消息：白色背景 */
-    .msg.assistant .msg-bubble { background: var(--surface); border: 1px solid var(--border); }
-
-    /* 等待确认消息：蓝色虚线边框，视觉上有别于普通回复 */
-    .msg.assistant.confirm .msg-bubble { border: 1.5px dashed var(--dot-pending); }
-
-    /* 线上模式回复：左侧珊瑚色竖线标识 */
-    .msg.assistant.is-online .msg-bubble { border-left: 3px solid var(--coral-light); }
-
-    /* ================================================================
-       思考过程折叠块（Qwen 的 <think> 内容）
-       点击可展开/收起，默认折叠。
-       ================================================================ */
-    .think-block {
-      font-size: .73rem;
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-      border-left: 2px solid var(--border);
-      padding: 4px 10px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      user-select: none;
-      transition: color .2s;
-    }
-
-    .think-block:hover        { color: var(--text-mid); }
-    .think-content            { display: none; margin-top: 5px; }
-    .think-block.open .think-content { display: block; }
-
-    /* 系统提示（如"对话已保存"） */
-    .sys-notice {
-      text-align: center;
-      color: var(--text-dim);
-      font-size: .68rem;
-      font-family: var(--font-mono);
-      padding: 5px 0;
-      letter-spacing: .04em;
-    }
-
-    /* ================================================================
-       打字动画（助手回复生成中的等待指示器）
-       ================================================================ */
-    .typing {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-      padding: 2px 0;
-    }
-
-    .typing span {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--coral-light);
-      animation: bounce .9s infinite;
-    }
-
-    .typing span:nth-child(2) { animation-delay: .15s; }
-    .typing span:nth-child(3) { animation-delay: .30s; }
-
-    @keyframes bounce {
-      0%, 80%, 100% { transform: translateY(0); }
-      40%           { transform: translateY(-5px); }
-    }
-
-    /* ================================================================
-       底部输入区
-       ================================================================ */
-    #input-area {
-      width: 100%;
-      max-width: 740px;
-      padding: 10px 0 22px;
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-    }
-
-    /* 多行文本框：随内容自动增高，最高 160px */
-    #user-input {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: var(--font-body);
-      font-size: .92rem;
-      padding: 12px 16px;
-      resize: none;
-      line-height: 1.6;
-      min-height: 48px;
-      max-height: 160px;
-      outline: none;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
-      transition: border-color .2s, box-shadow .2s;
-    }
-
-    #user-input:focus {
-      border-color: var(--coral-light);
-      box-shadow: 0 0 0 3px rgba(201, 124, 90, .1);
-    }
-
-    #user-input::placeholder { color: var(--text-dim); }
-
-    /* 发送按钮 */
-    #send-btn {
-      width: 48px;
-      height: 48px;
-      border-radius: var(--radius-sm);
-      border: none;
-      background: var(--coral);
-      color: #fff;
-      font-size: 1.1rem;
-      cursor: pointer;
-      flex-shrink: 0;
-      box-shadow: 0 2px 8px rgba(201, 124, 90, .35);
-      transition: background .2s, transform .1s, box-shadow .2s;
-    }
-
-    #send-btn:hover:not(:disabled) {
-      background: var(--coral-dim);
-      box-shadow: 0 3px 12px rgba(201, 124, 90, .45);
-    }
-
-    #send-btn:active:not(:disabled) { transform: scale(.95); }
-
-    #send-btn:disabled {
-      background: var(--border);
-      box-shadow: none;
-      cursor: not-allowed;
-    }
-  </style>
+  <!--
+    CSS 加载顺序（有依赖关系，顺序不可调换）：
+    1. variables.css  — CSS 变量定义，其余文件通过 var() 引用
+    2. layout.css     — 页面整体结构（依赖变量）
+    3. components.css — 各 UI 组件（依赖变量）
+    4. animations.css — 动画帧定义（依赖组件类名）
+  -->
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/animations.css">
 </head>
 <body>
 
-<!-- ================================================================
+<!-- ============================================================
      顶部导航栏
-     ================================================================ -->
-<header>
+     sticky 定位，始终固定在视口顶部。
+     ============================================================ -->
+<header role="banner">
+
   <!-- 左侧：项目名 + 副标题 -->
   <div class="header-title">
     <span class="title-main">珊瑚菌 · 个人 AI 陪伴助手</span>
     <span class="title-sub">Ramaria · Personal Companion</span>
   </div>
 
-  <!-- 当前 session 编号，由 JS 在收到第一条回复后更新 -->
-  <span id="session-label">初始化中</span>
+  <!-- session 编号标签，由 app.js 在收到回复后更新 -->
+  <span id="session-label" aria-live="polite">初始化中</span>
 
   <!-- 右侧控件区 -->
-  <div id="controls">
+  <div id="controls" role="toolbar" aria-label="工具栏">
 
-    <!-- 模式状态徽章 -->
-    <div id="mode-badge">
-      <div id="mode-dot"></div>
+    <!-- 模式状态徽章（本地 / 线上 / 等待确认） -->
+    <div id="mode-badge" role="status" aria-live="polite" aria-label="当前模式">
+      <div id="mode-dot" aria-hidden="true"></div>
       <span id="mode-text">本地</span>
     </div>
 
-    <div class="sep"></div>
+    <div class="sep" aria-hidden="true"></div>
 
-    <!-- 线上/本地模式切换 Toggle -->
+    <!-- 线上/本地 Toggle 开关 -->
     <label class="toggle-wrap" title="切换本地 / 线上模式">
       <span class="toggle-label-text">线上模式</span>
-      <input type="checkbox" id="mode-toggle" class="toggle-input"
-             onchange="onToggleChange(this.checked)">
-      <div class="toggle-track"></div>
+      <input
+        type="checkbox"
+        id="mode-toggle"
+        class="toggle-input"
+        onchange="onToggleChange(this.checked)"
+        aria-label="切换线上模式"
+        role="switch"
+      >
+      <div class="toggle-track" aria-hidden="true"></div>
     </label>
 
-    <div class="sep"></div>
+    <div class="sep" aria-hidden="true"></div>
+
+    <!-- 主题切换按钮（亮色/暗色） -->
+    <button
+      id="theme-btn"
+      title="切换到暗色模式"
+      aria-label="切换到暗色模式"
+    >🌙</button>
+
+    <div class="sep" aria-hidden="true"></div>
 
     <!-- 手动保存对话按钮 -->
-    <button id="save-btn" onclick="saveSession()">保存对话</button>
+    <button
+      id="save-btn"
+      aria-label="手动保存当前对话并生成摘要"
+    >保存对话</button>
 
-  </div>
+  </div><!-- /#controls -->
 </header>
 
-<!-- ================================================================
-     消息列表区
-     所有消息气泡由 JS 动态插入到这里。
-     ================================================================ -->
-<div id="messages"></div>
 
-<!-- ================================================================
+<!-- ============================================================
+     消息列表区
+     role="log"：告知屏幕阅读器这是一个实时更新的日志区域。
+     aria-live="polite"：新消息插入时，屏幕阅读器在用户闲置时读出。
+     ============================================================ -->
+<main
+  id="messages"
+  role="log"
+  aria-live="polite"
+  aria-label="对话内容"
+  aria-relevant="additions"
+></main>
+
+
+<!-- ============================================================
      底部输入区
-     ================================================================ -->
-<div id="input-area">
+     ============================================================ -->
+<div id="input-area" role="form" aria-label="消息输入区">
+
   <!--
-    多行文本框
-    - Enter 发送消息（JS 监听 keydown 事件）
-    - Shift+Enter 换行
-    - input 事件触发自动增高逻辑
+    屏幕阅读器说明文字，视觉上不可见（.sr-only），但会被读出。
+    id 与 textarea 的 aria-describedby 关联。
   -->
+  <span id="input-hint" class="sr-only">
+    输入消息后按 Enter 键发送，Shift+Enter 换行
+  </span>
+
   <textarea
     id="user-input"
     placeholder="输入消息，Enter 发送，Shift+Enter 换行"
     rows="1"
+    aria-label="消息输入框"
+    aria-describedby="input-hint"
+    autocomplete="off"
+    autocorrect="off"
+    autocapitalize="sentences"
+    spellcheck="true"
   ></textarea>
 
-  <!-- 发送按钮，发送中禁用防止重复提交 -->
-  <button id="send-btn" onclick="sendMessage()">↑</button>
-</div>
+  <button
+    id="send-btn"
+    aria-label="发送消息"
+    title="发送（Enter）"
+  >↑</button>
+
+</div><!-- /#input-area -->
+
+
+<!--
+  JavaScript 加载顺序（有依赖关系，顺序不可调换）：
+  1. state.js — AppState，全局状态（无依赖）
+  2. api.js   — API 封装（无依赖）
+  3. ui.js    — UI 渲染（依赖 AppState）
+  4. app.js   — 应用入口（依赖以上全部）
+
+  放在 </body> 前：确保 DOM 已经构建完毕，
+  DOMContentLoaded 事件可以正常触发。
+-->
+<script src="/static/js/state.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/app.js"></script>
 
-
-<script>
-  /* ================================================================
-     全局状态
-     ================================================================ */
-
-  let isLoading = false;   // 是否正在等待后端回复（防止重复发送）
-  let isOnline  = false;   // 当前是否处于线上模式
-
-
-  /* ================================================================
-     输入框：自动增高 + 键盘快捷键
-     ================================================================ */
-
-  const textarea = document.getElementById('user-input');
-
-  // 随内容自动增高，上限由 CSS max-height 控制（160px）
-  textarea.addEventListener('input', () => {
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
-  });
-
-  // Enter 发送，Shift+Enter 换行
-  textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
-
-  /* ================================================================
-     模式切换：Toggle 拨动时调用
-     向后端发送 /router/toggle，成功后更新 UI 状态。
-     ================================================================ */
-
-  async function onToggleChange(checked) {
-    isOnline = checked;
-    updateModeUI(checked ? 'pending' : 'local');
-
-    try {
-      const res = await fetch('/router/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ online: checked }),
-      });
-      const data = await res.json();
-
-      // 后端可能返回提示文本（如"下一条消息走线上 API"）
-      if (data.message) {
-        _appendBubble(data.message, 'assistant', false, false);
-      }
-
-      updateModeUI(data.mode || (checked ? 'pending' : 'local'));
-
-    } catch (_) {
-      // 请求失败：回滚 toggle 状态
-      isOnline = !checked;
-      document.getElementById('mode-toggle').checked = !checked;
-      updateModeUI('local');
-    }
-  }
-
-
-  /* ================================================================
-     更新顶部模式徽章的视觉状态
-     mode: 'local' | 'online' | 'pending'
-     ================================================================ */
-
-  function updateModeUI(mode) {
-    const dot  = document.getElementById('mode-dot');
-    const text = document.getElementById('mode-text');
-
-    dot.className = '';   // 清空所有状态类
-
-    switch (mode) {
-      case 'online':
-        dot.classList.add('online');
-        text.textContent = '线上';
-        break;
-      case 'pending':
-        dot.classList.add('pending');
-        text.textContent = '等待确认';
-        break;
-      default:
-        // 'local' 或未知值，显示本地状态
-        text.textContent = '本地';
-    }
-  }
-
-
-  /* ================================================================
-     渲染助手回复
-     支持用 || 分隔的多段消息（每段独立成一个气泡）。
-     ================================================================ */
-
-  function renderAssistant(text, mode) {
-    hideTyping();
-
-    // 按 || 拆分，过滤空段
-    const parts = text.split('||').map(s => s.trim()).filter(Boolean);
-
-    parts.forEach((part, i) => {
-      const isLast = i === parts.length - 1;
-      _appendBubble(
-        part,
-        'assistant',
-        isLast && mode === 'online',    // 最后一段才显示 API 标签
-        isLast && mode === 'confirm',   // 最后一段才显示确认样式
-      );
-    });
-  }
-
-
-  /* ================================================================
-     底层气泡创建函数
-     负责构造 DOM 结构并插入消息列表，所有消息创建都走这里。
-
-     参数：
-       text      — 气泡文本内容
-       role      — 'user' | 'assistant'
-       isOnlineMsg — 是否是线上模式回复（显示 API 标签 + 左侧彩线）
-       isConfirm — 是否是等待确认消息（显示蓝色虚线边框）
-     ================================================================ */
-
-  function _appendBubble(text, role, isOnlineMsg, isConfirm) {
-    const container = document.getElementById('messages');
-
-    // 外层容器：.msg.user 或 .msg.assistant
-    const div = document.createElement('div');
-    div.className = 'msg ' + role
-      + (isConfirm  ? ' confirm'   : '')
-      + (isOnlineMsg ? ' is-online' : '');
-
-    // 发言方标签
-    const label = document.createElement('div');
-    label.className = 'msg-label';
-
-    if (role === 'user') {
-      label.textContent = '你';
-    } else {
-      label.textContent = '助手';
-      // 线上模式回复额外显示 API 标签
-      if (isOnlineMsg) {
-        const tag = document.createElement('span');
-        tag.className   = 'tag-online';
-        tag.textContent = 'API';
-        label.appendChild(tag);
-      }
-    }
-
-    // 气泡内容
-    const bubble = document.createElement('div');
-    bubble.className = 'msg-bubble';
-
-    // 如果是助手消息，尝试提取并折叠思考链 <think>...</think>
-    if (role === 'assistant') {
-      const thinkMatch = text.match(/^<think>([\s\S]*?)<\/think>\s*/);
-      if (thinkMatch) {
-        // 构建可折叠的思考过程块
-        const thinkDiv = document.createElement('div');
-        thinkDiv.className = 'think-block';
-        thinkDiv.innerHTML =
-          '▸ 思考过程（点击展开）'
-          + '<div class="think-content">' + _esc(thinkMatch[1].trim()) + '</div>';
-        thinkDiv.onclick = () => thinkDiv.classList.toggle('open');
-        bubble.appendChild(thinkDiv);
-
-        // 去掉思考链部分，只展示实际回复
-        text = text.slice(thinkMatch[0].length);
-      }
-    }
-
-    bubble.appendChild(document.createTextNode(text));
-
-    div.appendChild(label);
-    div.appendChild(bubble);
-    container.appendChild(div);
-
-    // 滚动到底部，确保新消息可见
-    container.scrollTop = container.scrollHeight;
-  }
-
-
-  /* ================================================================
-     打字动画：显示 / 隐藏
-     等待后端回复时显示三个跳动的圆点。
-     ================================================================ */
-
-  function showTyping() {
-    const container = document.getElementById('messages');
-    const el = document.createElement('div');
-    el.className = 'msg assistant';
-    el.id = 'typing-indicator';
-    el.innerHTML =
-      '<div class="msg-label">助手</div>'
-      + '<div class="msg-bubble"><div class="typing">'
-      + '<span></span><span></span><span></span>'
-      + '</div></div>';
-    container.appendChild(el);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function hideTyping() {
-    const el = document.getElementById('typing-indicator');
-    if (el) el.remove();
-  }
-
-
-  /* ================================================================
-     发送消息
-     核心交互流程：读取输入 → 显示用户气泡 → 请求后端 → 显示回复。
-     ================================================================ */
-
-  async function sendMessage() {
-    // 防止重复发送
-    if (isLoading) return;
-
-    const input = document.getElementById('user-input');
-    const text  = input.value.trim();
-    if (!text) return;
-
-    // 清空输入框并重置高度
-    input.value = '';
-    input.style.height = 'auto';
-
-    // 立即显示用户气泡
-    _appendBubble(text, 'user', false, false);
-
-    // 进入加载状态
-    isLoading = true;
-    document.getElementById('send-btn').disabled = true;
-    showTyping();
-
-    try {
-      const res = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'HTTP ' + res.status);
-      }
-
-      const data = await res.json();
-
-      // 渲染助手回复
-      renderAssistant(data.reply, data.mode);
-
-      // 根据返回的 mode 更新顶部状态徽章
-      if (data.mode === 'confirm') {
-        // 等待用户确认是否调用 Claude
-        updateModeUI('pending');
-
-      } else if (data.mode === 'online') {
-        // 线上模式回复完成，2秒后自动切回本地模式
-        updateModeUI('online');
-        setTimeout(() => {
-          updateModeUI('local');
-          isOnline = false;
-          document.getElementById('mode-toggle').checked = false;
-        }, 2000);
-
-      } else {
-        // 本地模式，仅在 toggle 未手动开启时重置徽章
-        if (!isOnline) updateModeUI('local');
-      }
-
-      // 更新顶部 session 编号标签
-      document.getElementById('session-label').textContent = 'session #' + data.session_id;
-
-    } catch (err) {
-      hideTyping();
-      _appendBubble('（网络错误：' + err.message + '）', 'assistant', false, false);
-      updateModeUI('local');
-
-    } finally {
-      // 无论成功还是失败，都要退出加载状态
-      isLoading = false;
-      document.getElementById('send-btn').disabled = false;
-      input.focus();
-    }
-  }
-
-
-  /* ================================================================
-     手动保存对话
-     调用 /save 接口，触发 L1 摘要生成，并在消息列表显示系统提示。
-     ================================================================ */
-
-  async function saveSession() {
-    if (isLoading) return;
-
-    try {
-      await fetch('/save', { method: 'POST' });
-
-      // 更新 session 标签
-      document.getElementById('session-label').textContent = '已保存';
-
-      // 在消息列表插入系统分隔提示
-      const container = document.getElementById('messages');
-      const notice    = document.createElement('div');
-      notice.className   = 'sys-notice';
-      notice.textContent = '── 对话已保存，新消息将开启新 session ──';
-      container.appendChild(notice);
-      container.scrollTop = container.scrollHeight;
-
-    } catch (e) {
-      alert('保存失败：' + e.message);
-    }
-  }
-
-
-  /* ================================================================
-     工具函数：HTML 转义
-     防止消息内容中的特殊字符破坏 DOM 结构。
-     只在思考链内容里用，普通文本用 createTextNode 不会有注入问题。
-     ================================================================ */
-
-  function _esc(s) {
-    return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }
-
-
-  /* ================================================================
-     页面初始化：同步路由状态
-     页面加载完成后立即请求后端，把 toggle 和徽章同步到实际状态。
-     避免刷新页面后 UI 与后端状态不一致。
-     ================================================================ */
-
-  async function syncStatus() {
-    try {
-      const data = await fetch('/router/status').then(r => r.json());
-      isOnline = data.mode === 'pending';
-      document.getElementById('mode-toggle').checked = isOnline;
-      updateModeUI(data.mode || 'local');
-    } catch (_) {
-      // 请求失败时保持默认本地状态，不影响使用
-    }
-  }
-
-  // 页面加载后立即执行一次状态同步
-  syncStatus();
-
-</script>
 </body>
 </html>

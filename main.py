@@ -54,6 +54,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import (
@@ -74,7 +75,6 @@ from prompt_builder import build_system_prompt
 from session_manager import SessionManager
 from conflict_checker import get_conflict_question, handle_conflict_reply
 from router import Router
-
 from logger import get_logger
 logger = get_logger(__name__)
 
@@ -122,7 +122,7 @@ app = FastAPI(
     version     = "0.3.5",
     lifespan    = lifespan,
 )
-
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # =============================================================================
 # 数据模型

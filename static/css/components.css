@@ -1,0 +1,547 @@
+/* =============================================================================
+   components.css — UI 组件样式
+   -----------------------------------------------------------------------------
+   负责所有具体 UI 元件的样式，按组件分块：
+     1. 标题区（项目名 + 副标题）
+     2. Session 编号标签
+     3. 控件区（右侧按钮组）
+     4. 模式状态徽章
+     5. 线上/本地 Toggle 开关
+     6. 主题切换按钮
+     7. 保存对话按钮
+     8. 消息气泡
+     9. 思考过程折叠块
+    10. 打字动画（等待指示器）
+    11. 系统提示条
+    12. 输入框 textarea
+    13. 发送按钮
+    14. Toast 通知
+   ============================================================================= */
+
+
+/* =============================================================================
+   1. 标题区
+   ============================================================================= */
+
+.header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;   /* 不允许被压缩，标题始终完整显示 */
+}
+
+.title-main {
+  font-family: var(--font-title);
+  font-size: .98rem;
+  font-weight: 500;
+  color: var(--coral);
+  letter-spacing: .06em;
+  line-height: 1;
+  transition: color var(--transition-slow);
+}
+
+.title-sub {
+  font-size: .62rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  letter-spacing: .05em;
+  transition: color var(--transition-slow);
+}
+
+
+/* =============================================================================
+   2. Session 编号标签
+   ============================================================================= */
+
+#session-label {
+  font-size: .66rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  background: var(--border-light);
+  padding: 2px 8px;
+  border-radius: 20px;
+  flex-shrink: 0;
+  transition: background var(--transition-slow), color var(--transition-slow);
+}
+
+
+/* =============================================================================
+   3. 控件区（header 右侧，包含徽章/toggle/按钮）
+   ============================================================================= */
+
+#controls {
+  margin-left: auto;   /* 推到最右侧 */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* 控件区内的分隔竖线 */
+.sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background var(--transition-slow);
+}
+
+
+/* =============================================================================
+   4. 模式状态徽章（本地 / 线上 / 等待确认）
+   ============================================================================= */
+
+#mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .66rem;
+  font-family: var(--font-mono);
+  color: var(--text-mid);
+  flex-shrink: 0;
+  transition: color var(--transition-slow);
+}
+
+/* 状态圆点 */
+#mode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dot-local);   /* 默认绿色（本地模式） */
+  transition: background var(--transition-slow);
+  flex-shrink: 0;
+}
+
+/* 线上模式：珊瑚色 */
+#mode-dot.online  { background: var(--dot-online); }
+
+/* 等待确认：蓝色 + 闪烁动画（见 animations.css） */
+#mode-dot.pending { background: var(--dot-pending); animation: blink 1.4s ease-in-out infinite; }
+
+
+/* =============================================================================
+   5. 线上/本地 Toggle 开关
+   用纯 CSS checkbox 实现，不依赖 JS 库。
+   结构：<label><input type="checkbox"><div class="toggle-track"></div></label>
+   ============================================================================= */
+
+.toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-label-text {
+  font-size: .66rem;
+  font-family: var(--font-mono);
+  color: var(--text-mid);
+  white-space: nowrap;
+  transition: color var(--transition-slow);
+}
+
+/* 隐藏原生 checkbox，视觉由 .toggle-track 伪元素呈现 */
+.toggle-input {
+  display: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  transition: background var(--transition-normal);
+  flex-shrink: 0;
+}
+
+/* 滑块圆点 */
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform var(--transition-normal), background var(--transition-normal);
+}
+
+/* checkbox 选中时：轨道变浅珊瑚，圆点右移并变珊瑚色 */
+.toggle-input:checked + .toggle-track              { background: var(--coral-light); }
+.toggle-input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--coral); }
+
+/* 键盘焦点时显示轮廓（无障碍要求） */
+.toggle-wrap:focus-within .toggle-track {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+
+/* =============================================================================
+   6. 主题切换按钮
+   ============================================================================= */
+
+#theme-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-size: .75rem;   /* emoji 稍大一点 */
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--transition-normal), background var(--transition-normal),
+              color var(--transition-normal);
+  /* 暗色主题下 aria-label 等屏幕阅读器会读取 title 属性 */
+}
+
+#theme-btn:hover {
+  border-color: var(--coral-light);
+  background: rgba(201, 124, 90, .06);
+}
+
+#theme-btn:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+
+/* =============================================================================
+   7. 保存对话按钮
+   ============================================================================= */
+
+#save-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-size: .66rem;
+  font-family: var(--font-mono);
+  padding: 3px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color var(--transition-normal), color var(--transition-normal),
+              background var(--transition-normal);
+  /* iOS 最小触控尺寸：44px 高度不够，用 min-height 补足 */
+  min-height: 28px;
+}
+
+#save-btn:hover {
+  border-color: var(--coral-light);
+  color: var(--coral);
+  background: rgba(201, 124, 90, .06);
+}
+
+#save-btn:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+
+/* =============================================================================
+   8. 消息气泡
+   ============================================================================= */
+
+/* 消息容器：每条消息（标签 + 气泡）的外层 flex 列 */
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 发言方标签（"你" / "助手"） */
+.msg-label {
+  font-size: .63rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  letter-spacing: .05em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: color var(--transition-slow);
+}
+
+/* 用户消息：右对齐，标签珊瑚浅色 */
+.msg.user                   { align-items: flex-end; }
+.msg.user .msg-label        { justify-content: flex-end; color: var(--coral-light); }
+
+/* 气泡本体 */
+.msg-bubble {
+  padding: 11px 16px;
+  border-radius: var(--radius);
+  line-height: 1.78;
+  font-size: .92rem;
+  /*
+   * white-space: pre-wrap：保留消息中的换行符，同时允许自动折行。
+   * word-break: break-word：超长单词（如 URL）强制折行，不溢出气泡。
+   */
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 84%;
+  box-shadow: var(--shadow-bubble);
+  transition: background var(--transition-slow), border-color var(--transition-slow),
+              color var(--transition-slow);
+}
+
+/* 用户气泡：浅暖白背景 */
+.msg.user .msg-bubble {
+  background: var(--surface-alt);
+  border: 1px solid var(--border-light);
+}
+
+/* 助手气泡：白色背景 */
+.msg.assistant .msg-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* 等待确认气泡：蓝色虚线边框，视觉上有别于普通回复 */
+.msg.assistant.confirm .msg-bubble {
+  border: 1.5px dashed var(--dot-pending);
+}
+
+/* 线上模式回复：左侧珊瑚竖线标识 */
+.msg.assistant.is-online .msg-bubble {
+  border-left: 3px solid var(--coral-light);
+}
+
+/* Claude API 来源标签（显示在助手的 msg-label 里） */
+.tag-online {
+  font-size: .58rem;
+  color: var(--coral);
+  border: 1px solid var(--coral-light);
+  border-radius: 3px;
+  padding: 0 3px;
+  line-height: 1.5;
+  transition: color var(--transition-slow), border-color var(--transition-slow);
+}
+
+/* 响应式：小屏气泡更宽，利用更多横向空间 */
+@media (max-width: 768px) {
+  .msg-bubble { max-width: 92%; }
+}
+
+
+/* =============================================================================
+   9. 思考过程折叠块（Qwen 的 <think> 内容）
+   点击可展开/收起，默认折叠。
+   结构：
+     <div class="think-block">
+       ▸ 思考过程（点击展开）
+       <div class="think-content">...思考内容...</div>
+     </div>
+   ============================================================================= */
+
+.think-block {
+  font-size: .73rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  border-left: 2px solid var(--border);
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast), border-color var(--transition-slow);
+  line-height: 1.6;
+}
+
+.think-block:hover { color: var(--text-mid); }
+
+/* 思考内容：默认隐藏，展开时 .think-block.open 触发显示 */
+.think-content { display: none; margin-top: 5px; }
+.think-block.open .think-content { display: block; }
+
+
+/* =============================================================================
+   10. 打字动画（助手回复生成中的等待指示器）
+   三个圆点依次上下跳动。
+   ============================================================================= */
+
+.typing {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.typing span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--coral-light);
+  animation: bounce .9s infinite;
+  transition: background var(--transition-slow);
+}
+
+/* 三个点的动画延迟，制造波浪感 */
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .30s; }
+
+
+/* =============================================================================
+   11. 系统提示条（如"对话已保存"）
+   居中显示，不是气泡形式。
+   ============================================================================= */
+
+.sys-notice {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: .68rem;
+  font-family: var(--font-mono);
+  padding: 5px 0;
+  letter-spacing: .04em;
+  transition: color var(--transition-slow);
+}
+
+
+/* =============================================================================
+   12. 输入框 textarea
+   ============================================================================= */
+
+#user-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: .92rem;
+  padding: 12px 16px;
+  resize: none;   /* 禁用手动拖拽调整大小，改为 JS 自动高度 */
+  line-height: 1.6;
+  min-height: 48px;
+  max-height: 160px;
+  outline: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal),
+              background var(--transition-slow), color var(--transition-slow);
+  /* 触控优化：iOS 上圆角输入框不会被系统样式覆盖 */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#user-input:focus {
+  border-color: var(--coral-light);
+  box-shadow: 0 0 0 3px rgba(201, 124, 90, .1);
+}
+
+#user-input::placeholder {
+  color: var(--text-dim);
+}
+
+@media (max-width: 768px) {
+  #user-input {
+    border-radius: 12px;
+    padding: 10px 14px;
+  }
+}
+
+
+/* =============================================================================
+   13. 发送按钮
+   ============================================================================= */
+
+#send-btn {
+  /* 宽高固定，保证正方形 */
+  width: 48px;
+  height: 48px;
+  /* iOS 要求最小触控目标 44px，这里直接满足 */
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--coral);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-btn);
+  transition: background var(--transition-normal), transform .1s ease,
+              box-shadow var(--transition-normal);
+  /* 移动端：禁止长按弹出菜单 */
+  -webkit-touch-callout: none;
+}
+
+#send-btn:hover:not(:disabled) {
+  background: var(--coral-dim);
+  box-shadow: var(--shadow-btn-hover);
+}
+
+#send-btn:active:not(:disabled) {
+  transform: scale(.95);
+}
+
+#send-btn:disabled {
+  background: var(--border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+#send-btn:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  #send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+}
+
+
+/* =============================================================================
+   14. Toast 通知
+   -----------------------------------------------------------------------------
+   用于错误提示、操作反馈等。
+   由 ui.js 的 UI.showToast() 动态创建 #toast 元素并添加 .show 类触发显示。
+
+   状态：
+     默认（无 .show）：透明 + translateY 向上偏移，不可见
+     .show：不透明 + 原位，可见，3秒后自动消失
+   ============================================================================= */
+
+#toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-mid);
+  font-size: .78rem;
+  font-family: var(--font-mono);
+  padding: 8px 18px;
+  border-radius: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .1);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  z-index: 100;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* 错误 toast：红色调 */
+#toast.error {
+  border-color: #d4756b;
+  color: #c0534a;
+}
+
+/* 成功 toast：绿色调 */
+#toast.success {
+  border-color: var(--dot-local);
+  color: #4f8f4f;
+}

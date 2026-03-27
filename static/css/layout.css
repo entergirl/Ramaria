@@ -1,0 +1,166 @@
+/* =============================================================================
+   layout.css — 页面整体布局与响应式
+   -----------------------------------------------------------------------------
+   负责：
+     · 全局重置与 box-sizing
+     · body 基础样式（背景纹理、字体、flex 纵向排列）
+     · 顶部 header（sticky 定位）
+     · 消息列表区 #messages（flex 纵列，独立滚动）
+     · 底部输入区 #input-area
+     · 响应式断点（768px / 480px）
+     · 屏幕阅读器专用 .sr-only 工具类
+   ============================================================================= */
+
+
+/* ── 全局重置 ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+
+/* ── body：纵向 flex，内容居中，纸张背景纹理 ── */
+body {
+  background-color: var(--bg);
+  /*
+   * SVG 噪点纹理：纯 CSS 实现，不依赖外部图片。
+   * fractalNoise + saturate(0) = 灰色颗粒感 + opacity 0.03 几乎看不见，
+   * 只是让背景有轻微纸张质感，避免纯色过于单调。
+   */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  color: var(--text);
+  font-family: var(--font-body);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px;
+  /* 暗色主题背景色过渡，让切换时不那么突兀 */
+  transition: background-color var(--transition-slow), color var(--transition-slow);
+}
+
+
+/* ── 顶部导航栏 ── */
+header {
+  width: 100%;
+  max-width: 740px;
+  padding: 16px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  /*
+   * sticky：在滚动时始终固定在视口顶部。
+   * z-index: 10 确保浮在消息气泡上方，不被遮挡。
+   */
+  position: sticky;
+  top: 0;
+  background-color: var(--bg);
+  z-index: 10;
+  transition: background-color var(--transition-slow), border-color var(--transition-slow);
+}
+
+
+/* ── 消息列表区 ── */
+#messages {
+  width: 100%;
+  max-width: 740px;
+  /*
+   * flex: 1 让消息区占据 header 和 input-area 之间的全部剩余高度。
+   * overflow-y: auto 让消息区自己滚动，页面整体不滚动。
+   */
+  flex: 1;
+  overflow-y: auto;
+  padding: 26px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 细滚动条，不喧宾夺主 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  /* CSS Containment：告诉浏览器消息区是独立渲染单元，提升滚动性能 */
+  contain: layout style;
+}
+
+/* WebKit 滚动条样式（Chrome/Safari/Edge） */
+#messages::-webkit-scrollbar {
+  width: 4px;
+}
+#messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+#messages::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+
+/* ── 底部输入区 ── */
+#input-area {
+  width: 100%;
+  max-width: 740px;
+  padding: 10px 0 22px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+
+/* =============================================================================
+   无障碍工具类
+   .sr-only：视觉上隐藏但屏幕阅读器仍可读取的元素。
+   用于：表单说明文字、按钮补充标签等。
+   ============================================================================= */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+
+/* =============================================================================
+   响应式断点
+
+   768px：平板与大屏手机，收紧部分间距
+   480px：小屏手机，进一步紧凑化
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  header {
+    padding: 12px 0 8px;
+    gap: 8px;
+  }
+
+  #messages {
+    padding: 18px 0 10px;
+    gap: 10px;
+  }
+
+  #input-area {
+    padding: 8px 0 16px;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: 0 12px;
+  }
+
+  #input-area {
+    padding: 6px 0 14px;
+  }
+}

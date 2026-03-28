@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>珊瑚菌 · 聊天记录导入</title>
+
+  <!-- 复用主界面的字体和设计变量 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+
+  <style>
+    /* ==========================================================
+       导入页面专用样式
+       复用 variables.css 中的 CSS 变量，保持视觉风格一致
+       ========================================================== */
+
+    /* 整体布局：覆盖 layout.css 的 flex 纵排 */
+    body {
+      padding: 0 20px;
+      font-family: var(--font-body);
+    }
+
+    /* 顶部导航：复用 layout.css header，加返回链接 */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg);
+    }
+
+    .nav-back {
+      font-size: .75rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: color var(--transition-normal), border-color var(--transition-normal);
+    }
+    .nav-back:hover { color: var(--coral); border-color: var(--coral-light); }
+
+    /* 页面主体：两栏布局（左侧操作区 + 右侧日志区） */
+    .page-body {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 0 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* 页面标题 */
+    .page-title {
+      font-family: var(--font-title);
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: var(--coral);
+      letter-spacing: .04em;
+    }
+    .page-subtitle {
+      font-size: .72rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      margin-top: 3px;
+    }
+
+    /* 卡片容器：每个功能区用一个卡片包裹 */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      transition: background var(--transition-slow), border-color var(--transition-slow);
+    }
+
+    .card-title {
+      font-size: .8rem;
+      font-weight: 500;
+      color: var(--text);
+      font-family: var(--font-mono);
+      letter-spacing: .04em;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 步骤编号圆圈 */
+    .step-badge {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--coral-light);
+      color: var(--coral);
+      font-size: .65rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+
+    /* 文件上传区：拖拽区域 */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color var(--transition-normal), background var(--transition-normal);
+      position: relative;
+    }
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--coral-light);
+      background: rgba(201, 124, 90, .04);
+    }
+    .upload-zone input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-hint {
+      font-size: .75rem;
+      color: var(--text-mid);
+      font-family: var(--font-mono);
+    }
+    .upload-filename {
+      font-size: .78rem;
+      color: var(--coral);
+      font-family: var(--font-mono);
+      margin-top: 6px;
+      min-height: 1.2em;
+    }
+
+    /* gap 参数输入 */
+    .param-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      font-size: .75rem;
+      color: var(--text-mid);
+      font-family: var(--font-mono);
+    }
+    .param-row input[type=number] {
+      width: 64px;
+      padding: 4px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: .75rem;
+      text-align: center;
+    }
+
+    /* 操作按钮 */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      font-size: .78rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      border: none;
+      transition: background var(--transition-normal), opacity var(--transition-normal),
+                  transform .1s ease;
+      white-space: nowrap;
+    }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--coral);
+      color: #fff;
+      box-shadow: var(--shadow-btn);
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--coral-dim); }
+
+    .btn-secondary {
+      background: var(--surface-alt);
+      color: var(--text-mid);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--coral-light);
+      color: var(--coral);
+    }
+
+    .btn-danger {
+      background: #d4756b22;
+      color: #c0534a;
+      border: 1px solid #d4756b55;
+    }
+    .btn-danger:hover:not(:disabled) { background: #d4756b33; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* 诊断报告区：三列统计 */
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 600px) {
+      .report-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .stat-box {
+      background: var(--bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      transition: background var(--transition-slow);
+    }
+    .stat-label {
+      font-size: .62rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .stat-value.success { color: #4f8f4f; }
+    .stat-value.warning { color: var(--coral-dim); }
+    .stat-value.danger  { color: #c0534a; }
+
+    /* 详情折叠区 */
+    .detail-section {
+      margin-top: 12px;
+    }
+    .detail-toggle {
+      font-size: .7rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .detail-toggle:hover { color: var(--coral); }
+    .detail-content {
+      display: none;
+      margin-top: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      max-height: 200px;
+      overflow-y: auto;
+      line-height: 1.8;
+    }
+    .detail-content.open { display: block; }
+    .detail-arrow { transition: transform var(--transition-fast); }
+    .detail-toggle.open .detail-arrow { transform: rotate(90deg); }
+
+    /* 待处理 session 面板 */
+    .pending-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(201, 124, 90, .1);
+      border: 1px solid var(--coral-light);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: .7rem;
+      font-family: var(--font-mono);
+      color: var(--coral);
+    }
+    .pending-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--coral);
+      flex-shrink: 0;
+    }
+
+    /* 进度条 */
+    .progress-wrap {
+      margin-top: 14px;
+    }
+    .progress-bar-track {
+      height: 8px;
+      background: var(--border-light);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--coral);
+      border-radius: 4px;
+      transition: width .4s ease;
+      width: 0%;
+    }
+    .progress-bar-fill.waiting {
+      background: var(--dot-pending);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .5; }
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+    }
+    .progress-status {
+      font-size: .72rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      margin-bottom: 6px;
+      min-height: 1.2em;
+    }
+    .progress-status.waiting { color: var(--dot-pending); }
+    .progress-status.done    { color: #4f8f4f; }
+    .progress-status.error   { color: #c0534a; }
+
+    /* 日志条目（批处理进度逐行） */
+    .log-area {
+      background: var(--bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.9;
+      margin-top: 12px;
+    }
+    .log-line { display: flex; gap: 8px; }
+    .log-line .mark-ok  { color: #4f8f4f; }
+    .log-line .mark-err { color: #c0534a; }
+    .log-line .mark-skip { color: var(--text-dim); }
+
+    /* 隐藏区域 */
+    .hidden { display: none !important; }
+
+    /* 分隔线 */
+    hr.section-sep {
+      border: none;
+      border-top: 1px solid var(--border-light);
+      margin: 0;
+    }
+
+    /* Toast（复用 components.css 逻辑，内联实现） */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+      font-size: .75rem;
+      font-family: var(--font-mono);
+      padding: 8px 18px;
+      border-radius: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.1);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s ease, transform .25s ease;
+      z-index: 100;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.error { border-color: #d4756b; color: #c0534a; }
+    #toast.success { border-color: var(--dot-local); color: #4f8f4f; }
+  </style>
+</head>
+<body>
+
+<!-- ========================================================
+     顶部导航
+     ======================================================== -->
+<header role="banner">
+  <div class="header-title">
+    <span class="title-main">珊瑚菌 · 聊天记录导入</span>
+    <span class="title-sub">QQ Chat Exporter v5 格式</span>
+  </div>
+  <div id="controls" role="toolbar">
+    <a href="/" class="nav-back">← 返回对话</a>
+  </div>
+</header>
+
+
+<!-- ========================================================
+     页面主体
+     ======================================================== -->
+<div class="page-body">
+
+  <!-- ── 步骤1：上传文件 ── -->
+  <div class="card" id="card-upload">
+    <div class="card-title">
+      <div class="step-badge">1</div>
+      上传 QQ 聊天记录文件
+    </div>
+
+    <!-- 拖拽上传区 -->
+    <div class="upload-zone" id="upload-zone">
+      <input type="file" id="file-input" accept=".json">
+      <div class="upload-icon">📂</div>
+      <div class="upload-hint">点击选择文件，或将 JSON 文件拖拽到此处</div>
+      <div class="upload-filename" id="upload-filename"></div>
+    </div>
+
+    <!-- session 切割参数 -->
+    <div class="param-row">
+      <span>session 切割间隔</span>
+      <input type="number" id="gap-input" value="10" min="1" max="1440">
+      <span>分钟（建议与 L1_IDLE_MINUTES 一致）</span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-preview" disabled>预览解析报告</button>
+      <button class="btn btn-primary"   id="btn-import"  disabled>确认导入 L0</button>
+    </div>
+  </div>
+
+
+  <!-- ── 步骤2：解析报告（预览后显示） ── -->
+  <div class="card hidden" id="card-report">
+    <div class="card-title">
+      <div class="step-badge">2</div>
+      解析报告
+    </div>
+
+    <!-- 统计数字 -->
+    <div class="report-grid" id="report-grid">
+      <!-- 由 JS 动态填充 -->
+    </div>
+
+    <!-- 重复预检结果 -->
+    <div id="report-dedup" style="font-size:.72rem;font-family:var(--font-mono);color:var(--text-mid);margin-bottom:10px;"></div>
+
+    <!-- 降级详情折叠 -->
+    <div class="detail-section" id="detail-degraded-wrap">
+      <span class="detail-toggle" id="toggle-degraded" onclick="toggleDetail('degraded')">
+        <span class="detail-arrow">▶</span> 查看降级处理详情
+      </span>
+      <div class="detail-content" id="detail-degraded"></div>
+    </div>
+
+    <!-- 跳过详情折叠 -->
+    <div class="detail-section" id="detail-skipped-wrap">
+      <span class="detail-toggle" id="toggle-skipped" onclick="toggleDetail('skipped')">
+        <span class="detail-arrow">▶</span> 查看跳过条目详情
+      </span>
+      <div class="detail-content" id="detail-skipped"></div>
+    </div>
+  </div>
+
+
+  <!-- ── 步骤3：摘要生成（导入成功后显示） ── -->
+  <div class="card hidden" id="card-l1">
+    <div class="card-title">
+      <div class="step-badge">3</div>
+      生成 L1 摘要（将历史消息转化为记忆）
+    </div>
+
+    <!-- 待处理信息 -->
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+      <div class="pending-badge">
+        <div class="pending-dot"></div>
+        <span id="pending-count-text">查询中…</span>
+      </div>
+      <span style="font-size:.72rem;color:var(--text-dim);font-family:var(--font-mono);">
+        生成摘要后，历史对话才会融入记忆系统
+      </span>
+    </div>
+
+    <!-- 进度区（批处理启动后显示） -->
+    <div id="progress-wrap" class="hidden">
+      <div class="progress-status" id="progress-status-text">准备中…</div>
+      <div class="progress-wrap">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+        <div class="progress-meta">
+          <span id="progress-count">0 / 0</span>
+          <span id="progress-eta"></span>
+        </div>
+      </div>
+      <!-- 逐行日志 -->
+      <div class="log-area" id="log-area"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary"   id="btn-start-l1" onclick="startL1()">开始生成摘要</button>
+      <button class="btn btn-danger hidden" id="btn-stop-l1"  onclick="stopL1()">停止</button>
+    </div>
+  </div>
+
+</div><!-- /.page-body -->
+
+<div id="toast"></div>
+
+
+<!-- ========================================================
+     JavaScript
+     ======================================================== -->
+<script>
+// ============================================================
+// 状态变量
+// ============================================================
+let selectedFile  = null;   // 当前选中的文件对象
+let pollTimer     = null;   // 轮询定时器 id
+let lastDoneCount = 0;      // 上次轮询时的已完成数，用于追加日志行
+
+
+// ============================================================
+// Toast 通知
+// ============================================================
+let _toastTimer = null;
+function showToast(msg, type = 'default', duration = 3000) {
+  const el = document.getElementById('toast');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  el.className = type !== 'default' ? type : '';
+  el.textContent = msg;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+
+// ============================================================
+// 折叠详情
+// ============================================================
+function toggleDetail(key) {
+  const content = document.getElementById(`detail-${key}`);
+  const toggle  = document.getElementById(`toggle-${key}`);
+  const isOpen  = content.classList.contains('open');
+  content.classList.toggle('open', !isOpen);
+  toggle.classList.toggle('open', !isOpen);
+}
+
+
+// ============================================================
+// 文件选择
+// ============================================================
+const fileInput  = document.getElementById('file-input');
+const uploadZone = document.getElementById('upload-zone');
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length > 0) handleFileSelect(fileInput.files[0]);
+});
+
+// 拖拽支持
+uploadZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+});
+uploadZone.addEventListener('dragleave', () => {
+  uploadZone.classList.remove('dragover');
+});
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.json')) {
+    handleFileSelect(f);
+  } else {
+    showToast('请上传 .json 格式的文件', 'error');
+  }
+});
+
+function handleFileSelect(file) {
+  selectedFile = file;
+  document.getElementById('upload-filename').textContent = `已选择：${file.name}`;
+  document.getElementById('btn-preview').disabled = false;
+  document.getElementById('btn-import').disabled  = false;
+  // 隐藏旧报告
+  document.getElementById('card-report').classList.add('hidden');
+}
+
+
+// ============================================================
+// 预览解析报告
+// ============================================================
+document.getElementById('btn-preview').addEventListener('click', async () => {
+  if (!selectedFile) return;
+  await doRequest('preview');
+});
+
+
+// ============================================================
+// 确认导入 L0
+// ============================================================
+document.getElementById('btn-import').addEventListener('click', async () => {
+  if (!selectedFile) return;
+  const ok = await doRequest('confirm');
+  if (ok) {
+    // 导入成功后显示摘要生成卡片，并查询待处理数量
+    document.getElementById('card-l1').classList.remove('hidden');
+    await refreshPendingCount();
+  }
+});
+
+
+// ============================================================
+// 通用请求函数（preview / confirm 共用）
+// ============================================================
+async function doRequest(action) {
+  const gap = parseInt(document.getElementById('gap-input').value) || 10;
+
+  // 构造 multipart 表单
+  const form = new FormData();
+  form.append('file', selectedFile);
+
+  const url      = `/import/qq/${action}?gap=${gap}`;
+  const isImport = (action === 'confirm');
+
+  // 禁用按钮，防止重复点击
+  document.getElementById('btn-preview').disabled = true;
+  document.getElementById('btn-import').disabled  = true;
+
+  try {
+    const resp = await fetch(url, { method: 'POST', body: form });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showToast(`${isImport ? '导入' : '解析'}失败：${data.detail || resp.status}`, 'error', 5000);
+      return false;
+    }
+
+    if (isImport) {
+      // 显示写入结果
+      renderImportResult(data);
+      showToast(`导入完成：${data.stats.sessions_written} 个 session`, 'success');
+    } else {
+      // 显示解析报告
+      renderReport(data);
+      showToast('解析完成，请查看报告');
+    }
+
+    document.getElementById('card-report').classList.remove('hidden');
+    return true;
+
+  } catch (e) {
+    showToast(`网络错误：${e.message}`, 'error');
+    return false;
+  } finally {
+    document.getElementById('btn-preview').disabled = false;
+    document.getElementById('btn-import').disabled  = false;
+  }
+}
+
+
+// ============================================================
+// 渲染解析报告
+// ============================================================
+function renderReport(data) {
+  const grid = document.getElementById('report-grid');
+  grid.innerHTML = '';
+
+  // 总览统计
+  const stats = [
+    { label: '原始消息数',   value: data.overview.total_raw,                  cls: '' },
+    { label: '成功解析',     value: data.success.total,                        cls: 'success' },
+    { label: '降级处理',     value: data.degraded.total,                       cls: 'warning' },
+    { label: '完全跳过',     value: data.skipped.total,                        cls: 'danger' },
+    { label: '文件内去重',   value: data.overview.dedup_removed,               cls: '' },
+    { label: '切割 session', value: data.overview.session_count,               cls: '' },
+  ];
+
+  stats.forEach(s => {
+    const box = document.createElement('div');
+    box.className = 'stat-box';
+    box.innerHTML = `
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value ${s.cls}">${s.value}</div>
+    `;
+    grid.appendChild(box);
+  });
+
+  // 重复预检
+  const dup = data.duplicate_check;
+  const dedupEl = document.getElementById('report-dedup');
+  if (dup.enabled) {
+    dedupEl.textContent = `🔍 重复导入预检：发现 ${dup.duplicates_found} 条已存在的消息，将跳过不重复写入`;
+  } else {
+    dedupEl.textContent = '重复导入预检：未执行';
+  }
+
+  // 降级详情
+  const degradedEl = document.getElementById('detail-degraded');
+  if (data.degraded.items && data.degraded.items.length > 0) {
+    degradedEl.innerHTML = data.degraded.items.map(i =>
+      `<div>[${i.time}] ${i.reason}<br>&nbsp;&nbsp;预览: ${i.content_preview}</div>`
+    ).join('');
+    document.getElementById('detail-degraded-wrap').style.display = '';
+  } else {
+    document.getElementById('detail-degraded-wrap').style.display = 'none';
+  }
+
+  // 跳过详情
+  const skippedEl = document.getElementById('detail-skipped');
+  const skippedItems = data.skipped.items || [];
+  const unknownTypes = data.skipped.unknown_types || [];
+  let skippedHtml = '';
+  if (unknownTypes.length > 0) {
+    skippedHtml += `<div>⚠️ 发现未知 type（供后续适配参考）：${unknownTypes.join('、')}</div>`;
+  }
+  skippedHtml += skippedItems.map(i =>
+    `<div>[${i.time}] ${i.reason}</div>`
+  ).join('');
+  if (skippedHtml) {
+    skippedEl.innerHTML = skippedHtml;
+    document.getElementById('detail-skipped-wrap').style.display = '';
+  } else {
+    document.getElementById('detail-skipped-wrap').style.display = 'none';
+  }
+}
+
+
+// ============================================================
+// 渲染导入结果（在报告区追加写入统计）
+// ============================================================
+function renderImportResult(data) {
+  // 先渲染解析报告部分（report_overview）
+  // 再在报告卡片底部追加写入统计
+  const grid = document.getElementById('report-grid');
+  grid.innerHTML = '';
+
+  const overview = data.report_overview;
+  const stats    = data.stats;
+
+  const items = [
+    { label: '时间跨度',       value: `${overview.time_start} ~ ${overview.time_end}`, cls: '' },
+    { label: '导入 session 数', value: stats.sessions_written,  cls: 'success' },
+    { label: '导入消息数',     value: stats.messages_written,  cls: 'success' },
+    { label: '失败 session',   value: stats.sessions_failed,   cls: stats.sessions_failed > 0 ? 'danger' : '' },
+  ];
+
+  items.forEach(s => {
+    const box = document.createElement('div');
+    box.className = 'stat-box';
+    box.innerHTML = `
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value ${s.cls}">${s.value}</div>
+    `;
+    grid.appendChild(box);
+  });
+
+  document.getElementById('report-dedup').textContent = '';
+  document.getElementById('detail-degraded-wrap').style.display = 'none';
+  document.getElementById('detail-skipped-wrap').style.display  = 'none';
+}
+
+
+// ============================================================
+// 查询待处理 session 数量
+// ============================================================
+async function refreshPendingCount() {
+  try {
+    const resp = await fetch('/import/qq/pending_l1');
+    const data = await resp.json();
+    const cnt  = data.count;
+    const el   = document.getElementById('pending-count-text');
+    if (cnt === 0) {
+      el.textContent = '暂无待处理 session（历史摘要已全部生成）';
+      document.getElementById('btn-start-l1').disabled = true;
+    } else {
+      el.textContent = `${cnt} 个 session 待生成摘要`;
+      document.getElementById('btn-start-l1').disabled = false;
+    }
+  } catch (e) {
+    document.getElementById('pending-count-text').textContent = '查询失败';
+  }
+}
+
+
+// ============================================================
+// 开始生成 L1 摘要
+// ============================================================
+async function startL1() {
+  try {
+    const resp = await fetch('/import/qq/start_l1', { method: 'POST' });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      showToast(`启动失败：${data.detail}`, 'error');
+      return;
+    }
+
+    // 显示进度区，切换按钮
+    document.getElementById('progress-wrap').classList.remove('hidden');
+    document.getElementById('btn-start-l1').classList.add('hidden');
+    document.getElementById('btn-stop-l1').classList.remove('hidden');
+
+    // 启动轮询
+    lastDoneCount = 0;
+    startPolling();
+
+  } catch (e) {
+    showToast(`网络错误：${e.message}`, 'error');
+  }
+}
+
+
+// ============================================================
+// 停止生成
+// ============================================================
+async function stopL1() {
+  try {
+    await fetch('/import/qq/stop_l1', { method: 'POST' });
+    showToast('已发送停止请求，等待当前 session 处理完毕…');
+  } catch (e) {
+    showToast(`停止请求失败：${e.message}`, 'error');
+  }
+}
+
+
+// ============================================================
+// 进度轮询
+// ============================================================
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollProgress, 2000);
+  pollProgress();  // 立即执行一次
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+async function pollProgress() {
+  try {
+    const resp = await fetch('/import/qq/l1_progress');
+    const data = await resp.json();
+    updateProgressUI(data);
+
+    // 终止状态时停止轮询
+    if (['done', 'stopped', 'error'].includes(data.status)) {
+      stopPolling();
+      onBatchFinished(data);
+    }
+  } catch (e) {
+    // 网络错误不停止轮询，下次继续重试
+    console.error('进度查询失败', e);
+  }
+}
+
+function updateProgressUI(data) {
+  const total  = data.total  || 0;
+  const done   = data.done   || 0;
+  const pct    = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  // 进度条
+  const bar = document.getElementById('progress-bar');
+  bar.style.width = `${pct}%`;
+  bar.className   = 'progress-bar-fill' + (data.status === 'waiting' ? ' waiting' : '');
+
+  // 状态文字
+  const statusEl = document.getElementById('progress-status-text');
+  const statusMap = {
+    running: `正在处理：session ${data.current_session_date || ''}`,
+    waiting: '⏸ 检测到活跃对话，已暂停等待…',
+    done:    '✓ 全部完成',
+    stopped: '已停止',
+    error:   '❌ 发生错误',
+    idle:    '等待中',
+  };
+  statusEl.textContent = statusMap[data.status] || data.status;
+  statusEl.className   = 'progress-status ' + (
+    data.status === 'waiting' ? 'waiting' :
+    data.status === 'done'    ? 'done'    :
+    data.status === 'error'   ? 'error'   : ''
+  );
+
+  // 进度数字
+  document.getElementById('progress-count').textContent = `${done} / ${total}`;
+
+  // 预计剩余时间
+  const etaEl = document.getElementById('progress-eta');
+  if (data.eta_seconds != null && data.status === 'running') {
+    const min = Math.floor(data.eta_seconds / 60);
+    const sec = data.eta_seconds % 60;
+    etaEl.textContent = min > 0
+      ? `预计还需 ${min} 分 ${sec} 秒`
+      : `预计还需 ${sec} 秒`;
+  } else {
+    etaEl.textContent = '';
+  }
+
+  // 追加新的日志行（只追加新增的，不重刷）
+  if (done > lastDoneCount) {
+    // 从上次已完成数到当前，逐条追加
+    // 因为后端只返回当前状态，不返回历史记录，
+    // 这里用简单的方式：只在 done 变化时追加一行
+    appendLogLine(data);
+    lastDoneCount = done;
+  }
+}
+
+function appendLogLine(data) {
+  const logArea = document.getElementById('log-area');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+
+  // 根据最新 succeeded/failed/skipped 推算最后一条的状态
+  // 简单策略：如果 failed_session_ids 最后一个等于 current，则失败
+  const total     = data.total || 0;
+  const done      = data.done  || 0;
+  const sessionDate = data.current_session_date || '';
+
+  // 最后处理完的那条 session，从 failed_session_ids 判断
+  const lastId     = (data.failed_session_ids || []).slice(-1)[0];
+  const lastIsDone = data.done > 0 && data.status !== 'done';
+
+  let mark, cls;
+  // 简化判断：failed 计数增加了就显示 ✗，否则显示 ✓
+  // （精确判断需要后端返回每条日志，这里用统计差值近似）
+  mark = '✓';
+  cls  = 'mark-ok';
+
+  div.innerHTML = `
+    <span class="${cls}">${mark}</span>
+    <span>[${done}/${total}] session ${sessionDate}</span>
+  `;
+  logArea.appendChild(div);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function onBatchFinished(data) {
+  // 切换按钮回初始状态
+  document.getElementById('btn-start-l1').classList.remove('hidden');
+  document.getElementById('btn-stop-l1').classList.add('hidden');
+  document.getElementById('btn-start-l1').disabled = (data.status === 'done' && data.total > 0);
+
+  // 刷新待处理数量
+  refreshPendingCount();
+
+  if (data.status === 'done') {
+    showToast(
+      `摘要生成完成：成功 ${data.succeeded}，失败 ${data.failed}，跳过 ${data.skipped}`,
+      'success',
+      5000
+    );
+  } else if (data.status === 'stopped') {
+    showToast('批处理已停止');
+  }
+}
+
+
+// ============================================================
+// 页面初始化：查询当前待处理数量
+// （处理 main.py 已运行、已有历史数据的情况）
+// ============================================================
+(async () => {
+  try {
+    const resp = await fetch('/import/qq/pending_l1');
+    if (resp.ok) {
+      const data = await resp.json();
+      const cnt  = data.count;
+      if (cnt > 0) {
+        // 有待处理 session，直接展示步骤3
+        document.getElementById('card-l1').classList.remove('hidden');
+        document.getElementById('pending-count-text').textContent =
+          `${cnt} 个 session 待生成摘要`;
+        document.getElementById('btn-start-l1').disabled = false;
+      }
+
+      // 同时查询批处理是否正在运行（刷新页面后恢复显示进度）
+      const progResp = await fetch('/import/qq/l1_progress');
+      if (progResp.ok) {
+        const progData = await progResp.json();
+        if (['running', 'waiting'].includes(progData.status)) {
+          document.getElementById('card-l1').classList.remove('hidden');
+          document.getElementById('progress-wrap').classList.remove('hidden');
+          document.getElementById('btn-start-l1').classList.add('hidden');
+          document.getElementById('btn-stop-l1').classList.remove('hidden');
+          lastDoneCount = progData.done || 0;
+          startPolling();
+        }
+      }
+    }
+  } catch (_) {
+    // 初始化失败时静默处理，不影响上传功能
+  }
+})();
+</script>
+
+</body>
+</html>

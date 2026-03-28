@@ -15,14 +15,6 @@ session_manager.py — Session 生命周期管理
        → 调用 merger.check_and_merge()
        → merger 内部判断时间触发条件（路径B）
 
-变更记录：
-  v2 — 修复代码优化清单 P1-2：
-       __main__ 测试块中移除对 database._get_connection() 私有函数的直接调用。
-       原来为了模拟空闲超时，测试块直接用私有函数连接数据库并手写 UPDATE SQL，
-       造成封装原则不一致，且若 _get_connection 内部实现变更会波及此处。
-       修复方案：database.py 新增公开函数 update_message_time_for_test()，
-       测试块改为通过该函数修改时间戳，不再直接接触私有函数。
-
 与其他模块的关系：
   - 读写数据库：database.py
   - 读取配置：config.py

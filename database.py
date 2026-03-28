@@ -836,6 +836,301 @@ def update_profile_field(field, new_content, source_l1_id=None):
     conn.close()
     return new_id
 
+"""
+database_patch.py — database.py 新增函数补丁
+=====================================================================
+
+将以下三个函数追加到 database.py 末尾（在 __main__ 块之前）。
+
+这三个函数专门为历史消息导入设计，接受自定义时间戳参数，
+不使用 datetime.now()，确保历史 session 的时间线准确。
+
+与现有函数的区别：
+    new_session()           → started_at = datetime.now()
+    new_session_with_time() → started_at = 调用方传入的 ISO 字符串
+
+    save_message()            → created_at = datetime.now()
+    save_message_with_time()  → created_at = 调用方传入的 ISO 字符串
+
+    close_session()            → ended_at = datetime.now()
+    close_session_with_time()  → ended_at = 调用方传入的 ISO 字符串
+
+使用场景：
+    仅限 importer/qq_importer.py 调用。
+    正常业务流程（实时对话）继续使用原有函数。
+"""
+
+# =============================================================================
+# 历史消息导入专用函数（接受自定义时间戳）
+# =============================================================================
+
+def new_session_with_time(started_at_iso: str) -> int:
+    """
+    创建一个历史 session，使用调用方指定的开始时间。
+
+    与 new_session() 的唯一区别是 started_at 由调用方传入，
+    而不是 datetime.now()。用于历史消息导入，保留原始时间线。
+
+    参数：
+        started_at_iso — session 开始时间，UTC ISO 8601 格式，
+                         如 "2024-06-18T08:55:51+00:00"
+
+    返回：
+        int — 新建 session 的 id
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO sessions (started_at) VALUES (?)",
+        (started_at_iso,)
+    )
+    conn.commit()
+    session_id = cursor.lastrowid
+    conn.close()
+    return session_id
+
+
+def save_message_with_time(
+    session_id: int,
+    role: str,
+    content: str,
+    created_at: str,
+) -> int:
+    """
+    保存一条历史消息，使用调用方指定的时间戳。
+
+    与 save_message() 的唯一区别是 created_at 由调用方传入，
+    而不是 datetime.now()。用于历史消息导入，保留原始时间戳。
+
+    参数：
+        session_id — 所属 session 的 id
+        role       — "user" 或 "assistant"
+        content    — 消息正文（对方消息含 [发送人名] 前缀）
+        created_at — 消息原始时间，UTC ISO 8601 格式
+
+    返回：
+        int — 新插入消息的 id
+
+    注意：
+        导入场景下 role 允许 "assistant"（对方消息），
+        不做 "user"/"assistant" 以外的校验，
+        因为 qq_parser 已经保证了 role 的合法性。
+    """
+    if role not in ("user", "assistant"):
+        raise ValueError(f"role 只能是 'user' 或 'assistant'，收到：{role!r}")
+
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+        (session_id, role, content, created_at)
+    )
+    conn.commit()
+    message_id = cursor.lastrowid
+    conn.close()
+    return message_id
+
+
+def close_session_with_time(session_id: int, ended_at_iso: str) -> None:
+    """
+    关闭一个历史 session，使用调用方指定的结束时间。
+
+    与 close_session() 的唯一区别是 ended_at 由调用方传入，
+    而不是 datetime.now()。用于历史消息导入，保留原始时间线。
+
+    参数：
+        session_id  — 要关闭的 session id
+        ended_at_iso — session 结束时间，UTC ISO 8601 格式
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE sessions SET ended_at = ? WHERE id = ?",
+        (ended_at_iso, session_id)
+    )
+    conn.commit()
+    conn.close()
+
+def new_session_with_time(started_at_iso: str) -> int:
+    """
+    创建一个历史 session，使用调用方指定的开始时间。
+
+    与 new_session() 的唯一区别：
+        started_at 由调用方传入，而不是 datetime.now()。
+        用于历史消息导入，保留原始时间线。
+
+    参数：
+        started_at_iso — session 开始时间，UTC ISO 8601 格式
+                         如 "2024-06-18T08:55:51+00:00"
+
+    返回：
+        int — 新建 session 的 id
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO sessions (started_at) VALUES (?)",
+        (started_at_iso,)
+    )
+    conn.commit()
+    session_id = cursor.lastrowid
+    conn.close()
+    return session_id
+
+
+def save_message_with_fingerprint(
+    session_id: int,
+    role: str,
+    content: str,
+    created_at: str,
+    fingerprint: str,
+) -> int:
+    """
+    保存一条历史消息，同时写入指纹字段，用于后续重复导入预检。
+
+    与 save_message() 的区别：
+        · created_at 由调用方传入（保留原始时间戳，不用 datetime.now()）
+        · 额外写入 import_fingerprint 字段（重复预检用）
+
+    前置条件：
+        messages 表必须已执行以下迁移，否则写入时会报列不存在：
+            ALTER TABLE messages ADD COLUMN import_fingerprint TEXT;
+
+    参数：
+        session_id  — 所属 session 的 id
+        role        — "user" 或 "assistant"
+        content     — 消息正文（对方消息含 [发送人名] 前缀）
+        created_at  — 消息原始时间，UTC ISO 8601 格式
+        fingerprint — 由 qq_parser._make_fingerprint() 生成的16位十六进制字符串
+
+    返回：
+        int — 新插入消息的 id
+    """
+    if role not in ("user", "assistant"):
+        raise ValueError(f"role 只能是 'user' 或 'assistant'，收到：{role!r}")
+
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO messages (session_id, role, content, created_at, import_fingerprint)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (session_id, role, content, created_at, fingerprint)
+    )
+    conn.commit()
+    message_id = cursor.lastrowid
+    conn.close()
+    return message_id
+
+
+def close_session_with_time(session_id: int, ended_at_iso: str) -> None:
+    """
+    关闭一个历史 session，使用调用方指定的结束时间。
+
+    与 close_session() 的唯一区别：
+        ended_at 由调用方传入，而不是 datetime.now()。
+        用于历史消息导入，保留原始时间线。
+
+    参数：
+        session_id   — 要关闭的 session id
+        ended_at_iso — session 结束时间，UTC ISO 8601 格式
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE sessions SET ended_at = ? WHERE id = ?",
+        (ended_at_iso, session_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+# =============================================================================
+# 重复导入预检专用函数
+# =============================================================================
+
+def get_all_message_fingerprints() -> set:
+    """
+    取出 messages 表中所有消息的指纹集合，用于重复导入预检。
+
+    指纹由 qq_parser._make_fingerprint() 计算，存储在 messages 表的
+    import_fingerprint 列（需要先执行下方的迁移 SQL 添加此列）。
+
+    ── 迁移 SQL（首次使用前手动执行一次）──
+        ALTER TABLE messages ADD COLUMN import_fingerprint TEXT;
+
+    未设置指纹的消息（实时对话产生的）import_fingerprint 为 NULL，
+    查询时自动过滤掉 NULL 值，只返回有指纹的条目。
+
+    返回：
+        set — 所有已存在指纹的字符串集合；messages 表为空或无指纹时返回空集合
+
+    调用方：
+        importer/qq_parser.py 的 _check_duplicates_against_db()
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+
+    # 检查 import_fingerprint 列是否存在
+    # 如果用户还没执行迁移 SQL，这里会给出友好提示而不是崩溃
+    cursor.execute("PRAGMA table_info(messages)")
+    columns = [row["name"] for row in cursor.fetchall()]
+    conn.close()
+
+    if "import_fingerprint" not in columns:
+        raise RuntimeError(
+            "messages 表缺少 import_fingerprint 列。\n"
+            "请先在 SQLite 中执行以下迁移 SQL：\n"
+            "    ALTER TABLE messages ADD COLUMN import_fingerprint TEXT;\n"
+            "执行后重新运行导入即可。"
+        )
+
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT import_fingerprint FROM messages WHERE import_fingerprint IS NOT NULL"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {row["import_fingerprint"] for row in rows}
+
+# ===========================================================================
+# 查询所有"已关闭但尚未生成 L1 摘要"的历史 session。
+# ===========================================================================
+
+def get_sessions_without_l1() -> list:
+    """
+    SQL 逻辑：
+        sessions LEFT JOIN memory_l1 ON session_id
+        WHERE memory_l1.id IS NULL          -- 没有对应 L1
+          AND sessions.ended_at IS NOT NULL  -- 已关闭的 session
+        ORDER BY started_at ASC             -- 按时间升序，从最早的开始处理
+
+    返回：
+        list[dict]，每个元素包含：
+            id         — session id（int）
+            started_at — session 开始时间（ISO 8601 字符串）
+
+    用途：
+        importer/l1_batch.py 的 _get_pending_sessions() 调用此函数，
+        获取批处理的待处理列表。
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT s.id, s.started_at
+        FROM sessions s
+        LEFT JOIN memory_l1 l1 ON s.id = l1.session_id
+        WHERE l1.id IS NULL
+          AND s.ended_at IS NOT NULL
+        ORDER BY s.started_at ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    # sqlite3.Row 转 dict，方便后续序列化和传参
+    return [{"id": row["id"], "started_at": row["started_at"]} for row in rows]
 
 # =============================================================================
 # 直接运行此文件时：执行连通性验证

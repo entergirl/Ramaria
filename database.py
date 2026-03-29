@@ -1132,6 +1132,166 @@ def get_sessions_without_l1() -> list:
     # sqlite3.Row 转 dict，方便后续序列化和传参
     return [{"id": row["id"], "started_at": row["started_at"]} for row in rows]
 
+# ===========================================================================
+# 记忆衰减功能的数据库补丁
+# ===========================================================================
+
+def add_last_accessed_at_columns():
+    """
+    数据库迁移：给 memory_l1 和 memory_l2 表各新增 last_accessed_at 列。
+
+    last_accessed_at 用于记忆衰减的"保底加成"机制：
+        当一条记忆在近期（MEMORY_DECAY_RECENT_BOOST_DAYS 天内）被检索命中过，
+        即使它创建时间很早，也不会让其保留率 R 跌得太低。
+
+    列定义：
+        last_accessed_at TEXT  -- UTC ISO 8601，可为 NULL
+        NULL 表示该记忆自创建后从未被检索命中过（或在此功能上线前就已存在）
+
+    幂等保护：
+        SQLite 的 ALTER TABLE ADD COLUMN 在列已存在时会抛出 OperationalError，
+        函数内部捕获这个错误并静默跳过，可以安全地反复调用。
+
+    调用时机：
+        main.py 的 lifespan startup 阶段调用一次即可，后续自动跳过。
+
+    返回：
+        dict — {"l1": bool, "l2": bool}，True 表示本次新增了该列，False 表示已存在
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    result = {"l1": False, "l2": False}
+
+    # memory_l1 表新增 last_accessed_at
+    try:
+        cursor.execute(
+            "ALTER TABLE memory_l1 ADD COLUMN last_accessed_at TEXT"
+        )
+        result["l1"] = True
+    except Exception as e:
+        # 列已存在时 SQLite 抛出 OperationalError: duplicate column name
+        # 其他异常也静默处理，不阻断启动流程
+        if "duplicate column name" not in str(e).lower():
+            logger.warning(f"memory_l1 添加 last_accessed_at 列时出现非预期异常 — {e}")
+
+    # memory_l2 表新增 last_accessed_at
+    try:
+        cursor.execute(
+            "ALTER TABLE memory_l2 ADD COLUMN last_accessed_at TEXT"
+        )
+        result["l2"] = True
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning(f"memory_l2 添加 last_accessed_at 列时出现非预期异常 — {e}")
+
+    conn.commit()
+    conn.close()
+
+    if result["l1"]:
+        logger.info("memory_l1 表已新增 last_accessed_at 列")
+    if result["l2"]:
+        logger.info("memory_l2 表已新增 last_accessed_at 列")
+
+    return result
+
+
+def batch_update_last_accessed(layer: str, id_list: list) -> int:
+    """
+    批量更新一批记忆记录的 last_accessed_at 为当前时间。
+
+    由后台回写线程（AccessBoostWorker）消费队列时调用，
+    不在检索主路径上执行，不阻塞对话响应。
+
+    参数：
+        layer   — 要更新的表层级，只能是 "l1" 或 "l2"
+        id_list — 需要更新的记录 id 列表，如 [3, 7, 12]
+                  列表为空时直接返回 0，不执行任何 SQL
+
+    返回：
+        int — 实际更新的行数；失败时返回 0
+
+    异常处理：
+        更新失败时只记录 warning 日志，不向上抛出，
+        保证后台线程不因单次写入失败而崩溃。
+    """
+    if not id_list:
+        return 0
+
+    # 只允许操作这两张表，防止参数注入
+    table_map = {
+        "l1": "memory_l1",
+        "l2": "memory_l2",
+    }
+    if layer not in table_map:
+        logger.warning(f"batch_update_last_accessed: 未知 layer={layer!r}，跳过")
+        return 0
+
+    table        = table_map[layer]
+    now          = _now()
+    placeholders = ",".join("?" * len(id_list))
+
+    try:
+        conn   = _get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE {table} SET last_accessed_at = ? WHERE id IN ({placeholders})",
+            [now] + list(id_list)
+        )
+        conn.commit()
+        updated = cursor.rowcount
+        conn.close()
+        logger.debug(
+            f"batch_update_last_accessed: layer={layer}，"
+            f"更新 {updated} 条（ids={id_list[:5]}{'...' if len(id_list) > 5 else ''}）"
+        )
+        return updated
+
+    except Exception as e:
+        logger.warning(f"batch_update_last_accessed 写入失败，layer={layer} — {e}")
+        return 0
+
+
+def get_last_accessed_at(layer: str, record_id: int):
+    """
+    读取单条记忆记录的 last_accessed_at 字段。
+
+    供 vector_store._retrieve() 在计算保底加成时使用：
+        如果 last_accessed_at 不为 NULL 且在 RECENT_BOOST_DAYS 天内，
+        则对该条记忆的保留率 R 设置下限。
+
+    参数：
+        layer     — "l1" 或 "l2"
+        record_id — memory_l1 或 memory_l2 表的主键 id
+
+    返回：
+        str  — ISO 8601 时间戳字符串，如 "2026-03-28T14:30:00+00:00"
+        None — 字段为 NULL（从未被访问）或记录不存在时返回 None
+
+    注意：
+        此函数在每次检索命中时都会被调用，需保持轻量。
+        SQLite 的单行 SELECT 性能足够，通常在 1ms 以内。
+    """
+    table_map = {"l1": "memory_l1", "l2": "memory_l2"}
+    if layer not in table_map:
+        return None
+
+    table = table_map[layer]
+
+    try:
+        conn   = _get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT last_accessed_at FROM {table} WHERE id = ?",
+            (record_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row["last_accessed_at"] if row else None
+
+    except Exception as e:
+        logger.warning(f"get_last_accessed_at 查询失败，layer={layer} id={record_id} — {e}")
+        return None
+
 # =============================================================================
 # 直接运行此文件时：执行连通性验证
 # =============================================================================

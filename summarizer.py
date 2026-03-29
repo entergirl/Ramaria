@@ -345,11 +345,15 @@ def generate_l1_summary(session_id):
     # 第八步：将 L1 摘要写入向量索引
     try:
         from vector_store import index_l1
+        from database import get_l1_by_id as _get_l1
+        l1_row = _get_l1(l1_id)
         index_l1(
             l1_id      = l1_id,
             summary    = validated["summary"],
             keywords   = validated["keywords"],
             session_id = session_id,
+            # 传入 created_at 以支持衰减计算和日期前缀
+            created_at = l1_row["created_at"] if l1_row else None,
         )
     except Exception as e:
         logger.warning(f"L1 向量索引写入失败 — {e}")

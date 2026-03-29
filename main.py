@@ -107,10 +107,22 @@ async def lifespan(app: FastAPI):
     shutdown：优雅停止 SessionManager。
     """
     logger.info("应用启动中…")
+
+    # 数据库迁移：确保 last_accessed_at 列存在（幂等，可重复运行）
+    from database import add_last_accessed_at_columns
+    add_last_accessed_at_columns()
+
+    # 启动后台访问回写线程（MEMORY_DECAY_ENABLE_ACCESS_BOOST=False 时自动跳过）
+    from vector_store import _start_access_worker
+    _start_access_worker()
+
     session_manager.start()
     logger.info("就绪，访问 http://localhost:8000")
     yield
+
     logger.info("关闭中…")
+    from vector_store import _stop_access_worker
+    _stop_access_worker()
     session_manager.stop()
     logger.info("已停止")
 

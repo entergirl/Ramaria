@@ -478,8 +478,8 @@ if __name__ == "__main__":
     print(f"新建 session，id = {sid}")
 
     # 2. 存两条消息
-    save_message(sid, "user", "你好，我是测试消息")
-    save_message(sid, "assistant", "你好！数据库连接正常。")
+    save_message(sid, "user", "你好！我是测试消息。")
+    save_message(sid, "assistant", "你好！连接正常。")
 
     # 3. 读回消息
     messages = get_messages(sid)
@@ -489,8 +489,8 @@ if __name__ == "__main__":
     # 4. 写一条 L1 摘要（验证新字段）
     l1_id = save_l1_summary(
         session_id  = sid,
-        summary     = "烧酒完成了数据库初始化脚本的测试验证。",
-        keywords    = "数据库,初始化,测试",
+        summary     = "对话完成了初始化。",
+        keywords    = "初始化",
         time_period = "夜间",
         atmosphere  = "专注高效"
     )

@@ -105,7 +105,7 @@ MEMORY_DECAY_S_L2 = 60   # L2 时间段聚合摘要
 # 默认关闭（False）：
 #   · 开发阶段无需关心 last_accessed_at 字段是否存在
 #   · 数据库迁移（add_last_accessed_at_columns）完成后再开启
-MEMORY_DECAY_ENABLE_ACCESS_BOOST = False
+MEMORY_DECAY_ENABLE_ACCESS_BOOST = True
 
 # 判定"最近被访问"的时间窗口（天）
 # 在此窗口内被命中过的记忆，才触发保底加成

@@ -277,31 +277,38 @@ def _calc_decay_factor(
     created_at_str: str,
     decay_s: float,
     last_accessed_at_str: str | None = None,
+    salience: float | None = None,
 ) -> float:
     """
-    根据 Ebbinghaus 遗忘曲线计算记忆保留率 R。
+    根据 Ebbinghaus 遗忘曲线计算记忆保留率 R，并集成 salience 稳定性加成。
 
-    公式：R = e^(-t / S)
-      t = 距记忆生成（created_at）的天数
-      S = 稳定性系数（decay_s），越大衰减越慢
+    公式：R = e^(-t / S_adjusted)
+      t           = 距记忆生成（created_at）的天数
+      S_adjusted  = decay_s × (1 + salience × SALIENCE_DECAY_MULTIPLIER)
 
-    保底加成（当 MEMORY_DECAY_ENABLE_ACCESS_BOOST=True）：
+    salience 加成含义：
+      salience=0.0 → S 不变，衰减速度正常
+      salience=0.5 → S × 1.25（MULTIPLIER=0.5时），衰减减慢 25%
+      salience=1.0 → S × 1.5，衰减减慢 50%，高显著记忆更持久
+
+    last_accessed_at 保底加成（当 MEMORY_DECAY_ENABLE_ACCESS_BOOST=True）：
       若 last_accessed_at 不为 None 且在 RECENT_BOOST_DAYS 天内，
       则 R = max(R, RECENT_BOOST_FLOOR)。
-      这是下限保底，不替换 t，旧记忆仍然会随时间衰减，
-      只是被访问过的记忆不会跌得太低。
 
     参数：
         created_at_str       — 记忆创建时间，ISO 8601 字符串
-        decay_s              — 当前层的稳定性系数（天）
-        last_accessed_at_str — 最近访问时间，ISO 8601 字符串；None 表示从未访问
+        decay_s              — 当前层的基础稳定性系数（天）
+        last_accessed_at_str — 最近访问时间；None 表示从未访问
+        salience             — 情感显著性 [0.0, 1.0]；None 时视为 0.5（不影响加成）
 
     返回：
-        float — 保留率 R，范围 (0, 1]；解析时间失败时返回 1.0（不衰减，安全降级）
+        float — 保留率 R，范围 (0, 1]；解析时间失败时返回 1.0（安全降级）
     """
+    from config import SALIENCE_DECAY_MULTIPLIER
+
     now = datetime.now(timezone.utc)
 
-    # ── 主衰减：基于 created_at ──
+    # ── 主衰减：基于 created_at + salience 调整后的稳定性系数 ──
     try:
         created_at = datetime.fromisoformat(created_at_str)
         if created_at.tzinfo is None:
@@ -311,7 +318,14 @@ def _calc_decay_factor(
         logger.warning(f"无法解析 created_at={created_at_str!r}，衰减跳过（R=1.0）")
         return 1.0
 
-    R = math.exp(-t_days / decay_s)
+    # 用 salience 调整稳定性系数
+    # salience 为 None 时使用 0.5（中等显著性），不偏不倚
+    s_val = salience if salience is not None else 0.5
+    # 限制在合法范围内，防止异常值破坏公式
+    s_val = max(0.0, min(1.0, s_val))
+    decay_s_adjusted = decay_s * (1.0 + s_val * SALIENCE_DECAY_MULTIPLIER)
+
+    R = math.exp(-t_days / decay_s_adjusted)
 
     # ── 保底加成：基于 last_accessed_at（可选） ──
     if (
@@ -324,10 +338,8 @@ def _calc_decay_factor(
                 last_accessed = last_accessed.replace(tzinfo=timezone.utc)
             days_since_access = (now - last_accessed).total_seconds() / 86400
             if days_since_access <= MEMORY_DECAY_RECENT_BOOST_DAYS:
-                # 在窗口内被访问过：保留率不低于 RECENT_BOOST_FLOOR
                 R = max(R, MEMORY_DECAY_RECENT_BOOST_FLOOR)
         except (ValueError, TypeError):
-            # 时间解析失败时跳过加成，不影响主衰减
             pass
 
     return R
@@ -411,13 +423,9 @@ def _make_l0_chunks(messages, session_id, window_size=L0_WINDOW_SIZE):
 # 对外接口：写入索引
 # =============================================================================
 
-def index_l1(l1_id, summary, keywords=None, session_id=None, created_at=None):
+def index_l1(l1_id, summary, keywords=None, session_id=None, created_at=None, salience=None):
     """
     将一条 L1 摘要写入向量索引。
-
-    索引文本格式：
-        [YYYY-MM-DD] <摘要文本> 关键词：<关键词>
-    日期前缀让模型在读到注入内容时能感知时间远近，辅助理解参考权重。
 
     参数：
         l1_id      — memory_l1 表的主键 id
@@ -425,6 +433,8 @@ def index_l1(l1_id, summary, keywords=None, session_id=None, created_at=None):
         keywords   — 关键词字符串，逗号分隔；可为 None
         session_id — 对应的 session id；可为 None
         created_at — 摘要生成时间（ISO 8601）；为 None 时不加日期前缀
+        salience   — 情感显著性，五档浮点 [0.0, 1.0]；为 None 时不写入 metadata
+                     写入后可在衰减计算中直接从 metadata 读取，避免回查 SQLite
     """
     try:
         collection = _get_collection(_COLL_L1)
@@ -446,6 +456,10 @@ def index_l1(l1_id, summary, keywords=None, session_id=None, created_at=None):
         # 存储 created_at 供衰减计算使用
         if created_at:
             metadata["created_at"] = created_at
+        # 存储 salience 供衰减加成使用，避免检索时回查 SQLite
+        # salience 来自调用方传入，默认 0.5（中等显著性）
+        if salience is not None:
+            metadata["salience"] = float(salience)
 
         collection.upsert(
             ids       = [str(l1_id)],
@@ -681,7 +695,16 @@ def _retrieve(collection_name, query_text, top_k, id_field, decay_s: float):
                 except Exception:
                     pass   # 查询失败时跳过加成，不影响主流程
 
-            R                 = _calc_decay_factor(created_at_str, decay_s, last_accessed_at_str)
+            # 从 metadata 读取 salience（写入索引时已存入，无需回查 SQLite）
+            # L0 切片没有 salience 字段，读不到时使用 None（函数内部会用 0.5 默认值）
+            meta_salience = meta.get("salience", None)
+
+            R                 = _calc_decay_factor(
+                created_at_str,
+                decay_s,
+                last_accessed_at_str,
+                salience=meta_salience,      # 新增：传入显著性加成
+            )
             adjusted_distance = _adjust_distance(dist, R)
 
             # 使用调整后的距离做阈值过滤

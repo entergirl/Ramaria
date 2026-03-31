@@ -7,10 +7,10 @@ importer/qq_importer.py — 历史消息数据库写入层
     复用 database.py 的接口，不触发 L1 摘要生成。
 
     写入流程（每个 session）：
-        1. 调用 new_session_with_time()    — 创建历史 session（保留原始时间）
-        2. 逐条调用 save_message_with_time() — 写入消息（同时写入指纹字段）
-        3. 调用 close_session_with_time()  — 关闭 session（保留原始时间）
-        4. 不触发 L1 摘要生成             — L1 由后续批量流程处理
+        1. 调用 new_session_with_time()        — 创建历史 session（保留原始时间）
+        2. 逐条调用 save_message_with_fingerprint() — 写入消息（同时写入指纹字段）
+        3. 调用 close_session_with_time()      — 关闭 session（保留原始时间）
+        4. 不触发 L1 摘要生成                 — L1 由后续批量流程处理
 
     为什么不立即触发 L1：
         历史消息可能有几千条，导入时立即触发摘要会连续调用本地模型上百次，

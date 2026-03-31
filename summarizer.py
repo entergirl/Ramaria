@@ -195,6 +195,12 @@ def _parse_summary_json(raw_text):
     return None
 
 
+# valence 合法档位集合（用集合做 O(1) 查找）
+_VALID_VALENCE  = {-1.0, -0.5, 0.0, 0.5, 1.0}
+# salience 合法档位集合
+_VALID_SALIENCE = {0.0, 0.25, 0.5, 0.75, 1.0}
+
+
 def _validate_and_fix(parsed):
     """
     校验解析结果的字段完整性和合法性，对不合规的值进行降级处理。
@@ -203,7 +209,7 @@ def _validate_and_fix(parsed):
         parsed — _parse_summary_json() 返回的字典
 
     返回：
-        dict — 校验/修复后的字典，四个字段均有值（部分允许为 None）
+        dict — 校验/修复后的字典，六个字段均有值（部分允许为 None）
     """
     result = {}
 
@@ -228,6 +234,37 @@ def _validate_and_fix(parsed):
         logger.warning(f"atmosphere 值 {atm!r} 超过四字，已截断")
         atm = atm[:4]
     result["atmosphere"] = atm if atm else None
+
+    # ── valence：五档浮点校验 ──
+    # 先尝试转换为 float，再做档位合法性校验
+    # 模型可能输出整数 0 / 1 等，需要先 float() 统一化
+    try:
+        raw_valence = float(parsed.get("valence", 0.0))
+        # 找到最近的合法档位（防止模型输出 0.3 这类非标准值）
+        closest_valence = min(_VALID_VALENCE, key=lambda v: abs(v - raw_valence))
+        if closest_valence != raw_valence:
+            logger.debug(
+                f"valence 值 {raw_valence} 不在合法档位，"
+                f"自动对齐到最近档位 {closest_valence}"
+            )
+        result["valence"] = closest_valence
+    except (ValueError, TypeError):
+        logger.warning(f"valence 解析失败，使用默认值 0.0")
+        result["valence"] = 0.0
+
+    # ── salience：五档浮点校验 ──
+    try:
+        raw_salience = float(parsed.get("salience", 0.5))
+        closest_salience = min(_VALID_SALIENCE, key=lambda v: abs(v - raw_salience))
+        if closest_salience != raw_salience:
+            logger.debug(
+                f"salience 值 {raw_salience} 不在合法档位，"
+                f"自动对齐到最近档位 {closest_salience}"
+            )
+        result["salience"] = closest_salience
+    except (ValueError, TypeError):
+        logger.warning(f"salience 解析失败，使用默认值 0.5")
+        result["salience"] = 0.5
 
     return result
 
@@ -283,13 +320,18 @@ def generate_l1_summary(session_id):
     # 第三步：格式化对话文本，选择 Prompt 模板
     conversation_text = _format_conversation(messages)
 
+    # 优先使用含情感字段的新模板；有候选词时同时注入词典
+    from config import (
+        L1_SUMMARY_PROMPT_WITH_EMOTIONS,
+        L1_SUMMARY_PROMPT_WITH_EMOTIONS_AND_KEYWORDS,
+    )
     if keyword_candidates:
-        prompt = L1_SUMMARY_PROMPT_WITH_KEYWORDS.format(
+        prompt = L1_SUMMARY_PROMPT_WITH_EMOTIONS_AND_KEYWORDS.format(
             conversation       = conversation_text,
             keyword_candidates = keyword_candidates,
         )
     else:
-        prompt = L1_SUMMARY_PROMPT.format(
+        prompt = L1_SUMMARY_PROMPT_WITH_EMOTIONS.format(
             conversation = conversation_text,
         )
 
@@ -316,6 +358,8 @@ def generate_l1_summary(session_id):
             keywords    = None,
             time_period = None,
             atmosphere  = None,
+            valence     = 0.0,   # 降级时使用中性默认值
+            salience    = 0.5,   # 降级时使用中等显著性默认值
         )
         return l1_id
 
@@ -328,6 +372,8 @@ def generate_l1_summary(session_id):
         keywords    = validated["keywords"],
         time_period = validated["time_period"],
         atmosphere  = validated["atmosphere"],
+        valence     = validated["valence"],    # 新增：情绪效价
+        salience    = validated["salience"],   # 新增：情感显著性
     )
 
     logger.info(f"L1 摘要已写入，id = {l1_id}")
@@ -352,8 +398,8 @@ def generate_l1_summary(session_id):
             summary    = validated["summary"],
             keywords   = validated["keywords"],
             session_id = session_id,
-            # 传入 created_at 以支持衰减计算和日期前缀
             created_at = l1_row["created_at"] if l1_row else None,
+            salience   = validated["salience"],   # 新增：写入 metadata 供衰减使用
         )
     except Exception as e:
         logger.warning(f"L1 向量索引写入失败 — {e}")

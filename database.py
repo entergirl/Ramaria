@@ -279,16 +279,19 @@ def update_message_time_for_test(session_id, fake_time_str):
 # memory_l1 表操作
 # =============================================================================
 
-def save_l1_summary(session_id, summary, keywords, time_period, atmosphere):
+def save_l1_summary(session_id, summary, keywords, time_period, atmosphere,
+                    valence=0.0, salience=0.5):
     """
     将一条 L1 摘要写入 memory_l1 表。
 
     参数：
         session_id  — 对应的 session id
         summary     — 一句话摘要（第三人称，只记结论，不超过50字）
-        keywords    — 名词标签字符串，英文逗号分隔，如 "项目,后端,FastAPI"
+        keywords    — 名词标签字符串，逗号分隔，如 "项目,后端,FastAPI"
         time_period — 时间段标签，六选一：清晨/上午/下午/傍晚/夜间/深夜
         atmosphere  — 对话氛围，四字以内，如 "专注高效"
+        valence     — 情绪效价，五档浮点：-1.0/-0.5/0.0/0.5/1.0，默认中性 0.0
+        salience    — 情感显著性，五档浮点：0.0/0.25/0.5/0.75/1.0，默认中等 0.5
 
     返回：
         int — 新插入 L1 记录的 id
@@ -301,9 +304,12 @@ def save_l1_summary(session_id, summary, keywords, time_period, atmosphere):
     conn = _get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO memory_l1 (session_id, summary, keywords, time_period, atmosphere, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (session_id, summary, keywords, time_period, atmosphere, _now()))
+        INSERT INTO memory_l1
+            (session_id, summary, keywords, time_period, atmosphere,
+             valence, salience, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, summary, keywords, time_period, atmosphere,
+          valence, salience, _now()))
     conn.commit()
     l1_id = cursor.lastrowid
     conn.close()
@@ -330,6 +336,34 @@ def get_l1_by_id(l1_id):
     row = cursor.fetchone()
     conn.close()
     return row
+
+
+def get_l1_salience(l1_id: int) -> float:
+    """
+    快速查询单条 L1 记录的 salience 值。
+
+    用于 vector_store._calc_decay_factor() 计算衰减时读取显著性加成。
+    比 get_l1_by_id() 轻量，只查一个字段。
+
+    参数：
+        l1_id — memory_l1 表的主键 id
+
+    返回：
+        float — salience 值，范围 [0.0, 1.0]
+                记录不存在或字段为 NULL 时返回默认值 0.5（不影响衰减）
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT salience FROM memory_l1 WHERE id = ?",
+        (l1_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None or row["salience"] is None:
+        return 0.5   # 默认中等显著性，不影响衰减计算
+    return float(row["salience"])
 
 
 def get_unabsorbed_l1(limit=None):
@@ -846,110 +880,19 @@ database_patch.py — database.py 新增函数补丁
 不使用 datetime.now()，确保历史 session 的时间线准确。
 
 与现有函数的区别：
-    new_session()           → started_at = datetime.now()
-    new_session_with_time() → started_at = 调用方传入的 ISO 字符串
+    new_session()                 → started_at = datetime.now()
+    new_session_with_time()       → started_at = 调用方传入的 ISO 字符串
 
-    save_message()            → created_at = datetime.now()
-    save_message_with_time()  → created_at = 调用方传入的 ISO 字符串
+    save_message()                → created_at = datetime.now()
+    save_message_with_fingerprint → created_at = 调用方传入的 ISO 字符串 + 指纹字段
 
-    close_session()            → ended_at = datetime.now()
-    close_session_with_time()  → ended_at = 调用方传入的 ISO 字符串
+    close_session()               → ended_at = datetime.now()
+    close_session_with_time()     → ended_at = 调用方传入的 ISO 字符串
 
 使用场景：
     仅限 importer/qq_importer.py 调用。
     正常业务流程（实时对话）继续使用原有函数。
 """
-
-# =============================================================================
-# 历史消息导入专用函数（接受自定义时间戳）
-# =============================================================================
-
-def new_session_with_time(started_at_iso: str) -> int:
-    """
-    创建一个历史 session，使用调用方指定的开始时间。
-
-    与 new_session() 的唯一区别是 started_at 由调用方传入，
-    而不是 datetime.now()。用于历史消息导入，保留原始时间线。
-
-    参数：
-        started_at_iso — session 开始时间，UTC ISO 8601 格式，
-                         如 "2024-06-18T08:55:51+00:00"
-
-    返回：
-        int — 新建 session 的 id
-    """
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO sessions (started_at) VALUES (?)",
-        (started_at_iso,)
-    )
-    conn.commit()
-    session_id = cursor.lastrowid
-    conn.close()
-    return session_id
-
-
-def save_message_with_time(
-    session_id: int,
-    role: str,
-    content: str,
-    created_at: str,
-) -> int:
-    """
-    保存一条历史消息，使用调用方指定的时间戳。
-
-    与 save_message() 的唯一区别是 created_at 由调用方传入，
-    而不是 datetime.now()。用于历史消息导入，保留原始时间戳。
-
-    参数：
-        session_id — 所属 session 的 id
-        role       — "user" 或 "assistant"
-        content    — 消息正文（对方消息含 [发送人名] 前缀）
-        created_at — 消息原始时间，UTC ISO 8601 格式
-
-    返回：
-        int — 新插入消息的 id
-
-    注意：
-        导入场景下 role 允许 "assistant"（对方消息），
-        不做 "user"/"assistant" 以外的校验，
-        因为 qq_parser 已经保证了 role 的合法性。
-    """
-    if role not in ("user", "assistant"):
-        raise ValueError(f"role 只能是 'user' 或 'assistant'，收到：{role!r}")
-
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (session_id, role, content, created_at)
-    )
-    conn.commit()
-    message_id = cursor.lastrowid
-    conn.close()
-    return message_id
-
-
-def close_session_with_time(session_id: int, ended_at_iso: str) -> None:
-    """
-    关闭一个历史 session，使用调用方指定的结束时间。
-
-    与 close_session() 的唯一区别是 ended_at 由调用方传入，
-    而不是 datetime.now()。用于历史消息导入，保留原始时间线。
-
-    参数：
-        session_id  — 要关闭的 session id
-        ended_at_iso — session 结束时间，UTC ISO 8601 格式
-    """
-    conn = _get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE sessions SET ended_at = ? WHERE id = ?",
-        (ended_at_iso, session_id)
-    )
-    conn.commit()
-    conn.close()
 
 def new_session_with_time(started_at_iso: str) -> int:
     """

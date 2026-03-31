@@ -474,22 +474,22 @@ def test_chroma_retrieve(collection):
 
 def test_similarity_threshold(collection):
     """
-    验证 SIMILARITY_THRESHOLD=0.8 的过滤效果。
+    验证 SIMILARITY_THRESHOLD=0.6 的过滤效果。
 
     策略：
-      · 相关查询  → 距离应 < 0.8，通过过滤，能召回结果
-      · 无关查询  → 距离应 > 0.8，被过滤掉，返回空列表
+      · 相关查询  → 距离应 < 0.6，通过过滤，能召回结果
+      · 无关查询  → 距离应 > 0.6，被过滤掉，返回空列表
 
     这个阈值是在 config.py 里配置的，这里用本地变量模拟，
-    验证 0.8 这个值对 Qwen3-Embedding-0.6B 是否合适。
+    验证 0.6 这个值对 Qwen3-Embedding-0.6B 是否合适。
 
-    如果无关查询也通过了过滤（距离 < 0.8），说明阈值需要调小；
-    如果相关查询被过滤掉（距离 > 0.8），说明阈值需要调大。
+    如果无关查询也通过了过滤（距离 < 0.6），说明阈值需要调小；
+    如果相关查询被过滤掉（距离 > 0.6），说明阈值需要调大。
 
     参数：
         collection — Chroma Collection 实例
     """
-    print_section("阶段六：相似度阈值过滤（SIMILARITY_THRESHOLD=0.8）")
+    print_section("阶段六：相似度阈值过滤（SIMILARITY_THRESHOLD=0.6）")
 
     if collection is None:
         print("⚠️  跳过：Chroma Collection 未成功创建")
@@ -712,10 +712,9 @@ def main():
 
     if all_pass:
         print("\n🎉 全部测试通过！")
-        print("   → 下一步：把 config.py 里的 EMBEDDING_MODEL 改为")
-        print(f"             \"{MODEL_NAME}\"")
-        print("             并把 SIMILARITY_THRESHOLD 改为 0.8")
-        print("             然后运行 rebuild_all_indexes() 重建索引。")
+        print(f"   → Qwen3-Embedding-0.6B 模型验证成功！")
+        print(f"   → 当前 config.py 配置：SIMILARITY_THRESHOLD=0.6（已验证）")
+        print(f"   → 如需调整阈值，请在 config.py 中修改并运行 rebuild_all_indexes() 重建索引。")
     else:
         print("\n⚠️  有测试未通过，请根据上方 [FAIL] 信息逐项排查。")
         print("   常见问题：")

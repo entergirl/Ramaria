@@ -1,34 +1,31 @@
 """
 main.py — FastAPI 应用入口
-版本：0.3.5
+版本：0.3.6
 =====================================================================
 
 变更记录：
 
-  v0.3.4 — P1-3 提取 _handle_local()，P1-4 router.disable_online()，
-            P2-4 修复 session_index 误用。
+  v0.3.6 — 检索质量优化：L1/L2 分层加权排序（对应优化清单 RAG-W1）
 
-  v0.3.5 — 两项改动（对应代码优化清单第三轮 P3-A、P2-A）：
+    【RAG-W1】_format_rag_results() + _build_context() 引入层级权重
 
-    【P3-A】删除 _detect_conflict_action() 中的死代码
-      问题：原函数末尾有两个连续的 return None，第一个之后第二个
-            永远触达不到，属于无意义死代码。
-      修复：删除多余的 return None，逻辑完全不变。
-            Python 函数末尾无 return 时自动返回 None，行为一致。
+      问题：
+        原来 retrieve_combined() 返回的 L1/L2 结果在注入 prompt 时，
+        是"L2 全部拼前、L1 全部拼后"的硬分块，块内按 adjusted_distance 排序。
+        但两层的 adjusted_distance 量纲相同，混排才能真正体现相关度优先。
 
-    【P2-A】_build_context() 接入 RAG 语义检索
-      问题：retrieve_combined() 接口已就绪，ChromaDB 索引正常写入，
-            但 _build_context() 从未调用语义检索，retrieved_l1l2
-            始终是纯时间序（最近 L2 + 最新 L1），向量索引功能闲置。
-      修复：在 _build_context() 中调用 retrieve_combined(user_message)，
-            将语义检索结果与时间序内容融合后注入 retrieved_l1l2。
+      优化方案（分层加权，保留分块结构）：
+        · 引入 RETRIEVAL_WEIGHT_L2 / RETRIEVAL_WEIGHT_L1（config.py）
+        · final_score = adjusted_distance × layer_weight
+        · 输出格式保持分块（L2 块在前、L1 块在后），但块内按 final_score 升序排列
+        · 调用方在 _build_context() 里从 config 读取权重，传给 _format_rag_results()
 
-      融合策略：
-        · RAG 语义结果放在前面（语义相关的历史，最有参考价值）
-        · 时间序内容追加在后面（最近发生的事，代表当前状态）
-        · 两部分用"── 近期动态 ──"分隔，让模型能区分内容来源
-        · user_message 为 None 时（/save 等场景）跳过 RAG，
-          纯走时间序，行为与修改前完全一致，降级路径安全
+      改动范围：
+        · _format_rag_results()：新增 weight_l2 / weight_l1 参数，块内排序改为 final_score
+        · _build_context()：从 config 读取权重常量，传给 _format_rag_results()
+        · config.py：新增 RETRIEVAL_WEIGHT_L2 = 0.8 / RETRIEVAL_WEIGHT_L1 = 1.0
+        · 其余所有函数、路由、逻辑完全不变
+
 
 目录结构（无变化）：
     demo/
@@ -44,7 +41,7 @@ main.py — FastAPI 应用入口
   POST /router/toggle  — 切换线上/本地模式
 """
 
-import os,tempfile
+import os, tempfile
 # 禁止 HuggingFace 在启动时联网检查模型更新，避免离线环境启动卡顿
 os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -59,6 +56,8 @@ from config import (
     DEBUG,
     SERVER_HOST,
     SERVER_PORT,
+    RETRIEVAL_WEIGHT_L2,   # [v0.3.6 新增] L2 层级权重系数
+    RETRIEVAL_WEIGHT_L1,   # [v0.3.6 新增] L1 层级权重系数
 )
 from llm_client import call_local_chat
 from database import (
@@ -132,10 +131,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title       = "珊瑚菌 · 个人 AI 陪伴助手",
     description = "本地运行，支持分层记忆与任务路由",
-    version     = "0.3.5",
+    version     = "0.3.6",
     lifespan    = lifespan,
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # =============================================================================
 # 数据模型
@@ -204,14 +204,6 @@ def _detect_conflict_action(text: str) -> str | None:
         "resolve" — 用户确认接受新内容
         "ignore"  — 用户选择忽略冲突
         None      — 不是冲突回复，交给正常对话流程处理
-
-    【P3-A 修复】删除了函数末尾重复的 return None：
-        原来末尾两行：
-            if len(text) > _CONFLICT_REPLY_MAX_LEN:
-                return None
-            return None      ← 死代码，无论如何这里都会返回 None
-        修复后：只保留 if 块内的 return None，函数末尾不再显式 return。
-        Python 函数执行到末尾无 return 时自动返回 None，行为完全一致。
     """
     t = text.lower().strip()
 
@@ -222,7 +214,6 @@ def _detect_conflict_action(text: str) -> str | None:
         return "ignore"
 
     # 超长消息直接视为正常对话
-    # 【P3-A 修复】此处之后不再有多余的 return None
     if len(text) > _CONFLICT_REPLY_MAX_LEN:
         return None
 
@@ -231,59 +222,137 @@ def _detect_conflict_action(text: str) -> str | None:
 # RAG 结果格式化辅助函数
 # =============================================================================
 
-def _format_rag_results(rag_result: dict) -> str | None:
+def _format_rag_results(
+    rag_result: dict,
+    weight_l2: float = RETRIEVAL_WEIGHT_L2,
+    weight_l1: float = RETRIEVAL_WEIGHT_L1,
+) -> str | None:
     """
     将 retrieve_combined() 的返回结果格式化为可注入 prompt 的纯文本。
+
+    [v0.3.6 改动]
+      · 新增 weight_l2 / weight_l1 参数，对每条结果计算 final_score
+      · final_score = adjusted_distance × layer_weight
+      · 输出格式保持分块（L2 块在前、L1 块在后），块内按 final_score 升序排列
+      · 显示"加权分数"而非原来的"相关度"，数值即 final_score
+
+    设计说明：
+      保留分块结构是为了给模型提供层级暗示：
+        · 先看 L2 块 → 感知长期规律和话题背景
+        · 再看 L1 块 → 获取具体事件细节
+      块内排序按 final_score 是为了在同一块里把最相关的放前面，
+      避免模型因"第一条不相关"而忽视后面更好的结果。
 
     参数：
         rag_result — retrieve_combined() 的返回值：
                      {"l2": list[dict], "l1": list[dict]}
-                     每个 dict 包含 "document"（文本）和 "distance"（余弦距离）
+                     每个 dict 包含：
+                       "document"          — 索引文本（含日期前缀）
+                       "distance"          — 原始语义距离（Chroma 返回）
+                       "adjusted_distance" — 衰减调整后距离（vector_store 计算）
+                       "metadata"          — 元数据字典
+        weight_l2  — L2 层级权重系数，默认读取 config.RETRIEVAL_WEIGHT_L2
+        weight_l1  — L1 层级权重系数，默认读取 config.RETRIEVAL_WEIGHT_L1
 
     返回：
-        str  — 格式化后的多行文本，各条结果按检索顺序（相关度从高到低）排列
+        str  — 格式化后的多行文本，L2 块在前、L1 块在后，块内按 final_score 升序
         None — L2 和 L1 均无命中时返回 None
 
     格式示例：
         [语义相关 · L2 时间段摘要]
-        烧酒这周完成了多个后端模块...（相关度：0.32）
+        2026-03 ~ 2026-03 烧酒这周在改 bug（加权分数：0.24）
+        2026-02 ~ 2026-02 主要做前端优化（加权分数：0.35）
 
         [语义相关 · L1 单次摘要]
-        烧酒今晚完成了 summarizer 模块...（相关度：0.28）
-        烧酒今天讨论了记忆系统架构...（相关度：0.41）
-
-    注意：
-        "相关度"这里直接显示余弦距离值（越小越相关），
-        不做反转处理，模型通过标签和上下文能理解其含义。
-        后续如需改为相似度（1-distance）展示，只改这里即可。
+        2026-03-28 周五完成了 merger 模块（加权分数：0.28）
+        2026-03-26 周三讨论了 RAG 方案（加权分数：0.31）
     """
-    lines = []
-
     l2_hits = rag_result.get("l2", [])
     l1_hits = rag_result.get("l1", [])
 
-    # L2 语义结果（时间段聚合摘要，粒度粗，话题定位用）
-    if l2_hits:
-        lines.append("[语义相关 · L2 时间段摘要]")
-        for hit in l2_hits:
-            dist = hit.get("distance", 0)
-            doc  = hit.get("document", "").strip()
-            if doc:
-                lines.append(f"{doc}（相关度：{dist:.2f}）")
-        lines.append("")   # 空行分隔 L2 和 L1
-
-    # L1 语义结果（单次对话摘要，粒度细，主力注入层）
-    if l1_hits:
-        lines.append("[语义相关 · L1 单次摘要]")
-        for hit in l1_hits:
-            dist = hit.get("distance", 0)
-            doc  = hit.get("document", "").strip()
-            if doc:
-                lines.append(f"{doc}（相关度：{dist:.2f}）")
-
-    if not lines:
+    # 两层都没有命中，直接返回 None，调用方降级到纯时间序
+    if not l2_hits and not l1_hits:
         return None
 
+    lines = []
+
+    # ── L2 块：时间段聚合摘要 ──
+    if l2_hits:
+        lines.append("[语义相关 · L2 时间段摘要]")
+
+        # 计算每条 L2 结果的 final_score，按升序排列（越小越相关）
+        l2_sorted = sorted(
+            l2_hits,
+            key=lambda hit: hit.get("adjusted_distance", hit.get("distance", 1.0)) * weight_l2,
+        )
+
+        for hit in l2_sorted:
+            adj_dist   = hit.get("adjusted_distance", hit.get("distance", 1.0))
+            final_score = adj_dist * weight_l2
+            doc         = hit.get("document", "").strip()
+            meta        = hit.get("metadata", {})
+
+            # 从 metadata 取时间范围，拼出可读的日期前缀
+            # period_start / period_end 格式如 "2026-03-01T00:00:00+00:00"
+            period_start = meta.get("period_start", "")[:7]   # 取 YYYY-MM
+            period_end   = meta.get("period_end",   "")[:7]
+            if period_start and period_end and period_start != period_end:
+                date_prefix = f"{period_start} ~ {period_end}"
+            elif period_start:
+                date_prefix = period_start
+            else:
+                date_prefix = ""
+
+            # 组装一行：日期前缀 + 摘要文本 + 加权分数
+            # doc 本身已含 [YYYY-MM-DD ~ YYYY-MM-DD] 前缀（index_l2 写入时拼的）
+            # 这里不重复打印 doc 的内置前缀，而是用 metadata 里的 period 信息重新格式化
+            # 原因：doc 里的前缀格式是 [date ~ date]，这里统一成无方括号的更简洁格式
+            #
+            # 注意：doc 里可能含有完整的摘要文本（含内置日期前缀），
+            # 为了不重复显示日期，这里先把 doc 里的 [...] 前缀去掉再拼
+            import re as _re
+            doc_clean = _re.sub(r'^\[.*?\]\s*', '', doc)   # 去掉 doc 开头的 [...] 前缀
+
+            if date_prefix:
+                line = f"{date_prefix} {doc_clean}（加权分数：{final_score:.2f}）"
+            else:
+                line = f"{doc_clean}（加权分数：{final_score:.2f}）"
+
+            lines.append(line)
+
+        lines.append("")   # L2 块和 L1 块之间空一行
+
+    # ── L1 块：单次对话摘要 ──
+    if l1_hits:
+        lines.append("[语义相关 · L1 单次摘要]")
+
+        # 计算每条 L1 结果的 final_score，按升序排列
+        l1_sorted = sorted(
+            l1_hits,
+            key=lambda hit: hit.get("adjusted_distance", hit.get("distance", 1.0)) * weight_l1,
+        )
+
+        for hit in l1_sorted:
+            adj_dist    = hit.get("adjusted_distance", hit.get("distance", 1.0))
+            final_score = adj_dist * weight_l1
+            doc         = hit.get("document", "").strip()
+            meta        = hit.get("metadata", {})
+
+            # 从 metadata 取创建日期，格式化为 YYYY-MM-DD
+            created_at = meta.get("created_at", "")[:10]   # 取 YYYY-MM-DD 部分
+
+            # 同样去掉 doc 内置的 [...] 前缀，用 metadata 里的日期重新格式化
+            import re as _re
+            doc_clean = _re.sub(r'^\[.*?\]\s*', '', doc)
+
+            if created_at:
+                line = f"{created_at} {doc_clean}（加权分数：{final_score:.2f}）"
+            else:
+                line = f"{doc_clean}（加权分数：{final_score:.2f}）"
+
+            lines.append(line)
+
+    # 去掉末尾可能多出的空行，返回拼接结果
     return "\n".join(lines).strip()
 
 
@@ -307,23 +376,25 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
     返回：
         context 字典，结构与 prompt_builder.PromptBuilder.build() 一致。
 
-    【P2-A】retrieved_l1l2 融合结构：
+    retrieved_l1l2 融合结构（v0.3.6 起块内按加权分数排序）：
 
         有 RAG 命中时：
             [语义相关 · L2 时间段摘要]
+            2026-03 ~ 2026-03 这周在改 bug（加权分数：0.24）
             ...
 
             [语义相关 · L1 单次摘要]
+            2026-03-28 完成了 merger 模块（加权分数：0.28）
             ...
 
             ── 近期动态 ──
             [时间段摘要 2026-03-20] ...
             [最近一次对话] ...
 
-        无 RAG 命中或 user_message=None 时：
+        无 RAG 命中或 user_message=None 时（降级）：
             [时间段摘要 2026-03-20] ...
             [最近一次对话] ...
-            （与修改前完全一致）
+            （与 v0.3.5 行为完全一致）
     """
     from datetime import datetime, timezone
 
@@ -351,7 +422,8 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
 
     # ------------------------------------------------------------------
     # 时间序内容：近期 L2（最多3条）+ 最新 L1（1条）
-    # 无论是否有 RAG 结果，时间序都会追加，确保模型感知"最近发生了什么"
+    # 无论是否有 RAG 结果，时间序都会追加在后面，
+    # 确保模型感知"最近发生了什么"，补充 RAG 语义结果可能遗漏的近期动态
     # ------------------------------------------------------------------
     time_seq_parts = []
 
@@ -382,14 +454,19 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
             pass
 
     # ------------------------------------------------------------------
-    # 【P2-A】RAG 语义检索 + 与时间序内容融合
+    # RAG 语义检索 + 与时间序内容融合
+    #
+    # [v0.3.6 改动]
+    #   · _format_rag_results() 现在接收 weight_l2 / weight_l1 参数
+    #   · 块内按 final_score = adjusted_distance × layer_weight 升序排列
+    #   · 权重从 config 读取，方便调整而不动逻辑代码
     #
     # 触发条件：user_message 有值（/save 等无消息场景跳过）
     #
     # 融合规则：
     #   · 有 RAG 命中 + 有时间序 → RAG 在前，"── 近期动态 ──"分隔，时间序在后
     #   · 有 RAG 命中 + 无时间序 → 纯 RAG 文本
-    #   · 无 RAG 命中 + 有时间序 → 纯时间序（与改前行为一致）
+    #   · 无 RAG 命中 + 有时间序 → 纯时间序（与 v0.3.5 行为一致）
     #   · 两者都无     → None
     #
     # 异常处理：RAG 失败时 warning 降级，主流程不受影响
@@ -401,12 +478,19 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
         try:
             from vector_store import retrieve_combined
             rag_result = retrieve_combined(user_message)
-            rag_text   = _format_rag_results(rag_result)
+
+            # [v0.3.6] 传入权重系数，块内按加权分数排序
+            rag_text = _format_rag_results(
+                rag_result,
+                weight_l2 = RETRIEVAL_WEIGHT_L2,
+                weight_l1 = RETRIEVAL_WEIGHT_L1,
+            )
 
             if rag_text:
                 logger.debug(
-                    f"RAG 命中：L2={len(rag_result.get('l2', []))} 条，"
-                    f"L1={len(rag_result.get('l1', []))} 条"
+                    f"RAG 命中（加权排序）：L2={len(rag_result.get('l2', []))} 条，"
+                    f"L1={len(rag_result.get('l1', []))} 条，"
+                    f"weight_l2={RETRIEVAL_WEIGHT_L2}，weight_l1={RETRIEVAL_WEIGHT_L1}"
                 )
             else:
                 logger.debug("RAG 无相关结果（距离超过阈值），降级到纯时间序")
@@ -415,7 +499,7 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
             logger.warning(f"RAG 检索失败，降级到纯时间序 — {e}")
             rag_text = None
 
-        # 四种情况的融合
+        # 四种情况的融合（逻辑与 v0.3.5 一致，格式内容已由 _format_rag_results 改变）
         if rag_text and time_seq_parts:
             retrieved_l1l2 = (
                 rag_text
@@ -429,7 +513,7 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
         # 两者都没有时保持 None
 
     else:
-        # user_message=None，跳过 RAG，纯时间序
+        # user_message=None，跳过 RAG，纯时间序（降级路径）
         retrieved_l1l2 = "\n".join(time_seq_parts) if time_seq_parts else None
 
     return {
@@ -461,7 +545,7 @@ def _call_local(messages: list[dict]) -> str:
 # 本地处理公共函数
 # =============================================================================
 
-def _handle_local(session_id: int, content: str) -> "ChatResponse":
+def _handle_local(session_id: int, content: str) -> ChatResponse:
     """
     统一处理走本地模型的分支（分支 C 用户拒绝 / 分支 D 默认本地）。
 
@@ -615,13 +699,13 @@ async def save():
 
 
 # =============================================================================
-# GET /api/sessions — session 列表接口 (T1)
+# GET /api/sessions — session 列表接口
 # =============================================================================
 
 def get_all_sessions_with_stats():
     """
     获取所有 session 的摘要列表，含统计信息。
-    
+
     返回所有 session 的基本信息加统计：
       - id: session ID
       - started_at: session 开始时间
@@ -629,18 +713,16 @@ def get_all_sessions_with_stats():
       - message_count: 本 session 的消息总数
       - last_message_at: 本 session 最后一条消息的时间（可能为 null）
       - last_message_preview: 最后一条消息的前 80 个字符预览（可能为 null）
-      
+
     按最后活动时间倒序排列（活跃优先）。
     """
-    # 使用公开的数据库函数获取连接
     import sqlite3
     from config import DB_PATH
-    
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
-    # 单条 SQL 查询获取所有 session 的完整统计信息
+
     sql = """
         SELECT
           s.id, s.started_at, s.ended_at,
@@ -654,46 +736,30 @@ def get_all_sessions_with_stats():
           s.started_at
         ) DESC
     """
-    
+
     cursor.execute(sql)
     results = []
     for row in cursor.fetchall():
-        # 截断预览到80字符
         preview = row["last_message_preview"]
         if preview and len(preview) > 80:
             preview = preview[:80] + "…"
-        
+
         results.append({
-            "id": row["id"],
-            "started_at": row["started_at"],
-            "ended_at": row["ended_at"],
-            "message_count": row["message_count"],
-            "last_message_at": row["last_message_at"],
-            "last_message_preview": preview
+            "id":                   row["id"],
+            "started_at":           row["started_at"],
+            "ended_at":             row["ended_at"],
+            "message_count":        row["message_count"],
+            "last_message_at":      row["last_message_at"],
+            "last_message_preview": preview,
         })
-    
+
     conn.close()
     return results
 
 
 @app.get("/api/sessions")
 async def api_get_sessions():
-    """
-    T1 API: 获取所有 session 的摘要列表。
-    
-    返回格式：
-      [
-        {
-          "id": 12,
-          "started_at": "2026-03-30T08:00:00+00:00",
-          "ended_at": "2026-03-30T10:30:00+00:00" | null,
-          "message_count": 23,
-          "last_message_at": "2026-03-30T10:28:00+00:00" | null,
-          "last_message_preview": "好，我了解了，那我们继续..."
-        },
-        ...
-      ]
-    """
+    """获取所有 session 的摘要列表。"""
     try:
         sessions = get_all_sessions_with_stats()
         return JSONResponse(sessions)
@@ -703,39 +769,31 @@ async def api_get_sessions():
 
 
 # =============================================================================
-# GET /api/sessions/{session_id}/messages — 获取指定 session 的消息 (T2)
+# GET /api/sessions/{session_id}/messages — 获取指定 session 的消息
 # =============================================================================
 
 @app.get("/api/sessions/{session_id}/messages")
 async def api_get_session_messages(session_id: int):
     """
-    T2 API: 获取指定 session 的所有消息。
-    
-    返回格式：
-      [
-        {"role": "user", "content": "你好", "created_at": "2026-03-30T08:00:00+00:00"},
-        {"role": "assistant", "content": "你好！有什么可以帮你？", "created_at": "..."}
-      ]
-    
+    获取指定 session 的所有消息。
+
     异常：
       - 404: session 不存在
     """
-    # 验证 session 是否存在
     session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
-    # 获取消息
+
     messages = get_messages(session_id)
     result = [
         {
-            "role": row["role"],
-            "content": row["content"],
-            "created_at": row["created_at"]
+            "role":       row["role"],
+            "content":    row["content"],
+            "created_at": row["created_at"],
         }
         for row in messages
     ]
-    
+
     return JSONResponse(result)
 
 # =============================================================================
@@ -875,10 +933,6 @@ async def import_qq_preview(
     """
     上传 QQ Chat Exporter JSON 文件，返回详细诊断报告。
     不写入数据库，仅用于预览解析结果。
-
-    参数：
-        file — 上传的 JSON 文件（multipart/form-data）
-        gap  — session 切割时间间隔（分钟），默认10分钟
     """
     from importer.qq_parser import parse_qq_export
 
@@ -957,10 +1011,7 @@ async def import_qq_confirm(
 
 @app.get("/import/qq/pending_l1")
 async def get_pending_l1():
-    """
-    查询当前有多少历史 session 尚未生成 L1 摘要。
-    前端页面初始化时调用，显示"N 个 session 待处理"。
-    """
+    """查询当前有多少历史 session 尚未生成 L1 摘要。"""
     from importer.l1_batch import get_pending_count
     count = get_pending_count()
     return JSONResponse({"count": count})
@@ -972,10 +1023,7 @@ async def get_pending_l1():
 
 @app.post("/import/qq/start_l1")
 async def start_l1_batch():
-    """
-    启动后台批处理线程，对所有待处理 session 生成 L1 摘要。
-    非阻塞，立即返回当前状态。前端通过轮询 /import/qq/l1_progress 获取进度。
-    """
+    """启动后台批处理线程，非阻塞，立即返回当前状态。"""
     from importer.l1_batch import start_batch
     status = start_batch(session_manager=session_manager)
     return JSONResponse(status)
@@ -987,9 +1035,7 @@ async def start_l1_batch():
 
 @app.get("/import/qq/l1_progress")
 async def get_l1_progress():
-    """
-    返回当前批处理状态，供前端进度面板轮询（建议间隔 2 秒）。
-    """
+    """返回当前批处理状态，供前端进度面板轮询（建议间隔 2 秒）。"""
     from importer.l1_batch import get_status
     return JSONResponse(get_status())
 
@@ -1000,12 +1046,11 @@ async def get_l1_progress():
 
 @app.post("/import/qq/stop_l1")
 async def stop_l1_batch():
-    """
-    请求停止批处理。不立即中止，等当前 session 处理完后退出。
-    """
+    """请求停止批处理，等当前 session 处理完后退出。"""
     from importer.l1_batch import stop_batch
     status = stop_batch()
     return JSONResponse(status)
+
 
 # =============================================================================
 # 启动

@@ -66,6 +66,18 @@
   50%       { opacity: .2; }
 }
 
+/* 淡入动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 旋转动画（加载器使用） */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 
 /* =============================================================================
    用户偏好：减少动效模式
@@ -87,5 +99,10 @@
 
   @keyframes blink {
     0%, 100% { opacity: 1; }
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(180deg); }
   }
 }

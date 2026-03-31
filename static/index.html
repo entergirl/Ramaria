@@ -52,16 +52,15 @@
      ============================================================ -->
 <header role="banner">
 
-  <!-- 左侧：项目名 + 副标题 -->
+  <!-- 汉堡按钮：打开侧边栏 -->
+  <button id="sidebar-toggle" aria-label="打开侧边栏" title="打开侧边栏">☰</button>
+
+  <!-- 左侧：项目名（已简化） -->
   <div class="header-title">
-    <span class="title-main">珊瑚菌 · 个人 AI 陪伴助手</span>
-    <span class="title-sub">Ramaria · Personal Companion</span>
+    <span class="title-main">珊瑚菌</span>
   </div>
 
-  <!-- session 编号标签，由 app.js 在收到回复后更新 -->
-  <span id="session-label" aria-live="polite">初始化中</span>
-
-  <!-- 右侧控件区 -->
+  <!-- 右侧控件区（已瘦身） -->
   <div id="controls" role="toolbar" aria-label="工具栏">
 
     <!-- 模式状态徽章（本地 / 线上 / 等待确认） -->
@@ -69,8 +68,6 @@
       <div id="mode-dot" aria-hidden="true"></div>
       <span id="mode-text">本地</span>
     </div>
-
-    <div class="sep" aria-hidden="true"></div>
 
     <!-- 线上/本地 Toggle 开关 -->
     <label class="toggle-wrap" title="切换本地 / 线上模式">
@@ -86,8 +83,6 @@
       <div class="toggle-track" aria-hidden="true"></div>
     </label>
 
-    <div class="sep" aria-hidden="true"></div>
-
     <!-- 主题切换按钮（亮色/暗色） -->
     <button
       id="theme-btn"
@@ -95,16 +90,37 @@
       aria-label="切换到暗色模式"
     >🌙</button>
 
-    <div class="sep" aria-hidden="true"></div>
-
-    <!-- 手动保存对话按钮 -->
-    <button
-      id="save-btn"
-      aria-label="手动保存当前对话并生成摘要"
-    >保存对话</button>
-
   </div><!-- /#controls -->
 </header>
+
+
+<!-- ============================================================
+     侧边栏导航（T4）
+     ============================================================ -->
+
+<!-- 侧边栏遮罩 -->
+<div id="sidebar-overlay" aria-hidden="true"></div>
+
+<!-- 侧边栏 -->
+<aside id="sidebar" role="navigation" aria-label="侧边导航">
+  <div class="sidebar-header">
+    <span class="sidebar-title">历史对话</span>
+    <button id="sidebar-close" aria-label="关闭侧边栏">✕</button>
+  </div>
+  
+  <div id="session-list" class="sidebar-body">
+    <!-- 由 JS 动态填充 -->
+    <div class="session-item empty-state">
+      <div class="session-title">暂无历史对话</div>
+      <div class="session-preview">开始与珊瑚菌对话后，对话记录会显示在这里</div>
+    </div>
+  </div>
+  
+  <div class="sidebar-footer">
+    <button id="save-btn" class="sidebar-action">💾 保存对话</button>
+    <a href="/static/import.html" class="sidebar-action">📥 导入对话</a>
+  </div>
+</aside>
 
 
 <!-- ============================================================

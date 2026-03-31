@@ -116,5 +116,41 @@ const API = (() => {
       });
     },
 
+    // =====================================================================
+    // T1/T2: 新增 API 方法
+    // =====================================================================
+
+    /**
+     * 获取所有 session 的摘要列表（T1）。
+     *
+     * @returns {Promise<Array<{
+     *   id: number,
+     *   started_at: string,
+     *   ended_at: string|null,
+     *   message_count: number,
+     *   last_message_at: string|null,
+     *   last_message_preview: string|null
+     * }>>}
+     * @throws {Error}
+     */
+    async getSessions() {
+      return _request('/api/sessions');
+    },
+
+    /**
+     * 获取指定 session 的消息列表（T2）。
+     *
+     * @param {number} sessionId - session id
+     * @returns {Promise<Array<{
+     *   role: 'user'|'assistant',
+     *   content: string,
+     *   created_at: string
+     * }>>}
+     * @throws {Error}
+     */
+    async getSessionMessages(sessionId) {
+      return _request(`/api/sessions/${sessionId}/messages`);
+    },
+
   };
 })();

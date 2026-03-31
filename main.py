@@ -62,12 +62,14 @@ from config import (
 )
 from llm_client import call_local_chat
 from database import (
+    get_messages,
     get_messages_as_dicts,
     save_message,
     get_current_profile,
     get_latest_l1,
     get_recent_l2,
     get_active_sessions,
+    get_session,
 )
 from prompt_builder import build_system_prompt
 from session_manager import SessionManager
@@ -610,6 +612,131 @@ async def save():
     """
     session_manager.force_close_current_session()
     return JSONResponse({"status": "ok"})
+
+
+# =============================================================================
+# GET /api/sessions — session 列表接口 (T1)
+# =============================================================================
+
+def get_all_sessions_with_stats():
+    """
+    获取所有 session 的摘要列表，含统计信息。
+    
+    返回所有 session 的基本信息加统计：
+      - id: session ID
+      - started_at: session 开始时间
+      - ended_at: session 结束时间（进行中则为 null）
+      - message_count: 本 session 的消息总数
+      - last_message_at: 本 session 最后一条消息的时间（可能为 null）
+      - last_message_preview: 最后一条消息的前 80 个字符预览（可能为 null）
+      
+    按最后活动时间倒序排列（活跃优先）。
+    """
+    # 使用公开的数据库函数获取连接
+    import sqlite3
+    from config import DB_PATH
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # 单条 SQL 查询获取所有 session 的完整统计信息
+    sql = """
+        SELECT
+          s.id, s.started_at, s.ended_at,
+          (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+          (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id) AS last_message_at,
+          (SELECT m.content FROM messages m WHERE m.session_id = s.id
+           ORDER BY m.created_at DESC LIMIT 1) AS last_message_preview
+        FROM sessions s
+        ORDER BY COALESCE(
+          (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id),
+          s.started_at
+        ) DESC
+    """
+    
+    cursor.execute(sql)
+    results = []
+    for row in cursor.fetchall():
+        # 截断预览到80字符
+        preview = row["last_message_preview"]
+        if preview and len(preview) > 80:
+            preview = preview[:80] + "…"
+        
+        results.append({
+            "id": row["id"],
+            "started_at": row["started_at"],
+            "ended_at": row["ended_at"],
+            "message_count": row["message_count"],
+            "last_message_at": row["last_message_at"],
+            "last_message_preview": preview
+        })
+    
+    conn.close()
+    return results
+
+
+@app.get("/api/sessions")
+async def api_get_sessions():
+    """
+    T1 API: 获取所有 session 的摘要列表。
+    
+    返回格式：
+      [
+        {
+          "id": 12,
+          "started_at": "2026-03-30T08:00:00+00:00",
+          "ended_at": "2026-03-30T10:30:00+00:00" | null,
+          "message_count": 23,
+          "last_message_at": "2026-03-30T10:28:00+00:00" | null,
+          "last_message_preview": "好，我了解了，那我们继续..."
+        },
+        ...
+      ]
+    """
+    try:
+        sessions = get_all_sessions_with_stats()
+        return JSONResponse(sessions)
+    except Exception as e:
+        logger.error(f"获取 session 列表失败: {e}")
+        raise HTTPException(status_code=500, detail=f"内部错误: {e}")
+
+
+# =============================================================================
+# GET /api/sessions/{session_id}/messages — 获取指定 session 的消息 (T2)
+# =============================================================================
+
+@app.get("/api/sessions/{session_id}/messages")
+async def api_get_session_messages(session_id: int):
+    """
+    T2 API: 获取指定 session 的所有消息。
+    
+    返回格式：
+      [
+        {"role": "user", "content": "你好", "created_at": "2026-03-30T08:00:00+00:00"},
+        {"role": "assistant", "content": "你好！有什么可以帮你？", "created_at": "..."}
+      ]
+    
+    异常：
+      - 404: session 不存在
+    """
+    # 验证 session 是否存在
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 获取消息
+    messages = get_messages(session_id)
+    result = [
+        {
+            "role": row["role"],
+            "content": row["content"],
+            "created_at": row["created_at"]
+        }
+        for row in messages
+    ]
+    
+    return JSONResponse(result)
 
 # =============================================================================
 # POST /import/qq/preview — 解析预览（不写入数据库）

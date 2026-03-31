@@ -48,7 +48,7 @@ async function sendMessage() {
   textarea.style.height = 'auto';
 
   // 立即渲染用户消息气泡（不等后端，提升响应感）
-  UI.appendBubble(content, 'user', false, false);
+  UI.appendBubble(content, 'user', false, false, new Date().toISOString());
 
   // 进入加载状态
   AppState.setLoading(true);
@@ -197,6 +197,40 @@ async function syncStatus() {
   }
 }
 
+/**
+ * T6：页面刷新后恢复当前活跃 session 的消息
+ */
+async function recoverCurrentSession() {
+  try {
+    const sessions = await API.getSessions();
+    
+    // 查找当前活跃 session（ended_at 为 null 的 session）
+    const activeSession = sessions.find(session => session.ended_at === null);
+    
+    if (activeSession && activeSession.id) {
+      // 设置当前 session id
+      AppState.setSessionId(activeSession.id);
+      
+      // 加载该 session 的所有消息
+      const messages = await API.getSessionMessages(activeSession.id);
+      
+      if (messages && messages.length > 0) {
+        // 渲染所有消息（不是历史，直接用 appendBubble）
+        // 注意：这里不能使用 loadHistorySession，因为那是显示历史块
+        messages.forEach(msg => {
+          const isOnlineMsg = false; // TODO: 需要从消息中判断是否为在线消息
+          UI.appendBubble(msg.content, msg.role, isOnlineMsg, false, msg.created_at);
+        });
+        
+        console.log(`已恢复 session #${activeSession.id} 的 ${messages.length} 条消息`);
+      }
+    }
+  } catch (err) {
+    console.error('恢复当前 session 失败:', err);
+    // 静默失败，不影响用户继续使用
+  }
+}
+
 
 /* =============================================================================
    事件绑定与初始化（DOMContentLoaded）
@@ -247,18 +281,140 @@ document.addEventListener('DOMContentLoaded', () => {
     themeBtn.addEventListener('click', toggleTheme);
   }
 
-  // ── 保存按钮 ──
-  const saveBtn = document.getElementById('save-btn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', saveSession);
+  // ── 侧边栏汉堡按钮 ──
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener('click', function() {
+      UI.showSidebar();
+      // 加载 session 列表
+      API.getSessions().then(sessions => {
+        UI.renderSessionList(sessions);
+        // 高亮当前活跃 session
+        if (AppState.currentSessionId) {
+          UI.highlightActiveSession(AppState.currentSessionId);
+        }
+      }).catch(err => {
+        console.error('加载 session 列表失败:', err);
+      });
+    });
   }
 
   // ── Toggle：onchange 由 HTML 内联绑定（onchange="onToggleChange(this.checked)"）──
   // 保留 HTML 内联写法，方便直接在 HTML 中看清绑定关系
 
+  // ── 侧边栏其他事件绑定 ──
+  const sidebarClose = document.getElementById('sidebar-close');
+  if (sidebarClose) {
+    sidebarClose.addEventListener('click', () => UI.hideSidebar());
+  }
+
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  if (sidebarOverlay) {
+    sidebarOverlay.addEventListener('click', () => UI.hideSidebar());
+  }
+
+  const saveBtn = document.getElementById('save-btn'); // 侧边栏内的保存按钮
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      saveSession();
+      UI.hideSidebar();
+    });
+  }
+
+  // ESC 键关闭侧边栏
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      UI.hideSidebar();
+    }
+  });
+
+  // 全局键盘快捷键（无障碍访问支持）
+  document.addEventListener('keydown', (e) => {
+    // 忽略快捷键如果在表单元素中（防止冲突）
+    const activeElement = document.activeElement;
+    const isInForm = ['TEXTAREA', 'INPUT', 'SELECT'].includes(activeElement.tagName);
+    
+    // Ctrl+O 或 Cmd+O 打开侧边栏
+    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+      e.preventDefault();
+      UI.showSidebar();
+      return;
+    }
+    
+    // Ctrl+Enter 或 Cmd+Enter 触发当前焦点按钮（如发送按钮）
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      if (activeElement.tagName === 'BUTTON') {
+        activeElement.click();
+      }
+      return;
+    }
+    
+    // Ctrl+Shift+S 或 Cmd+Shift+S 保存会话
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 's') {
+      e.preventDefault();
+      saveSession();
+      return;
+    }
+    
+    // Ctrl+Shift+T 或 Cmd+Shift+T 切换主题
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 't') {
+      e.preventDefault();
+      toggleTheme();
+      return;
+    }
+    
+    // 纯按键快捷键（不在表单元素中时）
+    if (!isInForm) {
+      // 按 'T' 键聚焦到输入框
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        const textarea = document.getElementById('user-input');
+        if (textarea) {
+          textarea.focus();
+          textarea.select();
+        }
+        return;
+      }
+      
+      // 按 'M' 键切换模式
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        const toggle = document.getElementById('mode-toggle');
+        if (toggle) {
+          toggle.checked = !toggle.checked;
+          onToggleChange(toggle.checked);
+        }
+        return;
+      }
+      
+      // 按 'S' 键打开侧边栏
+      if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        UI.showSidebar();
+        return;
+      }
+    }
+  });
+
+  // session 列表点击事件（委托）
+  const sessionList = document.getElementById('session-list');
+  if (sessionList) {
+    sessionList.addEventListener('click', (e) => {
+      const sessionItem = e.target.closest('.session-item');
+      if (sessionItem && sessionItem.dataset.sessionId) {
+        const sessionId = parseInt(sessionItem.dataset.sessionId);
+        UI.closeAndLoadHistory(sessionId);
+      }
+    });
+  }
+
   // ── 初始化：恢复主题 + 同步后端状态 ──
   AppState.restoreTheme();
   syncStatus();
+  
+  // T6：恢复当前活跃 session 的消息
+  recoverCurrentSession();
 
   // ── 初始化完成后，聚焦到输入框（桌面端体验） ──
   // 移动端不自动聚焦，避免键盘弹出遮挡内容

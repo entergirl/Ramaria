@@ -59,15 +59,13 @@ const AppState = (() => {
 
     /**
      * 更新当前 session id。
-     * 同步更新顶部 session 标签显示。
+     * （T3：session-label 元素已移除，该函数现在仅更新内部状态）
      * @param {number|null} id
      */
     setSessionId(id) {
       _currentSessionId = id;
-      const label = document.getElementById('session-label');
-      if (label) {
-        label.textContent = id ? `session #${id}` : '初始化中';
-      }
+      // T3: session-label 元素已移到侧边栏，此处仅更新内部状态
+      // 显示逻辑将在侧边栏中实现（T4）
     },
 
     /**

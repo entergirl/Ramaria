@@ -134,7 +134,18 @@ demo/
 │   ├── test_chroma.py           # Chroma 向量库功能测试
 │   └── test_qwen3_embedding.py  # Qwen3 嵌入模型测试
 ├── static/                      # 前端静态资源
+│   ├── index.html               # 对话页面
+│   ├── import.html              # 聊天记录导入页面
+│   ├── css/                     # 样式文件
+│   └── js/                      # 前端脚本
 ├── logs/                        # 运行日志（不上传）
+├── importer/                    # 外部聊天记录导入模块
+│   ├── qq_parser.py             # QQ 聊天记录解析器
+│   ├── qq_importer.py           # QQ 导入写入层
+│   └── l1_batch.py              # L1 批量生成后台任务
+├── mcp_server/                  # MCP 服务器（可选）
+│   ├── server.py                # MCP 服务入口
+│   └── tools/                   # MCP 工具集
 ├── main.py                      # FastAPI 服务入口
 ├── config.py                    # 全局配置中心
 ├── database.py                  # 数据库操作层
@@ -149,6 +160,7 @@ demo/
 ├── profile_manager.py           # L3 画像半自动维护模块
 ├── vector_store.py              # 向量索引与检索模块
 ├── router.py                    # 任务路由层
+├── telegram_bridge.py           # Telegram Bot 桥接服务（可选）
 ├── persona.toml                 # 人设配置文件
 └── README.md
 ```
@@ -173,43 +185,86 @@ demo/
 
 ## 快速开始
 
-### 环境依赖
+### 环境要求
 
-- Python 3.x
-- [LM Studio](https://lmstudio.ai/)（加载 qwen/qwen3.5-9b 模型）
-- Claude API Key（可选，用于复杂任务）
+- **Python 3.10+**
+- **LM Studio** — 本地对话模型运行环境，[下载地址](https://lmstudio.ai/)
+- **Qwen3-Embedding-0.6B 模型文件** — 向量嵌入模型，从 [HuggingFace](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) 下载，需本地放置
+- **Claude API Key**（可选，用于复杂任务云端推理）
 
-### 安装依赖
-
-```bash
-pip install fastapi uvicorn requests chromadb sentence-transformers
-```
-
-### 配置
+### 安装步骤
 
 ```bash
-# 设置 Claude API Key（可选）
-export ANTHROPIC_API_KEY=sk-ant-xxxxxx   # Mac/Linux
-set ANTHROPIC_API_KEY=sk-ant-xxxxxx      # Windows
+# 1. 克隆仓库
+git clone https://github.com/your-username/ramaria.git
+cd ramaria
+
+# 2. 创建虚拟环境（推荐）
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Mac/Linux
+source venv/bin/activate
+
+# 3. 安装依赖
+pip install -r requirements.txt
+
+# 4. 配置环境变量（可选，使用 Claude API 时需要）
+cp .env.example .env
+# 编辑 .env，填入你的 Claude API Key
 ```
 
-在 `config.py` 中确认以下参数与你的环境一致：
+### 配置模型
+
+项目依赖两类模型，它们的运行方式不同，请分别配置：
+
+#### 对话模型 — LM Studio（必须）
+
+对话模型通过 LM Studio 以 API 服务方式运行，负责日常对话和摘要生成。
+
+1. 打开 [LM Studio](https://lmstudio.ai/)
+2. 搜索并下载 `qwen/qwen3.5-9b`
+3. 加载模型后，点击「Start Server」启动本地 API 服务
+4. 确认服务运行在 `http://localhost:1234`
+
+#### 嵌入模型 — 本地文件（必须）
+
+嵌入模型用于将文本转换为语义向量，程序直接加载本地文件，**不需要启动额外服务**。
+
+1. 从 [HuggingFace](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) 下载模型文件
+2. 将模型文件夹放置到本地任意路径（如 `F:\models\Qwen3-Embedding-0.6B`）
+3. 在 `config.py` 中将路径指向你的模型位置：
 
 ```python
-LOCAL_API_URL    = "http://localhost:1234/v1/chat/completions"
-LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"
-EMBEDDING_MODEL  = "Qwen/Qwen3-Embedding-0.6B"
+# config.py 中需要修改的参数
+LOCAL_API_URL    = "http://localhost:1234/v1/chat/completions"  # LM Studio 地址
+LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"                           # LM Studio 加载的模型名
+EMBEDDING_MODEL  = r"F:\models\Qwen3-Embedding-0.6B"           # ← 改为你的嵌入模型路径
 ```
 
-### 初始化数据库
+> **提示**：首次启动时程序会自动加载嵌入模型权重（约 1.2GB），请确保路径正确。模型需提前下载到本地，离线环境也可运行。
+
+#### Claude API（可选）
+
+不配置 Claude API 不影响核心功能，仅在需要复杂推理时使用。
 
 ```bash
+# Mac/Linux
+export ANTHROPIC_API_KEY=sk-ant-xxxxxx
+
+# Windows PowerShell
+$env:ANTHROPIC_API_KEY = "sk-ant-xxxxxx"
+```
+
+或编辑 `.env` 文件，填入 API Key。
+
+### 初始化并启动
+
+```bash
+# 初始化数据库（首次运行）
 python init_db.py
-```
 
-### 启动服务
-
-```bash
+# 启动服务
 python main.py
 ```
 
@@ -223,7 +278,7 @@ python main.py
 
 - **阶段一（已完成）**：核心对话链路跑通，L1/L2/L3 主线稳定运行，关键词词典，冲突检测，分层 RAG 检索
 - **阶段二（已完成）**：任务路由层，Qwen3-Embedding 嵌入模型，L3 画像半自动维护，分层 RAG 检索全线接通
-- **阶段三（计划中）**：外部聊天记录导入与人格复刻，LM Studio → Ollama 迁移，记忆老化策略
+- **阶段三（进行中）**：外部聊天记录导入（QQ Chat Exporter），MCP 服务器，Telegram Bot 桥接
 
 ---
 

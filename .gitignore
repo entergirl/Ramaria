@@ -3,6 +3,7 @@
 # ============================================================
 assistant.db
 chroma_db/
+persona.toml
 
 # Chroma 测试临时目录（运行测试脚本时自动生成）
 chroma_test_tmp/

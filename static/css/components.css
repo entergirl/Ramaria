@@ -1,21 +1,27 @@
 /* =============================================================================
    components.css — UI 组件样式
    -----------------------------------------------------------------------------
-   负责所有具体 UI 元件的样式，按组件分块：
+   负责所有具体 UI 元件的样式，按组件分块。
+   设计理念：沉稳、内敛、有温度
+   所有动效克制但精致，让用户感受到"被精心对待"。
+
+   包含：
      1. 标题区（项目名 + 副标题）
-     2. Session 编号标签
+     2. 汉堡按钮
      3. 控件区（右侧按钮组）
      4. 模式状态徽章
      5. 线上/本地 Toggle 开关
      6. 主题切换按钮
-     7. 保存对话按钮
-     8. 消息气泡
-     9. 思考过程折叠块
-    10. 打字动画（等待指示器）
-    11. 系统提示条
-    12. 输入框 textarea
-    13. 发送按钮
-    14. Toast 通知
+     7. 消息气泡
+     8. 思考过程折叠块
+     9. 打字动画（等待指示器）
+     10. 系统提示条
+     11. 输入框 textarea
+     12. 发送按钮
+     13. Toast 通知
+     14. 侧边栏导航
+     15. 历史对话加载块
+     16. 记忆强度滑块
    ============================================================================= */
 
 
@@ -27,7 +33,7 @@
   display: flex;
   align-items: center;
   gap: 0;
-  flex-shrink: 0;   /* 不允许被压缩，标题始终完整显示 */
+  flex-shrink: 0;
 }
 
 .title-main {
@@ -41,14 +47,11 @@
 }
 
 
-
-
 /* =============================================================================
-   2. 汉堡按钮 (T3)
+   2. 汉堡按钮
    ============================================================================= */
 
 #sidebar-toggle {
-  /* 圆形图标按钮，与 #theme-btn 风格一致 */
   border: 1px solid var(--border);
   background: none;
   color: var(--text-mid);
@@ -76,6 +79,11 @@
   background: rgba(201, 124, 90, .06);
 }
 
+#sidebar-toggle:active {
+  transform: scale(0.92);
+  transition: transform 0.1s ease;
+}
+
 #sidebar-toggle:focus-visible {
   outline: 2px solid var(--coral);
   outline-offset: 2px;
@@ -87,13 +95,11 @@
    ============================================================================= */
 
 #controls {
-  margin-left: auto;   /* 推到最右侧 */
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 9px;
 }
-
-
 
 
 /* =============================================================================
@@ -109,6 +115,14 @@
   color: var(--text-mid);
   flex-shrink: 0;
   transition: color var(--transition-slow);
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: transparent;
+}
+
+/* 沉稳设计：切换时有微光效果 */
+#mode-badge.switching {
+  animation: mode-glow 0.5s ease-out;
 }
 
 /* 状态圆点 */
@@ -116,22 +130,27 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--dot-local);   /* 默认绿色（本地模式） */
-  transition: background var(--transition-slow);
+  background: var(--dot-local);
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal);
   flex-shrink: 0;
 }
 
 /* 线上模式：珊瑚色 */
-#mode-dot.online  { background: var(--dot-online); }
+#mode-dot.online {
+  background: var(--dot-online);
+}
 
-/* 等待确认：蓝色 + 闪烁动画（见 animations.css） */
-#mode-dot.pending { background: var(--dot-pending); animation: blink 1.4s ease-in-out infinite; }
+/* 等待确认：蓝色 + 缓慢闪烁 */
+#mode-dot.pending {
+  background: var(--dot-pending);
+  animation: blink 1.8s ease-in-out infinite;
+}
 
 
 /* =============================================================================
    5. 线上/本地 Toggle 开关
-   用纯 CSS checkbox 实现，不依赖 JS 库。
-   结构：<label><input type="checkbox"><div class="toggle-track"></div></label>
    ============================================================================= */
 
 .toggle-wrap {
@@ -147,10 +166,9 @@
   font-family: var(--font-mono);
   color: var(--text-mid);
   white-space: nowrap;
-  transition: color var(--transition-slow);
+  transition: color var(--transition-normal);
 }
 
-/* 隐藏原生 checkbox，视觉由 .toggle-track 伪元素呈现 */
 .toggle-input {
   display: none;
 }
@@ -175,14 +193,21 @@
   height: 14px;
   border-radius: 50%;
   background: var(--text-dim);
-  transition: transform var(--transition-normal), background var(--transition-normal);
+  transition:
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    background var(--transition-normal);
 }
 
-/* checkbox 选中时：轨道变浅珊瑚，圆点右移并变珊瑚色 */
-.toggle-input:checked + .toggle-track              { background: var(--coral-light); }
-.toggle-input:checked + .toggle-track::after       { transform: translateX(16px); background: var(--coral); }
+/* 沉稳设计：checkbox 选中时轨道变柔和珊瑚色，圆点平滑移动 */
+.toggle-input:checked + .toggle-track {
+  background: var(--coral-light);
+}
 
-/* 键盘焦点时显示轮廓（无障碍要求） */
+.toggle-input:checked + .toggle-track::after {
+  transform: translateX(16px);
+  background: var(--coral);
+}
+
 .toggle-wrap:focus-within .toggle-track {
   outline: 2px solid var(--coral);
   outline-offset: 2px;
@@ -197,7 +222,7 @@
   background: none;
   border: 1px solid var(--border);
   color: var(--text-mid);
-  font-size: .75rem;   /* emoji 稍大一点 */
+  font-size: .75rem;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -206,14 +231,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color var(--transition-normal), background var(--transition-normal),
-              color var(--transition-normal);
-  /* 暗色主题下 aria-label 等屏幕阅读器会读取 title 属性 */
+  transition:
+    border-color var(--transition-normal),
+    color var(--transition-normal),
+    background var(--transition-normal);
 }
 
 #theme-btn:hover {
   border-color: var(--coral-light);
+  color: var(--coral);
   background: rgba(201, 124, 90, .06);
+}
+
+#theme-btn:active {
+  transform: scale(0.92);
+  transition: transform 0.1s ease;
 }
 
 #theme-btn:focus-visible {
@@ -222,11 +254,8 @@
 }
 
 
-
-
-
 /* =============================================================================
-   8. 消息气泡
+   7. 消息气泡
    ============================================================================= */
 
 /* 消息容器：每条消息（标签 + 气泡）的外层 flex 列 */
@@ -258,32 +287,29 @@
   border-radius: var(--radius);
   line-height: 1.78;
   font-size: .92rem;
-  /*
-   * white-space: pre-wrap：保留消息中的换行符，同时允许自动折行。
-   * word-break: break-word：超长单词（如 URL）强制折行，不溢出气泡。
-   */
   white-space: pre-wrap;
   word-break: break-word;
   max-width: 84%;
   box-shadow: var(--shadow-bubble);
-  transition: background var(--transition-slow), border-color var(--transition-slow),
-              color var(--transition-slow);
+  position: relative;
+  transition:
+    background var(--transition-slow),
+    border-color var(--transition-slow),
+    color var(--transition-slow),
+    box-shadow var(--transition-normal);
 }
 
 /* 用户气泡：浅暖白背景 */
 .msg.user .msg-bubble {
   background: var(--surface-alt);
   border: 1px solid var(--border-light);
-  transition: transform var(--transition-normal), 
-              background var(--transition-normal),
-              border-color var(--transition-normal);
 }
 
-/* 用户气泡悬停效果 */
+/* 沉稳设计：用户气泡悬停仅加深阴影，不做位移 */
 .msg.user .msg-bubble:hover {
-  background: rgba(253, 248, 243, 0.95);
+  background: rgba(253, 248, 243, 0.98);
   border-color: var(--coral-light);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .08);
 }
 
 /* 助手气泡：使用专属背景色 + 左侧品牌色竖线 */
@@ -291,42 +317,40 @@
   background: var(--assistant-bg);
   border: 1px solid var(--border);
   border-left: 3px solid var(--coral-light);
-  transition: transform var(--transition-normal), 
-              background var(--transition-normal),
-              border-color var(--transition-normal);
 }
 
-/* 助手气泡悬停效果 */
+/* 沉稳设计：助手气泡悬停仅加深阴影 */
 .msg.assistant .msg-bubble:hover {
-  background: rgba(240, 235, 229, 0.95);
+  background: rgba(240, 235, 229, 0.98);
   border-color: var(--coral-light);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .08);
 }
 
-/* 暗色主题下的悬停效果适配 */
+/* 暗色主题下的悬停效果 */
 :root[data-theme="dark"] .msg.user .msg-bubble:hover {
-  background: rgba(50, 43, 38, 0.95);
+  background: rgba(50, 43, 38, 0.98);
   border-color: var(--coral);
 }
 
 :root[data-theme="dark"] .msg.assistant .msg-bubble:hover {
-  background: rgba(36, 32, 25, 0.95);
+  background: rgba(36, 32, 25, 0.98);
   border-color: var(--coral);
 }
 
-/* 等待确认气泡：蓝色虚线边框，视觉上有别于普通回复 */
+/* 等待确认气泡：蓝色虚线边框 */
 .msg.assistant.confirm .msg-bubble {
   border: 1.5px dashed var(--dot-pending);
+  border-left: 1.5px dashed var(--dot-pending);
 }
 
-/* 线上模式回复：左侧珊瑚竖线标识（覆盖普通竖线） */
+/* 线上模式回复：左侧珊瑚竖线标识 */
 .msg.assistant.is-online .msg-bubble {
   border-left: 3px solid var(--coral);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 
-/* Claude API 来源标签（显示在助手的 msg-label 里） */
+/* Claude API 来源标签 */
 .tag-online {
   font-size: .58rem;
   color: var(--coral);
@@ -337,12 +361,7 @@
   transition: color var(--transition-slow), border-color var(--transition-slow);
 }
 
-/* 气泡相对定位（用于内部操作按钮定位） */
-.msg-bubble {
-  position: relative;
-}
-
-/* 消息气泡操作区域（用于未来复制等功能） */
+/* 消息气泡操作区域 */
 .msg-actions {
   opacity: 0;
   position: absolute;
@@ -354,7 +373,7 @@
 }
 
 .msg-bubble:hover .msg-actions {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .msg-actions:hover,
@@ -374,7 +393,9 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition:
+    all var(--transition-normal),
+    transform 0.1s ease;
 }
 
 .msg-action-btn:hover {
@@ -397,29 +418,23 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 气泡焦点状态（可访问性支持） */
+/* 气泡焦点状态 */
 .msg-bubble:focus-visible {
   outline: 2px solid var(--coral);
   outline-offset: 2px;
 }
 
-/* 响应式：小屏气泡更宽，利用更多横向空间 */
+/* 响应式 */
 @media (max-width: 768px) {
   .msg-bubble { max-width: 92%; }
   .msg-actions {
-    opacity: 0.7; /* 移动端保持可见 */
+    opacity: 0.6;
   }
 }
 
 
 /* =============================================================================
-   9. 思考过程折叠块（Qwen 的 <think> 内容）
-   点击可展开/收起，默认折叠。
-   结构：
-     <div class="think-block">
-       ▸ 思考过程（点击展开）
-       <div class="think-content">...思考内容...</div>
-     </div>
+   8. 思考过程折叠块
    ============================================================================= */
 
 .think-block {
@@ -431,43 +446,39 @@
   margin-bottom: 8px;
   cursor: pointer;
   user-select: none;
-  transition: color var(--transition-fast), border-color var(--transition-slow);
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-slow);
   line-height: 1.6;
 }
 
-.think-block:hover { color: var(--text-mid); }
+.think-block:hover {
+  color: var(--text-mid);
+  border-left-color: var(--coral-light);
+}
 
-/* 思考内容：默认隐藏，展开时 .think-block.open 触发显示 */
-.think-content { display: none; margin-top: 5px; }
-.think-block.open .think-content { display: block; }
+.think-content {
+  display: none;
+  margin-top: 5px;
+}
+
+.think-block.open .think-content {
+  display: block;
+}
 
 
 /* =============================================================================
-   10. 打字动画（助手回复生成中的等待指示器）
-   三个圆点依次上下跳动。
+   9. 打字动画（助手回复生成中的等待指示器）
+   沉稳设计：柔和的透明度变化，不做夸张跳动
    ============================================================================= */
 
 .typing {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
-  padding: 2px 0;
+  padding: 6px 0;
 }
 
-.typing span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--coral-light);
-  animation: bounce .9s infinite;
-  transition: background var(--transition-slow);
-}
-
-/* 三个点的动画延迟，制造波浪感 */
-.typing span:nth-child(2) { animation-delay: .15s; }
-.typing span:nth-child(3) { animation-delay: .30s; }
-
-/* T8：等待状态提示文字 */
 .typing-text {
   font-size: .78rem;
   color: var(--text-dim);
@@ -477,8 +488,7 @@
 }
 
 .typing-text.typing-long {
-  color: var(--coral);
-  font-weight: 500;
+  color: var(--coral-dim);
 }
 
 /* 错误消息气泡样式 */
@@ -526,7 +536,8 @@
 
 .loading-indicator.hide {
   opacity: 0;
-  transform: scale(0.9);
+  transform: scale(0.98);
+  transition: all 0.2s ease;
 }
 
 .loading-spinner {
@@ -571,8 +582,7 @@
 
 
 /* =============================================================================
-   11. 系统提示条（如"对话已保存"）
-   居中显示，不是气泡形式。
+   10. 系统提示条
    ============================================================================= */
 
 .sys-notice {
@@ -582,12 +592,20 @@
   font-family: var(--font-mono);
   padding: 5px 0;
   letter-spacing: .04em;
-  transition: color var(--transition-slow);
+  transition:
+    color var(--transition-slow),
+    transform 0.2s ease;
+}
+
+/* 保存成功时的微妙强调 */
+.sys-notice.saved {
+  color: var(--coral-dim);
 }
 
 
 /* =============================================================================
-   12. 输入框 textarea
+   11. 输入框 textarea
+   沉稳设计：聚焦时边框柔和过渡，无夸张动效
    ============================================================================= */
 
 #user-input {
@@ -599,22 +617,30 @@
   font-family: var(--font-body);
   font-size: .92rem;
   padding: 12px 16px;
-  resize: none;   /* 禁用手动拖拽调整大小，改为 JS 自动高度 */
+  resize: none;
   line-height: 1.6;
   min-height: 48px;
   max-height: 160px;
   outline: none;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
-  transition: border-color var(--transition-normal), box-shadow var(--transition-normal),
-              background var(--transition-slow), color var(--transition-slow);
-  /* 触控优化：iOS 上圆角输入框不会被系统样式覆盖 */
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal),
+    background var(--transition-slow),
+    color var(--transition-slow);
   -webkit-appearance: none;
   appearance: none;
 }
 
+/* 沉稳设计：聚焦时边框颜色柔和过渡，阴影轻微加深 */
 #user-input:focus {
   border-color: var(--coral-light);
-  box-shadow: 0 0 0 3px rgba(201, 124, 90, .1);
+  box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08);
+}
+
+/* 聚焦时的微光动画（仅在获得焦点时触发一次） */
+#user-input.focusing {
+  animation: focus-glow 0.4s ease-out;
 }
 
 #user-input::placeholder {
@@ -630,14 +656,13 @@
 
 
 /* =============================================================================
-   13. 发送按钮
+   12. 发送按钮
+   沉稳设计：按压时有轻微回弹，颜色加深确认感
    ============================================================================= */
 
 #send-btn {
-  /* 宽高固定，保证正方形 */
   width: 48px;
   height: 48px;
-  /* iOS 要求最小触控目标 44px，这里直接满足 */
   min-width: 44px;
   min-height: 44px;
   border-radius: var(--radius-sm);
@@ -648,21 +673,26 @@
   cursor: pointer;
   flex-shrink: 0;
   box-shadow: var(--shadow-btn);
-  transition: background var(--transition-normal), transform .1s ease,
-              box-shadow var(--transition-normal);
-  /* 移动端：禁止长按弹出菜单 */
+  transition:
+    background var(--transition-normal),
+    box-shadow var(--transition-normal),
+    transform 0.15s cubic-bezier(0.23, 1, 0.32, 1);
   -webkit-touch-callout: none;
 }
 
+/* 悬停：颜色加深，阴影加深 */
 #send-btn:hover:not(:disabled) {
   background: var(--coral-dim);
   box-shadow: var(--shadow-btn-hover);
 }
 
+/* 按压：轻微下沉 + 回弹 */
 #send-btn:active:not(:disabled) {
-  transform: scale(.95);
+  transform: scale(0.92);
+  box-shadow: 0 1px 4px rgba(201, 124, 90, 0.4);
 }
 
+/* 禁用状态：保持灰度，不突兀 */
 #send-btn:disabled {
   background: var(--border);
   box-shadow: none;
@@ -674,6 +704,7 @@
   outline-offset: 2px;
 }
 
+/* 响应式 */
 @media (max-width: 768px) {
   #send-btn {
     width: 44px;
@@ -684,21 +715,15 @@
 
 
 /* =============================================================================
-   14. Toast 通知
-   -----------------------------------------------------------------------------
-   用于错误提示、操作反馈等。
-   由 ui.js 的 UI.showToast() 动态创建 #toast 元素并添加 .show 类触发显示。
-
-   状态：
-     默认（无 .show）：透明 + translateY 向上偏移，不可见
-     .show：不透明 + 原位，可见，3秒后自动消失
+   13. Toast 通知
+   沉稳设计：淡入淡出，不打断用户
    ============================================================================= */
 
 #toast {
   position: fixed;
   bottom: 80px;
   left: 50%;
-  transform: translateX(-50%) translateY(10px);
+  transform: translateX(-50%) translateY(8px);
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-mid);
@@ -710,7 +735,9 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--transition-normal), transform var(--transition-normal);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
   z-index: 100;
 }
 
@@ -719,13 +746,22 @@
   transform: translateX(-50%) translateY(0);
 }
 
-/* 错误 toast：红色调 */
+/* 消失时：仅淡出 */
+#toast.hiding {
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+/* 错误 toast */
 #toast.error {
   border-color: #d4756b;
   color: #c0534a;
 }
 
-/* 成功 toast：绿色调 */
+/* 成功 toast */
 #toast.success {
   border-color: var(--dot-local);
   color: #4f8f4f;
@@ -733,7 +769,8 @@
 
 
 /* =============================================================================
-   15. 侧边栏导航（T4）
+   14. 侧边栏导航
+   沉稳设计：平滑开合，无弹跳
    ============================================================================= */
 
 /* 侧边栏遮罩 */
@@ -743,11 +780,11 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
   z-index: 40;
   display: none;
   opacity: 0;
-  transition: opacity var(--transition-normal);
+  transition: opacity 0.2s ease;
   pointer-events: none;
 }
 
@@ -757,7 +794,7 @@
   pointer-events: auto;
 }
 
-/* 侧边栏主体 */
+/* 侧边栏主体：300ms 平滑过渡 */
 #sidebar {
   position: fixed;
   left: 0;
@@ -767,11 +804,11 @@
   background: var(--surface);
   z-index: 50;
   transform: translateX(-100%);
-  transition: transform var(--transition-normal);
+  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.08);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, .06);
 }
 
 #sidebar.open {
@@ -808,12 +845,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition-normal), color var(--transition-normal);
+  transition:
+    background var(--transition-normal),
+    color var(--transition-normal);
 }
 
 #sidebar-close:hover {
   background: rgba(201, 124, 90, .06);
   color: var(--coral);
+}
+
+#sidebar-close:active {
+  transform: scale(0.92);
 }
 
 #sidebar-close:focus-visible {
@@ -839,6 +882,7 @@
   gap: 4px;
 }
 
+/* 沉稳设计：hover 时背景色柔和过渡 */
 .session-item:hover {
   background: var(--bg);
 }
@@ -924,8 +968,10 @@
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--transition-normal), color var(--transition-normal),
-              background var(--transition-normal);
+  transition:
+    border-color var(--transition-normal),
+    color var(--transition-normal),
+    background var(--transition-normal);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -936,6 +982,10 @@
   border-color: var(--coral-light);
   color: var(--coral);
   background: rgba(201, 124, 90, .06);
+}
+
+.sidebar-action:active {
+  transform: scale(0.98);
 }
 
 .sidebar-action:focus-visible {
@@ -949,17 +999,16 @@
     width: 85vw;
     max-width: 320px;
   }
-  
-  /* 减少动效偏好 */
+
   @media (prefers-reduced-motion: reduce) {
     #sidebar {
       transition: none;
     }
-    
+
     #sidebar-overlay {
       transition: none;
     }
-    
+
     #sidebar-overlay.visible {
       animation: none;
       opacity: 1;
@@ -969,10 +1018,9 @@
 
 
 /* =============================================================================
-   16. 历史对话加载块（T5）
+   15. 历史对话加载块
    ============================================================================= */
 
-/* 历史消息块容器 */
 .history-block {
   margin-bottom: 24px;
   border: 1px solid var(--border-light);
@@ -982,12 +1030,10 @@
   padding-top: 8px;
 }
 
-/* 历史消息块内的气泡禁用滑入动画 */
 .history-block .msg {
   animation: none !important;
 }
 
-/* 虚线分隔符 */
 .history-divider {
   display: flex;
   align-items: center;
@@ -1022,7 +1068,6 @@
   margin-bottom: 0;
 }
 
-/* 消息时间戳（T7使用，T5历史消息块中也使用） */
 .msg-timestamp {
   text-align: center;
   color: var(--text-dim);
@@ -1032,11 +1077,11 @@
   letter-spacing: .04em;
 }
 
+
 /* =============================================================================
-   17. 记忆强度滑块（记忆深度控制器）
+   16. 记忆强度滑块
    ============================================================================= */
 
-/* 滑块容器 */
 .memory-slider-container {
   display: flex;
   align-items: center;
@@ -1046,7 +1091,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin: 8px 0 16px;
-  transition: background var(--transition-slow), border-color var(--transition-slow);
+  transition:
+    background var(--transition-slow),
+    border-color var(--transition-slow);
 }
 
 .memory-slider-container:hover {
@@ -1054,7 +1101,6 @@
   background: rgba(201, 124, 90, .03);
 }
 
-/* 滑块标签 */
 .memory-slider-label {
   font-size: .72rem;
   font-family: var(--font-mono);
@@ -1064,7 +1110,6 @@
   min-width: 80px;
 }
 
-/* 滑块本身 */
 .memory-slider {
   flex: 1;
   height: 6px;
@@ -1075,7 +1120,6 @@
   cursor: pointer;
 }
 
-/* Webkit滑块样式 */
 .memory-slider::-webkit-slider-thumb {
   appearance: none;
   height: 16px;
@@ -1085,7 +1129,9 @@
   cursor: pointer;
   border: 2px solid var(--surface);
   box-shadow: 0 0 0 2px var(--coral-light);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .memory-slider::-webkit-slider-thumb:hover {
@@ -1097,7 +1143,6 @@
   transform: scale(0.95);
 }
 
-/* Firefox滑块样式 */
 .memory-slider::-moz-range-thumb {
   height: 16px;
   width: 16px;
@@ -1106,7 +1151,9 @@
   cursor: pointer;
   border: 2px solid var(--surface);
   box-shadow: 0 0 0 2px var(--coral-light);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .memory-slider::-moz-range-thumb:hover {
@@ -1114,21 +1161,19 @@
   box-shadow: 0 0 0 3px var(--coral-light);
 }
 
-/* 填充轨道（动态背景色） */
 .memory-slider-fill {
   position: absolute;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(90deg, 
-    rgba(124, 173, 124, 0.2) 0%, 
-    rgba(201, 124, 90, 0.35) 35%, 
+  background: linear-gradient(90deg,
+    rgba(124, 173, 124, 0.2) 0%,
+    rgba(201, 124, 90, 0.35) 35%,
     rgba(127, 175, 212, 0.45) 70%
   );
   pointer-events: none;
   z-index: 1;
 }
 
-/* 滑块轨道容器 */
 .memory-slider-track {
   position: relative;
   flex: 1;
@@ -1137,7 +1182,6 @@
   align-items: center;
 }
 
-/* 刻度标记 */
 .memory-slider-ticks {
   position: absolute;
   width: 100%;
@@ -1158,7 +1202,6 @@
   height: 8px;
 }
 
-/* 标签值显示 */
 .memory-slider-value {
   font-size: .7rem;
   font-family: var(--font-mono);
@@ -1173,7 +1216,6 @@
   transition: background var(--transition-normal);
 }
 
-/* 预设模式按钮组 */
 .memory-preset-group {
   display: flex;
   gap: 6px;
@@ -1190,7 +1232,9 @@
   font-family: var(--font-mono);
   border-radius: 6px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition:
+    all var(--transition-normal),
+    transform 0.1s ease;
   white-space: nowrap;
 }
 
@@ -1200,13 +1244,16 @@
   background: rgba(201, 124, 90, 0.06);
 }
 
+.memory-preset-btn:active {
+  transform: scale(0.97);
+}
+
 .memory-preset-btn.active {
   border-color: var(--coral);
   background: var(--coral);
   color: #fff;
 }
 
-/* 滑块状态提示 */
 .memory-slider-hint {
   font-size: .68rem;
   color: var(--text-dim);

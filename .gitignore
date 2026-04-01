@@ -52,6 +52,7 @@ desktop.ini
 # .vscode/
 # .idea/
 .codebuddy/
+.workbuddy/
 importer/export.json
 
 # ============================================================

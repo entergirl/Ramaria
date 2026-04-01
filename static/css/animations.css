@@ -4,11 +4,14 @@
    所有 @keyframes 定义集中在此文件，方便统一调整动画参数。
 
    包含：
-     · rise        — 新消息出现时的上浮淡入（通用）
-     · slideInRight — 用户消息从右滑入
-     · slideInLeft  — 助手消息从左滑入
-     · bounce       — 打字等待圆点上下跳动
+     · slideInRight — 用户消息从右滑入（微妙幅度）
+     · slideInLeft  — 助手消息从左滑入（微妙幅度）
+     · breathe      — 柔和的呼吸动画（用于状态指示）
      · blink        — 等待确认状态圆点闪烁
+     · fadeIn       — 淡入动画
+     · spin         — 旋转动画（加载器使用）
+     · slideInUp    — Toast 从底部滑入
+     · pulse-subtle — 极轻微的脉冲（用于强调）
    ============================================================================= */
 
 
@@ -18,61 +21,135 @@
    用户消息（.msg.user）和助手消息（.msg.assistant）使用不同方向的滑入动画，
    在视觉上区分"发出"和"收到"两种状态。
 
-   slideInRight / slideInLeft 替换原来的统一 rise 动画，增强对话感。
-   rise 保留作为兜底（非 user/assistant 的 .msg，如系统消息）。
+   沉稳设计：
+     · 位移幅度降低（8px 而非 16px）
+     · 时长缩短到 180ms
+     · 强调 opacity 渐显，位移为辅
    ============================================================================= */
 
-/* 通用上浮淡入（兜底，不对外主动使用） */
-@keyframes rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* 用户消息：从右侧滑入 */
+/* 用户消息：从右侧柔和滑入 */
 @keyframes slideInRight {
-  from { opacity: 0; transform: translateX(16px) translateY(2px); }
-  to   { opacity: 1; transform: translateX(0) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-/* 助手消息：从左侧滑入 */
+/* 助手消息：从左侧柔和滑入 */
 @keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-16px) translateY(2px); }
-  to   { opacity: 1; transform: translateX(0) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* 挂载动画到对应消息类型 */
-.msg.user      { animation: slideInRight .22s ease both; }
-.msg.assistant { animation: slideInLeft  .22s ease both; }
+.msg.user      { animation: slideInRight 180ms ease-out both; }
+.msg.assistant { animation: slideInLeft  180ms ease-out both; }
 
 
 /* =============================================================================
-   打字等待圆点跳动动画
-   用于助手正在"输入"时的三点等待指示器。
+   打字等待圆点动画
+   -----------------------------------------------------------------------------
+   采用柔和的透明度变化，替代原有的上下跳动。
+   营造"安静的陪伴"感，而非焦虑的等待。
    ============================================================================= */
 
-@keyframes bounce {
-  0%, 80%, 100% { transform: translateY(0); }
-  40%           { transform: translateY(-5px); }
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
+
+.typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--coral-light);
+  animation: breathe 1.4s ease-in-out infinite;
+  transition: background var(--transition-slow);
+}
+
+/* 三个点的动画延迟，制造柔和的波浪感 */
+.typing span:nth-child(2) { animation-delay: 0.18s; }
+.typing span:nth-child(3) { animation-delay: 0.36s; }
 
 
 /* =============================================================================
    等待确认状态圆点闪烁动画
-   用于路由器等待用户确认是否调用 Claude 时的状态圆点。
+   -----------------------------------------------------------------------------
+   沉稳设计：1.5s 周期的缓慢闪烁，不刺眼
    ============================================================================= */
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
-  50%       { opacity: .2; }
+  50%       { opacity: 0.3; }
 }
 
-/* 淡入动画 */
+
+/* =============================================================================
+   淡入动画
+   用于 Toast、内容渐显等场景
+   ============================================================================= */
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/* 旋转动画（加载器使用） */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+
+/* =============================================================================
+   Toast 滑入动画
+   -----------------------------------------------------------------------------
+   从底部柔和滑入，不打断用户
+   ============================================================================= */
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes slideOutDown {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+
+
+/* =============================================================================
+   旋转动画
+   用于加载器，保持与整体沉稳风格一致
+   ============================================================================= */
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -80,29 +157,84 @@
 
 
 /* =============================================================================
+   极轻微的脉冲
+   用于状态变化时的微妙强调
+   ============================================================================= */
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(201, 124, 90, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(201, 124, 90, 0.15);
+  }
+}
+
+
+/* =============================================================================
+   模式切换时的微光效果
+   -----------------------------------------------------------------------------
+   沉稳设计：仅在切换瞬间出现，快速淡出
+   ============================================================================= */
+
+@keyframes mode-glow {
+  0% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
+  30% { box-shadow: 0 0 12px 3px rgba(201, 124, 90, 0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
+}
+
+
+/* =============================================================================
+   输入框聚焦时的微光
+   ============================================================================= */
+
+@keyframes focus-glow {
+  0% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.12); }
+  100% { box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08); }
+}
+
+
+/* =============================================================================
    用户偏好：减少动效模式
    -----------------------------------------------------------------------------
-   部分用户（如患有前庭障碍）会在系统设置中开启"减少动效"。
-   prefers-reduced-motion: reduce 时，将所有动画时长压缩到极短，
-   保留动画的功能性（出现/消失）但去除位移感。
+   prefers-reduced-motion: reduce 时，将所有动画压缩到极短，
+   保留动画的功能性但去除位移感。
    ============================================================================= */
 
 @media (prefers-reduced-motion: reduce) {
   .msg.user,
   .msg.assistant {
-    animation-duration: .01ms;
+    animation-duration: 80ms;
+    animation-name: fadeIn;
   }
 
-  @keyframes bounce {
-    0%, 100% { transform: none; }
+  .typing span {
+    animation-duration: 200ms;
+  }
+
+  @keyframes breathe {
+    0%, 100% { transform: none; opacity: 0.6; }
+    50% { transform: none; opacity: 1; }
   }
 
   @keyframes blink {
     0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
-  
+
   @keyframes spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(180deg); }
+  }
+
+  @keyframes slideInUp {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes slideOutDown {
+    from { opacity: 1; }
+    to   { opacity: 0; }
   }
 }

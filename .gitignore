@@ -53,6 +53,7 @@ desktop.ini
 # .idea/
 .codebuddy/
 .workbuddy/
+.github/
 importer/export.json
 
 # ============================================================

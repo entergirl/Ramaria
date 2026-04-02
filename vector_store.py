@@ -67,6 +67,9 @@ import math
 import queue
 import threading
 from datetime import datetime, timezone
+import jieba
+import jieba.analyse
+from rank_bm25 import BM25Okapi
 
 import chromadb
 from chromadb.utils.embedding_functions import (
@@ -88,6 +91,8 @@ from config import (
     MEMORY_DECAY_ENABLE_ACCESS_BOOST,
     MEMORY_DECAY_RECENT_BOOST_DAYS,
     MEMORY_DECAY_RECENT_BOOST_FLOOR,
+    RRF_K,
+    BM25_WEIGHT,
 )
 from database import get_messages
 
@@ -211,6 +216,281 @@ def _enqueue_access(layer: str, record_id: int):
     except queue.Full:
         # maxsize=0 时永远不会满，这里只是防御性处理
         pass
+
+
+# =============================================================================
+# BM25 索引管理
+# =============================================================================
+
+class BM25Index:
+    """
+    BM25 关键词索引，与 Chroma 向量索引并行运行。
+
+    职责：
+        · 维护内存中的 BM25 索引（基于 memory_l1 / memory_l2 的摘要文本）
+        · 提供线程安全的检索接口
+        · 在新记录写入后自动重建索引（rank_bm25 不支持增量更新）
+
+    索引文本构成：
+        summary + " " + keywords（关键词用空格替换逗号，让 jieba 能分开处理）
+
+    线程安全：
+        使用 threading.RLock（可重入锁）保护索引读写。
+        检索（读）和重建（写）不会并发冲突。
+        RLock 而非 Lock 是为了允许同一线程在持锁时重入（如重建时触发检索）。
+    """
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+        # L1 索引相关数据（列表索引与记录一一对应）
+        self._l1_ids:   list[int] = []      # 每条记录的 l1_id
+        self._l1_docs:  list[str] = []      # 每条记录的原始文本（用于调试）
+        self._l1_bm25:  BM25Okapi | None = None  # BM25 索引对象
+
+        # L2 索引相关数据
+        self._l2_ids:   list[int] = []
+        self._l2_docs:  list[str] = []
+        self._l2_bm25:  BM25Okapi | None = None
+
+        # jieba 自定义词典是否已加载（只加载一次）
+        self._jieba_dict_loaded = False
+
+    # -------------------------------------------------------------------------
+    # 内部工具：文本预处理
+    # -------------------------------------------------------------------------
+
+    def _tokenize(self, text: str) -> list[str]:
+        """
+        对文本进行中文分词，返回词列表。
+
+        分词策略：
+          · 使用 jieba 精确模式（cut_all=False），颗粒度适中
+          · 过滤空字符串和单字符（减少噪声，BM25 对短词不敏感）
+          · 保留长度 >= 2 的词，包括英文词（如 "MCP"、"FastAPI"）
+
+        参数：
+            text — 待分词的原始文本
+
+        返回：
+            list[str] — 分词结果列表
+        """
+        if not text:
+            return []
+        tokens = jieba.cut(text, cut_all=False)
+        return [t.strip() for t in tokens if len(t.strip()) >= 2]
+
+    def _build_doc_text(self, summary: str, keywords: str | None) -> str:
+        """
+        将 summary 和 keywords 拼成一段完整的索引文本。
+
+        关键词用空格分隔追加在摘要后面，这样 jieba 能把它们作为独立词处理，
+        同时关键词在文本中出现两次（摘要里一次 + 关键词字段一次），
+        BM25 的词频统计会给它更高的权重——这正是我们想要的效果。
+
+        参数：
+            summary  — L1/L2 摘要文本
+            keywords — 关键词字符串，逗号分隔；允许为 None
+
+        返回：
+            str — 拼接后的索引文本
+        """
+        if keywords:
+            # 将逗号替换为空格，让 jieba 把每个关键词当独立词处理
+            kw_text = keywords.replace(",", " ").replace("，", " ")
+            return f"{summary} {kw_text}"
+        return summary
+
+    # -------------------------------------------------------------------------
+    # 内部工具：jieba 自定义词典
+    # -------------------------------------------------------------------------
+
+    def _load_jieba_custom_dict(self):
+        """
+        从 keyword_pool 表加载自定义词典到 jieba，确保项目专有词汇分词正确。
+
+        只在首次重建索引时执行一次（_jieba_dict_loaded 标志保护）。
+        加载失败时静默跳过，不影响分词功能（只是专有词可能被切错）。
+
+        为什么需要自定义词典：
+            jieba 默认词典对"珊瑚菌"、"summarizer"、"MCP Server"等
+            项目专有词汇的切分可能不准确，导致 BM25 检索时词频统计偏差。
+            从 keyword_pool 表导入已知关键词，可以显著提升分词准确性。
+        """
+        if self._jieba_dict_loaded:
+            return
+
+        try:
+            from database import get_all_keywords
+            keywords = get_all_keywords()
+            for kw in keywords:
+                if kw and len(kw) >= 2:
+                    # 词频设为 10000（高于默认值），确保作为独立词处理
+                    # 词性设为 'n'（名词），符合关键词的语言特征
+                    jieba.add_word(kw, freq=10000, tag='n')
+            self._jieba_dict_loaded = True
+            logger.debug(f"jieba 自定义词典加载完成，共 {len(keywords)} 个词条")
+        except Exception as e:
+            logger.warning(f"jieba 自定义词典加载失败，使用默认分词 — {e}")
+            self._jieba_dict_loaded = True   # 标记为已尝试，避免反复重试
+
+    # -------------------------------------------------------------------------
+    # 公开接口：索引重建
+    # -------------------------------------------------------------------------
+
+    def rebuild(self, layer: str):
+        """
+        从数据库读取全量数据，重建指定层的 BM25 索引。
+
+        调用时机：
+          · 服务启动时（main.py lifespan startup）
+          · 新 L1 写入后（index_l1 调用结束时）
+          · 新 L2 写入后（index_l2 调用结束时）
+
+        参数：
+            layer — "l1" 或 "l2"，指定要重建哪一层的索引
+
+        重建流程：
+          1. 加载 jieba 自定义词典（仅首次）
+          2. 从 SQLite 读取全量摘要和关键词
+          3. 对每条记录做分词，构建词列表
+          4. 用词列表重新初始化 BM25Okapi 对象
+          5. 加锁写入内存，替换旧索引
+        """
+        if layer not in ("l1", "l2"):
+            logger.warning(f"BM25 rebuild: 未知 layer={layer!r}，跳过")
+            return
+
+        # 首次重建时加载自定义词典
+        self._load_jieba_custom_dict()
+
+        try:
+            if layer == "l1":
+                from database import get_all_l1
+                rows = get_all_l1()
+            else:
+                from database import get_all_l2
+                rows = get_all_l2()
+        except Exception as e:
+            logger.warning(f"BM25 rebuild({layer}): 读取数据库失败 — {e}")
+            return
+
+        if not rows:
+            logger.debug(f"BM25 rebuild({layer}): 数据为空，跳过")
+            return
+
+        # 构建文档列表和对应 id 列表
+        ids      = []
+        docs     = []
+        tokenized = []
+
+        for row in rows:
+            doc_text = self._build_doc_text(
+                summary  = row["summary"]  or "",
+                keywords = row["keywords"] if "keywords" in row.keys() else None,
+            )
+            tokens = self._tokenize(doc_text)
+            if not tokens:
+                continue
+
+            ids.append(row["id"])
+            docs.append(doc_text)
+            tokenized.append(tokens)
+
+        if not tokenized:
+            logger.debug(f"BM25 rebuild({layer}): 分词后无有效文档，跳过")
+            return
+
+        # 构建 BM25 索引对象
+        # BM25Okapi 是 Okapi BM25 的标准实现，参数 k1=1.5, b=0.75（库默认值）
+        new_bm25 = BM25Okapi(tokenized)
+
+        # 加锁替换内存中的旧索引
+        with self._lock:
+            if layer == "l1":
+                self._l1_ids  = ids
+                self._l1_docs = docs
+                self._l1_bm25 = new_bm25
+            else:
+                self._l2_ids  = ids
+                self._l2_docs = docs
+                self._l2_bm25 = new_bm25
+
+        logger.debug(f"BM25 rebuild({layer}): 完成，共 {len(ids)} 条记录")
+
+    # -------------------------------------------------------------------------
+    # 公开接口：检索
+    # -------------------------------------------------------------------------
+
+    def search(self, query: str, layer: str, top_k: int) -> list[dict]:
+        """
+        在指定层的 BM25 索引中检索，返回最相关的前 top_k 条结果。
+
+        参数：
+            query  — 查询文本（原始文本，函数内部会分词）
+            layer  — "l1" 或 "l2"
+            top_k  — 最多返回条数
+
+        返回：
+            list[dict]，每个元素包含：
+                {
+                    "id":       int,    # l1_id 或 l2_id
+                    "document": str,    # 索引文本
+                    "bm25_score": float, # BM25 原始分数（越高越相关）
+                    "rank":     int,    # 在本次检索结果中的排名（从 1 开始）
+                }
+            索引为空时返回 []。
+
+        注意：
+            BM25 分数只有相对意义（同一次检索内可比），
+            不同次检索的分数不可直接比较。
+            融合时使用排名（rank）而非原始分数。
+        """
+        with self._lock:
+            if layer == "l1":
+                bm25  = self._l1_bm25
+                ids   = self._l1_ids
+                docs  = self._l1_docs
+            else:
+                bm25  = self._l2_bm25
+                ids   = self._l2_ids
+                docs  = self._l2_docs
+
+        # 索引为空时直接返回
+        if bm25 is None or not ids:
+            return []
+
+        # 对查询文本分词
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return []
+
+        # 获取所有文档的 BM25 分数
+        scores = bm25.get_scores(query_tokens)
+
+        # 按分数降序排列，取前 top_k 条（过滤分数为 0 的结果）
+        ranked = sorted(
+            enumerate(scores),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        ranked = [(idx, score) for idx, score in ranked if score > 0]
+        ranked = ranked[:top_k]
+
+        results = []
+        for rank, (idx, score) in enumerate(ranked, start=1):
+            results.append({
+                "id":         ids[idx],
+                "document":   docs[idx],
+                "bm25_score": float(score),
+                "rank":       rank,
+            })
+
+        return results
+
+
+# BM25 全局单例，与 Chroma 客户端同级别管理
+_bm25_index = BM25Index()
 
 
 # =============================================================================
@@ -468,6 +748,9 @@ def index_l1(l1_id, summary, keywords=None, session_id=None, created_at=None, sa
         )
         logger.info(f"L1 索引写入成功，l1_id={l1_id}")
 
+        # 新记录写入后重建 BM25 索引，保持关键词检索与向量检索同步
+        _bm25_index.rebuild("l1")
+
     except Exception as e:
         logger.warning(f"L1 索引写入失败，l1_id={l1_id} — {e}")
 
@@ -517,6 +800,9 @@ def index_l2(l2_id, summary, keywords=None, period_start=None, period_end=None):
             metadatas = [metadata],
         )
         logger.info(f"L2 索引写入成功，l2_id={l2_id}")
+
+        # 新记录写入后重建 BM25 索引
+        _bm25_index.rebuild("l2")
 
     except Exception as e:
         logger.warning(f"L2 索引写入失败，l2_id={l2_id} — {e}")
@@ -616,19 +902,171 @@ def retrieve_l0(query_text, top_k=L0_RETRIEVE_TOP_K):
     return _retrieve(_COLL_L0, query_text, top_k, id_field=None, decay_s=MEMORY_DECAY_S_L0)
 
 
-def retrieve_combined(query_text):
+def retrieve_combined(query_text: str) -> dict:
     """
-    同时在 L1 和 L2 索引中检索，合并结果后返回。
-    用于 _build_context() 的语义层注入。
+    同时在 L1 和 L2 索引中检索，融合向量检索和 BM25 关键词检索的结果。
+
+    融合策略：RRF（Reciprocal Rank Fusion，倒数排名融合）
+        对每条结果计算融合分数：
+            rrf_score = BM25_WEIGHT / (RRF_K + bm25_rank)
+                      + 1.0         / (RRF_K + vector_rank)
+
+        其中：
+          · bm25_rank   — 该结果在 BM25 检索中的排名（1=最相关）
+                          如果该结果未出现在 BM25 结果中，用 top_k+1 作为惩罚排名
+          · vector_rank — 该结果在向量检索中的排名
+                          如果该结果未出现在向量结果中，同样用 top_k+1 作为惩罚排名
+          · RRF_K       — 平滑系数，默认 60（来自 config.py）
+          · BM25_WEIGHT — BM25 通道权重，默认 1.0（来自 config.py）
+
+        rrf_score 越高越相关，最终按 rrf_score 降序排列。
+
+    输出格式与原版保持一致（{l2: [...], l1: [...]}），
+    调用方（_build_context）无需修改。
+
+    参数：
+        query_text — 查询文本
 
     返回：
         dict — {"l2": list[dict], "l1": list[dict]}
+               每条结果在原有字段基础上新增：
+                 "bm25_score":  float  BM25 原始分数（调试用）
+                 "rrf_score":   float  最终融合分数（越高越相关）
     """
-    return {
-        "l2": retrieve_l2(query_text),
-        "l1": retrieve_l1(query_text),
-    }
+    # ── 候选池大小：多取一些，融合后再截断到 top_k ──
+    # 两路各取 top_k * 2 作为候选，保证融合后有足够的结果可选
+    l1_candidate_k = L1_RETRIEVE_TOP_K * 2
+    l2_candidate_k = L2_RETRIEVE_TOP_K * 2
 
+    # ── L1：向量检索 + BM25 检索 ──
+    vector_l1 = _retrieve(
+        _COLL_L1, query_text, l1_candidate_k,
+        id_field="l1_id", decay_s=MEMORY_DECAY_S_L1,
+    )
+    bm25_l1 = _bm25_index.search(query_text, layer="l1", top_k=l1_candidate_k)
+
+    # ── L2：向量检索 + BM25 检索 ──
+    vector_l2 = _retrieve(
+        _COLL_L2, query_text, l2_candidate_k,
+        id_field="l2_id", decay_s=MEMORY_DECAY_S_L2,
+    )
+    bm25_l2 = _bm25_index.search(query_text, layer="l2", top_k=l2_candidate_k)
+
+    # ── 融合 ──
+    fused_l1 = _rrf_fuse(vector_l1, bm25_l1, "l1_id", L1_RETRIEVE_TOP_K)
+    fused_l2 = _rrf_fuse(vector_l2, bm25_l2, "l2_id", L2_RETRIEVE_TOP_K)
+
+    logger.debug(
+        f"retrieve_combined: L1 向量={len(vector_l1)} BM25={len(bm25_l1)} 融合后={len(fused_l1)} | "
+        f"L2 向量={len(vector_l2)} BM25={len(bm25_l2)} 融合后={len(fused_l2)}"
+    )
+
+    return {"l2": fused_l2, "l1": fused_l1}
+
+def _rrf_fuse(
+    vector_results: list[dict],
+    bm25_results:   list[dict],
+    id_field:       str,
+    top_k:          int,
+) -> list[dict]:
+    """
+    对向量检索结果和 BM25 检索结果执行 RRF 融合。
+
+    RRF 公式：
+        rrf_score(doc) = BM25_WEIGHT / (RRF_K + rank_bm25(doc))
+                       + 1.0         / (RRF_K + rank_vector(doc))
+
+    如果某条结果只出现在一路中（另一路没有），
+    用 (top_k * 2 + 1) 作为该路的惩罚排名，
+    表示"出现在另一路的末尾之后"，而不是完全不考虑。
+
+    这样的设计确保：
+      · 两路都命中的结果排名最高（获得双重加分）
+      · 只被向量命中的结果也能出现（不会因为 BM25 未命中就被丢弃）
+      · 只被 BM25 命中的结果同理
+
+    参数：
+        vector_results — _retrieve() 返回的向量检索结果列表
+        bm25_results   — BM25Index.search() 返回的关键词检索结果列表
+        id_field       — 结果 dict 中记录 id 的键名（"l1_id" 或 "l2_id"）
+        top_k          — 最终返回的条数上限
+
+    返回：
+        list[dict] — 融合排序后的结果列表，按 rrf_score 降序
+                     每条结果包含原 vector_results 的所有字段，
+                     额外新增 bm25_score 和 rrf_score 字段
+    """
+    # 惩罚排名：未出现在某路时，视为排在该路候选池末尾之后
+    penalty_rank = top_k * 2 + 1
+
+    # 建立 BM25 结果的 id → (rank, score) 查找表
+    bm25_rank_map: dict[int, tuple[int, float]] = {}
+    for item in bm25_results:
+        bm25_rank_map[item["id"]] = (item["rank"], item["bm25_score"])
+
+    # 建立向量结果的 id → (rank, result_dict) 查找表
+    # 向量结果按 adjusted_distance 升序排列，rank 从 1 开始
+    vector_rank_map: dict[int, tuple[int, dict]] = {}
+    for rank, item in enumerate(vector_results, start=1):
+        record_id = item.get(id_field)
+        if record_id is not None:
+            vector_rank_map[record_id] = (rank, item)
+
+    # 收集所有候选 id（两路并集）
+    all_ids: set[int] = set(vector_rank_map.keys()) | set(bm25_rank_map.keys())
+
+    # 计算每个 id 的 RRF 分数
+    scored: list[tuple[float, int]] = []   # (rrf_score, id)
+
+    for doc_id in all_ids:
+        v_rank = vector_rank_map[doc_id][0] if doc_id in vector_rank_map else penalty_rank
+        b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
+
+        rrf_score = (
+            BM25_WEIGHT / (RRF_K + b_rank)
+            + 1.0       / (RRF_K + v_rank)
+        )
+        scored.append((rrf_score, doc_id))
+
+    # 按 rrf_score 降序排列
+    scored.sort(key=lambda x: x[0], reverse=True)
+    scored = scored[:top_k]
+
+    # 组装最终结果列表
+    # 优先使用向量检索的完整 result_dict（含 distance / adjusted_distance / metadata 等字段）
+    # 若某条结果只出现在 BM25 中（向量未命中），从数据库补全基本信息
+    fused = []
+    for rrf_score, doc_id in scored:
+        if doc_id in vector_rank_map:
+            # 向量结果有完整信息，直接复用，追加额外字段
+            _, result_dict = vector_rank_map[doc_id]
+            entry = dict(result_dict)   # 浅拷贝，不修改原始对象
+        else:
+            # 只在 BM25 中命中，向量未命中（可能因为距离超过阈值被过滤）
+            # 构造一个基本 result_dict，distance 字段标记为 None
+            entry = {
+                id_field:            doc_id,
+                "document":          bm25_rank_map[doc_id][0],   # 实际上是 rank，此处用 bm25 doc
+                "distance":          None,
+                "adjusted_distance": None,
+                "decay_r":           None,
+                "metadata":          {},
+            }
+            # 从 BM25 索引里找回原始文本
+            bm25_doc = next(
+                (r["document"] for r in bm25_results if r["id"] == doc_id),
+                ""
+            )
+            entry["document"] = bm25_doc
+
+        # 追加融合相关字段
+        b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
+        entry["bm25_score"] = b_score
+        entry["rrf_score"]  = rrf_score
+
+        fused.append(entry)
+
+    return fused
 
 # =============================================================================
 # 内部：通用检索逻辑（含衰减）

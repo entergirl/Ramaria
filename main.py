@@ -117,6 +117,14 @@ async def lifespan(app: FastAPI):
     from vector_store import _start_access_worker
     _start_access_worker()
 
+    # 启动时预热 BM25 索引（从 SQLite 全量读取，通常 < 1 秒）
+    # 必须在 session_manager.start() 之前完成，
+    # 确保第一条消息到来时 BM25 已就绪
+    from vector_store import _bm25_index
+    _bm25_index.rebuild("l1")
+    _bm25_index.rebuild("l2")
+    logger.info("BM25 索引预热完成")
+
     session_manager.start()
     logger.info("就绪，访问 http://localhost:8000")
     yield

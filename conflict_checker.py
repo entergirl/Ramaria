@@ -364,6 +364,48 @@ def handle_conflict_reply(conflict_id, action):
         logger.info(f"冲突 {conflict_id} 已 ignore，画像保持不变")
         return f'好的，我会继续记住之前的"{field_label}"，这次的变化先不更新。'
 
+    # ── alias_confirm 类型：别名确认 ──
+    # 与普通画像冲突的处理完全独立，不更新 user_profile，只更新 keyword_pool 和图谱
+    if target.get("conflict_type") == "alias_confirm":
+        from database import (
+            get_alias_kp_ids_from_conflict,
+            confirm_alias,
+            reject_alias,
+        )
+
+        kp_ids = get_alias_kp_ids_from_conflict(conflict_id)
+        if kp_ids is None:
+            logger.warning(f"alias_confirm conflict_id={conflict_id} 解析 kp_ids 失败")
+            return "这条记录解析出问题了，我先跳过，不影响其他功能。"
+
+        new_word_kp_id, canonical_kp_id = kp_ids
+
+        # 从 old_content 里提取两个词的文本（用于回复文案）
+        old_content = target["old_content"]
+        old_word = old_content.split("\n__kp_ids__")[0]  # 规范词
+        new_word = target["new_content"]                  # 待确认词
+
+        if action == "resolve":
+            # 用户确认是同一个词，合并
+            ok = confirm_alias(new_word_kp_id, canonical_kp_id)
+            resolve_conflict(conflict_id)
+            if ok:
+                logger.info(
+                    f"alias_confirm {conflict_id} 已确认合并：'{new_word}' → '{old_word}'"
+                )
+                return f'好的，我已经把"{new_word}"和"{old_word}"识别为同一个东西了，以后会统一用"{old_word}"来记。'
+            else:
+                return "合并的时候出了点问题，我记录下来，不影响继续对话。"
+
+        elif action == "ignore":
+            # 用户说不是同一个词，独立为新规范词
+            reject_alias(new_word_kp_id)
+            ignore_conflict(conflict_id)
+            logger.info(
+                f"alias_confirm {conflict_id} 已拒绝合并：'{new_word}' 独立为规范词"
+            )
+            return f'好的，"{new_word}"和"{old_word}"我会分开记，不混在一起。'
+
     else:
         logger.warning(f"未知 action {action!r}，不做任何操作")
         return '没有理解你的选择，可以回复"更新"或"忽略"。'

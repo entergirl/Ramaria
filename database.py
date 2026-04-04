@@ -1236,6 +1236,640 @@ def get_last_accessed_at(layer: str, record_id: int):
         return None
 
 # =============================================================================
+# graph_nodes 表操作
+# =============================================================================
+
+def get_node_by_name(entity_name: str):
+    """
+    按实体名精确查询图谱节点。
+
+    注意：查询前调用方应已完成归一化，传入的是规范词。
+    本函数不做归一化处理，只做精确匹配。
+
+    参数：
+        entity_name — 归一化后的实体名
+
+    返回：
+        sqlite3.Row — 节点记录；不存在时返回 None
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM graph_nodes WHERE entity_name = ?",
+        (entity_name,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+def get_or_create_node(entity_name: str, entity_type: str, source_l1_id: int) -> int:
+    """
+    获取或创建一个图谱节点，返回节点 id。
+
+    如果节点已存在：use_count + 1，返回现有 id。
+    如果节点不存在：插入新行，返回新 id。
+
+    参数：
+        entity_name  — 归一化后的实体名（规范词）
+        entity_type  — 实体类型，五选一：person/project/module/concept/time
+        source_l1_id — 触发此节点创建的 L1 摘要 id
+
+    返回：
+        int — 节点 id
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    # 先查是否已存在
+    cursor.execute(
+        "SELECT id FROM graph_nodes WHERE entity_name = ?",
+        (entity_name,)
+    )
+    row = cursor.fetchone()
+
+    if row:
+        # 已存在，use_count + 1
+        cursor.execute(
+            "UPDATE graph_nodes SET use_count = use_count + 1 WHERE id = ?",
+            (row["id"],)
+        )
+        node_id = row["id"]
+    else:
+        # 不存在，插入新节点
+        cursor.execute(
+            """
+            INSERT INTO graph_nodes (entity_name, entity_type, source_l1_id, created_at, use_count)
+            VALUES (?, ?, ?, ?, 1)
+            """,
+            (entity_name, entity_type, source_l1_id, _now())
+        )
+        node_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+    return node_id
+
+
+def get_canonical_name(word_id: int) -> str | None:
+    """
+    给定 keyword_pool 里的词 id，追溯到规范词的文本。
+
+    如果 canonical_id 为 NULL，说明本词就是规范词，直接返回自身的 keyword。
+    如果 canonical_id 非 NULL，跳转到规范词，返回规范词的 keyword。
+
+    参数：
+        word_id — keyword_pool 表的主键 id
+
+    返回：
+        str  — 规范词文本
+        None — word_id 不存在时返回 None
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT keyword, canonical_id FROM keyword_pool WHERE rowid = ?",
+        (word_id,)
+    )
+    row = cursor.fetchone()
+
+    if row is None:
+        conn.close()
+        return None
+
+    if row["canonical_id"] is None:
+        # 本词就是规范词
+        conn.close()
+        return row["keyword"]
+
+    # 追溯到规范词（只追一层，设计上不允许多级别名）
+    cursor.execute(
+        "SELECT keyword FROM keyword_pool WHERE rowid = ?",
+        (row["canonical_id"],)
+    )
+    canonical_row = cursor.fetchone()
+    conn.close()
+    return canonical_row["keyword"] if canonical_row else None
+
+
+def get_all_canonical_keywords() -> list[dict]:
+    """
+    取出 keyword_pool 里所有规范词（canonical_id 为 NULL 且已确认的词）。
+
+    用于实体归一化时计算向量相似度：
+    只和规范词比较，不和别名比较，避免别名之间互相匹配。
+
+    返回：
+        list[dict] — 每个元素包含 rowid / keyword / use_count
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT rowid, keyword, use_count
+        FROM keyword_pool
+        WHERE canonical_id IS NULL
+          AND alias_status = 'confirmed'
+        ORDER BY use_count DESC
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["rowid"], "keyword": r["keyword"], "use_count": r["use_count"]}
+            for r in rows]
+
+
+# =============================================================================
+# graph_edges 表操作
+# =============================================================================
+
+def save_edge(
+    source_node_id: int,
+    target_node_id: int,
+    relation_type: str,
+    relation_detail: str,
+    source_l1_id: int,
+) -> int:
+    """
+    保存一条图谱边，返回新边的 id。
+
+    注意：不做重复检查，同一对节点之间可以存在多条边
+    （来自不同 L1，代表不同时间发生的同类关系）。
+    如果需要查重，由调用方在写入前自行检查。
+
+    参数：
+        source_node_id  — 主语节点 id（graph_nodes.id）
+        target_node_id  — 宾语节点 id（graph_nodes.id）
+        relation_type   — 关系类型，七类大类之一
+        relation_detail — 模型提取的原始细节描述
+        source_l1_id    — 来源 L1 摘要 id
+
+    返回：
+        int — 新边的 id
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO graph_edges
+            (source_node_id, target_node_id, relation_type, relation_detail,
+             source_l1_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (source_node_id, target_node_id, relation_type, relation_detail,
+         source_l1_id, _now())
+    )
+    conn.commit()
+    edge_id = cursor.lastrowid
+    conn.close()
+    return edge_id
+
+
+def get_l1_ids_by_node(node_id: int, max_hops: int = 2) -> list[dict]:
+    """
+    从指定节点出发，做广度优先遍历，返回关联的 L1 id 列表。
+
+    用于图谱检索通道：给定查询实体的节点 id，
+    找出所有在逻辑上与该实体相关的历史 L1 摘要。
+
+    参数：
+        node_id  — 起始节点 id（graph_nodes.id）
+        max_hops — 最大跳数，默认 2（1跳=直接相连，2跳=通过中间节点间接相连）
+
+    返回：
+        list[dict] — 每个元素包含：
+            l1_id — L1 摘要 id
+            hops  — 距起始节点的跳数（用于 RRF 排名，跳数越少排名越靠前）
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    # 广度优先遍历：用集合记录已访问节点，避免环路
+    visited_nodes = {node_id}
+    current_level = {node_id}
+    result = []         # [(l1_id, hops), ...]
+    seen_l1_ids = set() # 同一个 L1 可能通过多条路径被找到，只记一次
+
+    for hop in range(1, max_hops + 1):
+        if not current_level:
+            break
+
+        # 查询当前层所有节点的出边和入边（无向图遍历）
+        placeholders = ",".join("?" * len(current_level))
+        cursor.execute(
+            f"""
+            SELECT source_l1_id, source_node_id, target_node_id
+            FROM graph_edges
+            WHERE source_node_id IN ({placeholders})
+               OR target_node_id IN ({placeholders})
+            """,
+            list(current_level) + list(current_level)
+        )
+        edges = cursor.fetchall()
+
+        next_level = set()
+        for edge in edges:
+            # 收集 L1 id
+            l1_id = edge["source_l1_id"]
+            if l1_id not in seen_l1_ids:
+                result.append({"l1_id": l1_id, "hops": hop})
+                seen_l1_ids.add(l1_id)
+
+            # 收集下一层节点（未访问过的）
+            for neighbor_id in (edge["source_node_id"], edge["target_node_id"]):
+                if neighbor_id not in visited_nodes:
+                    next_level.add(neighbor_id)
+                    visited_nodes.add(neighbor_id)
+
+        current_level = next_level
+
+    conn.close()
+    return result
+
+
+def get_all_l1_ids_in_graph() -> set[int]:
+    """
+    返回图谱中已经处理过的所有 L1 id 集合。
+
+    用于批处理时判断哪些 L1 还没有提取图谱三元组。
+    graph_builder.py 的 _get_pending_l1() 会调用此函数。
+
+    返回：
+        set[int] — 已在图谱中出现的 L1 id 集合
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT source_l1_id FROM graph_edges")
+    rows = cursor.fetchall()
+    conn.close()
+    return {row["source_l1_id"] for row in rows}
+
+
+def get_node_by_id(node_id: int):
+    """
+    按节点 id 查询图谱节点。
+
+    参数：
+        node_id — graph_nodes.id
+
+    返回：
+        sqlite3.Row — 节点记录；不存在时返回 None
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM graph_nodes WHERE id = ?", (node_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+# =============================================================================
+# 实体别名归一化操作
+# =============================================================================
+
+def save_keyword_with_alias(
+    keyword: str,
+    canonical_id: int | None,
+    alias_status: str,
+) -> int:
+    """
+    写入一个带别名状态的关键词到 keyword_pool。
+
+    与原有 upsert_keywords() 的区别：
+        upsert_keywords 用于普通关键词写入，不涉及别名字段。
+        本函数专用于图谱实体归一化流程，需要同时写入 canonical_id 和 alias_status。
+
+    参数：
+        keyword      — 关键词文本
+        canonical_id — 规范词的 rowid；为 None 表示本词就是规范词
+        alias_status — 'confirmed' / 'pending' / 'canonical' 三态之一
+
+    返回：
+        int — 新写入词条的 rowid
+    """
+    now = _now()
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO keyword_pool (keyword, use_count, last_used_at, created_at,
+                                  canonical_id, alias_status)
+        VALUES (?, 1, ?, ?, ?, ?)
+        ON CONFLICT(keyword) DO UPDATE SET
+            use_count    = use_count + 1,
+            last_used_at = excluded.last_used_at,
+            canonical_id = COALESCE(canonical_id, excluded.canonical_id),
+            alias_status = CASE
+                WHEN alias_status = 'confirmed' THEN 'confirmed'
+                ELSE excluded.alias_status
+            END
+        """,
+        (keyword, now, now, canonical_id, alias_status)
+    )
+    conn.commit()
+    # 获取这条记录的 rowid
+    cursor.execute("SELECT rowid FROM keyword_pool WHERE keyword = ?", (keyword,))
+    row = cursor.fetchone()
+    conn.close()
+    return row["rowid"]
+
+
+def get_pending_aliases() -> list:
+    """
+    查询所有待确认的别名记录（alias_status = 'pending'）。
+
+    返回：
+        list[sqlite3.Row] — 每行包含 rowid / keyword / canonical_id / alias_status
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT kp.rowid, kp.keyword, kp.canonical_id, kp.alias_status,
+               canonical.keyword AS canonical_keyword
+        FROM keyword_pool kp
+        LEFT JOIN keyword_pool canonical ON kp.canonical_id = canonical.rowid
+        WHERE kp.alias_status = 'pending'
+        ORDER BY kp.created_at ASC
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def confirm_alias(new_word_id: int, canonical_id: int) -> bool:
+    """
+    确认别名关系：将 new_word_id 对应的词正式归入 canonical_id 对应的规范词。
+
+    执行三步操作（包裹在同一事务中）：
+      1. 更新 keyword_pool：alias_status 改为 confirmed，canonical_id 固定
+      2. 迁移 graph_edges：所有指向 new_word 节点的边改指向规范词节点
+      3. 合并 graph_nodes：将 new_word 节点的 use_count 累加到规范词节点，
+         然后删除 new_word 节点
+
+    参数：
+        new_word_id  — 待归入的词在 keyword_pool 的 rowid
+        canonical_id — 规范词在 keyword_pool 的 rowid
+
+    返回：
+        bool — True 表示成功，False 表示任何步骤失败（已自动回滚）
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 查出 new_word 和规范词各自对应的 graph_nodes.id
+        cursor.execute(
+            "SELECT keyword FROM keyword_pool WHERE rowid = ?",
+            (new_word_id,)
+        )
+        new_word_row = cursor.fetchone()
+
+        cursor.execute(
+            "SELECT keyword FROM keyword_pool WHERE rowid = ?",
+            (canonical_id,)
+        )
+        canonical_row = cursor.fetchone()
+
+        if not new_word_row or not canonical_row:
+            logger.warning(
+                f"confirm_alias: 找不到词条 new_word_id={new_word_id} "
+                f"或 canonical_id={canonical_id}"
+            )
+            conn.close()
+            return False
+
+        new_word      = new_word_row["keyword"]
+        canonical_word = canonical_row["keyword"]
+
+        # 查出对应的 graph_nodes.id
+        cursor.execute(
+            "SELECT id, use_count FROM graph_nodes WHERE entity_name = ?",
+            (new_word,)
+        )
+        new_node = cursor.fetchone()
+
+        cursor.execute(
+            "SELECT id FROM graph_nodes WHERE entity_name = ?",
+            (canonical_word,)
+        )
+        canonical_node = cursor.fetchone()
+
+        # ── 步骤 1：更新 keyword_pool ──
+        cursor.execute(
+            """
+            UPDATE keyword_pool
+            SET canonical_id = ?, alias_status = 'confirmed'
+            WHERE rowid = ?
+            """,
+            (canonical_id, new_word_id)
+        )
+
+        # ── 步骤 2 & 3：迁移图谱（只在两个节点都存在时执行）──
+        if new_node and canonical_node:
+            new_node_id       = new_node["id"]
+            canonical_node_id = canonical_node["id"]
+            merged_count      = new_node["use_count"]
+
+            # 迁移边：source 指向 new_node 的改为指向 canonical_node
+            cursor.execute(
+                """
+                UPDATE graph_edges
+                SET source_node_id = ?
+                WHERE source_node_id = ?
+                """,
+                (canonical_node_id, new_node_id)
+            )
+
+            # 迁移边：target 指向 new_node 的改为指向 canonical_node
+            cursor.execute(
+                """
+                UPDATE graph_edges
+                SET target_node_id = ?
+                WHERE target_node_id = ?
+                """,
+                (canonical_node_id, new_node_id)
+            )
+
+            # 合并 use_count
+            cursor.execute(
+                """
+                UPDATE graph_nodes
+                SET use_count = use_count + ?
+                WHERE id = ?
+                """,
+                (merged_count, canonical_node_id)
+            )
+
+            # 删除已被吸收的节点
+            cursor.execute(
+                "DELETE FROM graph_nodes WHERE id = ?",
+                (new_node_id,)
+            )
+
+        conn.commit()
+        logger.info(
+            f"confirm_alias: '{new_word}' → '{canonical_word}' 别名关系已确认"
+        )
+        return True
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"confirm_alias 事务失败，已回滚 — {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def reject_alias(new_word_id: int) -> bool:
+    """
+    拒绝别名关系：将 pending 词独立为新的规范词。
+
+    参数：
+        new_word_id — 待处理词在 keyword_pool 的 rowid
+
+    返回：
+        bool — True 表示成功
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            UPDATE keyword_pool
+            SET canonical_id = NULL, alias_status = 'confirmed'
+            WHERE rowid = ?
+            """,
+            (new_word_id,)
+        )
+        conn.commit()
+        logger.info(f"reject_alias: word_id={new_word_id} 已独立为规范词")
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"reject_alias 失败 — {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# =============================================================================
+# conflict_queue 扩展：别名确认类冲突
+# =============================================================================
+
+def save_alias_conflict(
+    source_l1_id: int,
+    old_word: str,
+    new_word: str,
+    new_word_kp_id: int,
+    canonical_kp_id: int,
+    similarity: float,
+) -> int:
+    """
+    将一条待确认的别名关系写入 conflict_queue，等待用户在对话中确认。
+
+    与普通画像冲突的区别：
+        conflict_type = 'alias_confirm'
+        field         = 'keyword_alias'（复用 field 字段做类型标记）
+        old_content   = 候选规范词（old_word）
+        new_content   = 待确认词（new_word）
+        conflict_desc = 供对话展示的询问文本
+
+    参数：
+        source_l1_id    — 触发此别名检测的 L1 摘要 id
+        old_word        — 候选规范词（keyword_pool 中已有的高频词）
+        new_word        — 新提取的词（相似度在 0.85-0.95 之间）
+        new_word_kp_id  — new_word 在 keyword_pool 的 rowid
+        canonical_kp_id — old_word（规范词）在 keyword_pool 的 rowid
+        similarity      — 两词的余弦相似度（写入供调试参考）
+
+    返回：
+        int — 新冲突记录的 id
+    """
+    conflict_desc = (
+        f'"{new_word}"和"{old_word}"是指同一个事物吗？'
+        f'（相似度 {similarity:.0%}，回复"是"确认合并，回复"不是"保持独立）'
+    )
+
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO conflict_queue
+            (source_l1_id, field, old_content, new_content,
+             conflict_desc, status, created_at, conflict_type)
+        VALUES (?, 'keyword_alias', ?, ?, ?, 'pending', ?, 'alias_confirm')
+        """,
+        (source_l1_id, old_word, new_word, conflict_desc, _now())
+    )
+    conn.commit()
+    conflict_id = cursor.lastrowid
+
+    # 同时在 conflict_queue 记录里用 resolved_at 字段暂存两个 kp_id
+    # 格式：new_word_kp_id:canonical_kp_id（用冒号分隔，解析时 split(':')）
+    # 注意：resolved_at 正常情况存时间戳，这里临时借用存储 id，
+    # 一旦用户确认后会被写入真实时间戳覆盖。
+    # 为了避免歧义，改为在 old_content 字段末尾追加 id 信息（用 \n 分隔）。
+    #
+    # 更清洁的做法：直接在 conflict_desc 里解析，或者另建一张 alias_pending 表。
+    # 当前选择用 old_content 追加，减少新增表，后续如果觉得别扭可以重构。
+    cursor.execute(
+        """
+        UPDATE conflict_queue
+        SET old_content = ?
+        WHERE id = ?
+        """,
+        (f"{old_word}\n__kp_ids__{new_word_kp_id}:{canonical_kp_id}", conflict_id)
+    )
+    conn.commit()
+    conn.close()
+
+    logger.info(
+        f"save_alias_conflict: '{new_word}' vs '{old_word}' "
+        f"（相似度 {similarity:.2f}），conflict_id={conflict_id}"
+    )
+    return conflict_id
+
+
+def get_alias_kp_ids_from_conflict(conflict_id: int) -> tuple[int, int] | None:
+    """
+    从 conflict_queue 记录中解析出 (new_word_kp_id, canonical_kp_id)。
+
+    供 conflict_checker.handle_conflict_reply() 的 alias_confirm 分支调用。
+
+    参数：
+        conflict_id — conflict_queue 表的记录 id
+
+    返回：
+        (new_word_kp_id, canonical_kp_id) — 解析成功时返回二元组
+        None — 解析失败时返回 None
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT old_content FROM conflict_queue WHERE id = ?",
+        (conflict_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    old_content = row["old_content"]
+    try:
+        # 格式："{old_word}\n__kp_ids__{new_word_kp_id}:{canonical_kp_id}"
+        parts      = old_content.split("\n__kp_ids__")
+        ids_str    = parts[1]
+        new_id, canonical_id = ids_str.split(":")
+        return int(new_id), int(canonical_id)
+    except Exception as e:
+        logger.warning(f"get_alias_kp_ids_from_conflict 解析失败：{e}")
+        return None
+
+# =============================================================================
 # 直接运行此文件时：执行连通性验证
 # =============================================================================
 

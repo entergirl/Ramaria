@@ -273,7 +273,41 @@ def init_db():
     conn.commit()
     conn.close()
     print(f"数据库初始化完成：{DB_PATH}")
-    print("已创建表：sessions, messages, memory_l1, memory_l2, l2_sources, user_profile, settings, keyword_pool, conflict_queue")
+    print("已创建表：sessions, messages, memory_l1, memory_l2, l2_sources, user_profile, settings, keyword_pool, conflict_queue, pending_push")
+
+
+# -------------------------------------------------------------------------
+    # 表10：pending_push — 主动推送消息暂存表
+    #
+    # 用于暂存用户离线时触发的主动推送消息。
+    # 用户上线（WebSocket 连接建立）时，由 main.py 检查此表并推送。
+    #
+    # status 两态：
+    #   pending — 尚未推送（用户离线或推送中）
+    #   sent    — 已成功推送给用户
+    # -------------------------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pending_push (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            content     TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL,
+            status      TEXT    NOT NULL DEFAULT 'pending',
+            sent_at     TEXT
+        )
+    """)
+
+    # 写入推送相关默认配置项（INSERT OR IGNORE，不覆盖已有值）
+    push_settings = [
+        ("debounce_seconds",  "3",  now),
+        ("push_enabled",      "1",  now),
+        ("push_window_start", "8",  now),
+        ("push_window_end",   "24", now),
+        ("push_daily_limit",  "4",  now),
+    ]
+    cursor.executemany("""
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+    """, push_settings)
 
 
 # =============================================================================

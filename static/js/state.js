@@ -10,12 +10,14 @@
  *   AppState.isOnline           — 只读，是否处于线上模式
  *   AppState.currentSessionId   — 只读，当前 session id（number | null）
  *   AppState.currentTheme       — 只读，当前主题 'light' | 'dark'
+ *   AppState.wsStatus           — 只读，WebSocket 连接状态
  *
  *   AppState.setLoading(bool)   — 设置加载状态，同步更新发送按钮
  *   AppState.setOnline(bool)    — 设置线上模式，同步更新 toggle
  *   AppState.setSessionId(id)   — 更新 session id，同步更新顶部标签
  *   AppState.setTheme(theme)    — 切换主题，持久化到 localStorage
  *   AppState.toggleTheme()      — 在 light / dark 间切换
+ *   AppState.setWsStatus(status) — 更新 WebSocket 连接状态
  * =============================================================================
  */
 
@@ -25,7 +27,7 @@ const AppState = (() => {
   let _isOnline         = false;
   let _currentSessionId = null;
   let _currentTheme     = 'light';
-
+  let _wsStatus = 'disconnected';   // WebSocket 连接状态
   // ── 公开只读属性与方法 ──
   return {
 
@@ -109,6 +111,26 @@ const AppState = (() => {
       } catch (_) {
         // 读取失败时保持默认亮色
       }
+    },
+
+    // =====================================================================
+    // WebSocket 连接状态管理
+    // =====================================================================
+
+    /**
+     * WebSocket 连接状态。
+     * "disconnected" — 未连接
+     * "connecting"   — 连接中
+     * "connected"    — 已连接
+     */
+    get wsStatus() { return _wsStatus; },
+
+    /**
+     * 更新 WebSocket 连接状态。
+     * @param {"disconnected"|"connecting"|"connected"} status
+     */
+    setWsStatus(status) {
+      _wsStatus = status;
     },
 
   };

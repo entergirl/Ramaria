@@ -20,6 +20,106 @@
  */
 
 
+// =============================================================================
+// WebSocket 连接管理
+// =============================================================================
+
+/** 全局 WebSocket 连接实例 */
+let _ws = null;
+
+/** 自动重连定时器 */
+let _wsReconnectTimer = null;
+
+/** 重连间隔（毫秒），每次失败后翻倍，最大30秒 */
+let _wsReconnectDelay = 2000;
+
+/**
+ * 建立 WebSocket 连接，并处理所有服务端消息。
+ * 连接断开后自动重连。
+ */
+function connectWebSocket() {
+  // 清除上次的重连计时器
+  if (_wsReconnectTimer) {
+    clearTimeout(_wsReconnectTimer);
+    _wsReconnectTimer = null;
+  }
+
+  AppState.setWsStatus('connecting');
+
+  _ws = API.connectWs({
+    onOpen() {
+      AppState.setWsStatus('connected');
+      _wsReconnectDelay = 2000;   // 重连成功后重置间隔
+      console.log('[WS] 已连接');
+    },
+
+    onMessage(data) {
+      // 根据消息类型分发处理
+      switch (data.type) {
+
+        // 模型对话回复
+        case 'reply':
+          UI.hideTyping();
+          UI.renderAssistantReply(data.reply, data.mode);
+          AppState.setSessionId(data.session_id);
+          AppState.setLoading(false);
+
+          // 更新模式徽章（与原 HTTP 版逻辑一致）
+          if (data.mode === 'confirm') {
+            UI.updateModeUI('pending');
+          } else if (data.mode === 'online') {
+            UI.updateModeUI('online');
+            AppState.setOnline(true);
+            setTimeout(() => {
+              UI.updateModeUI('local');
+              AppState.setOnline(false);
+            }, 2000);
+          } else {
+            if (!AppState.isOnline) UI.updateModeUI('local');
+          }
+
+          // 恢复输入框焦点
+          document.getElementById('user-input')?.focus();
+          break;
+
+        // 主动推送消息（push_scheduler 触发或离线积压）
+        case 'push':
+          // 推送消息不进入 loading 状态，直接渲染
+          // created_at 由服务端传来，显示消息真实生成时间
+          UI.appendBubble(data.content, 'assistant', false, false, data.created_at);
+          break;
+
+        // 错误通知
+        case 'error':
+          UI.hideTyping();
+          UI.appendBubble(`（错误：${data.message}）`, 'assistant', false, false);
+          UI.showToast(data.message, 'error');
+          AppState.setLoading(false);
+          break;
+
+        default:
+          console.warn('[WS] 未知消息类型', data.type);
+      }
+    },
+
+    onClose() {
+      AppState.setWsStatus('disconnected');
+      AppState.setLoading(false);   // 断线时重置 loading 状态，避免界面卡死
+
+      // 自动重连，间隔指数退避，最大30秒
+      _wsReconnectDelay = Math.min(_wsReconnectDelay * 1.5, 30000);
+      console.log(`[WS] 将在 ${_wsReconnectDelay / 1000}s 后重连`);
+      _wsReconnectTimer = setTimeout(connectWebSocket, _wsReconnectDelay);
+    },
+
+    onError() {
+      // 错误后 onClose 也会触发，重连逻辑在 onClose 里处理
+      AppState.setWsStatus('disconnected');
+    },
+  });
+}
+
+
 /* =============================================================================
    发送消息
    ============================================================================= */
@@ -35,66 +135,47 @@
  *   5. 根据 mode 渲染回复，更新状态徽章
  *   6. 无论成功失败，退出加载状态
  */
+// =============================================================================
+// 发送消息（WebSocket 版）
+// =============================================================================
+
+/**
+ * 发送用户消息。
+ * 立即渲染气泡和打字动画，通过 WebSocket 发送消息到服务端。
+ * 回复由 connectWebSocket 的 onMessage 回调处理。
+ */
 async function sendMessage() {
-  // 正在等待回复时，忽略重复发送
   if (AppState.isLoading) return;
 
   const textarea = document.getElementById('user-input');
   const content  = textarea.value.trim();
   if (!content) return;
 
-  // 清空输入框，重置高度
+  // 清空输入框
   textarea.value = '';
   textarea.style.height = 'auto';
 
-  // 立即渲染用户消息气泡（不等后端，提升响应感）
+  // 立即渲染用户气泡（即时反馈）
   UI.appendBubble(content, 'user', false, false, new Date().toISOString());
 
-  // 进入加载状态
+  // WebSocket 未连接时降级到 HTTP（兜底，避免完全无法发消息）
+  if (!_ws || _ws.readyState !== WebSocket.OPEN) {
+    UI.showToast('连接中，请稍候…', 'default', 2000);
+    // 尝试重连后重发（简单兜底，不做复杂队列）
+    connectWebSocket();
+    return;
+  }
+
+  // 进入 loading 状态，显示打字动画
   AppState.setLoading(true);
   UI.showTyping();
 
-  try {
-    const data = await API.chat(content);
-
-    // 渲染助手回复（支持 || 多段分割）
-    UI.renderAssistantReply(data.reply, data.mode);
-
-    // 更新 session id 标签
-    AppState.setSessionId(data.session_id);
-
-    // 根据回复模式更新状态徽章
-    if (data.mode === 'confirm') {
-      // 等待用户确认是否调用 Claude
-      UI.updateModeUI('pending');
-
-    } else if (data.mode === 'online') {
-      // 线上模式回复完成：徽章短暂显示"线上"，2秒后自动回到"本地"
-      UI.updateModeUI('online');
-      AppState.setOnline(true);
-      setTimeout(() => {
-        UI.updateModeUI('local');
-        AppState.setOnline(false);
-      }, 2000);
-
-    } else {
-      // 本地模式：只在 toggle 未手动开启时重置徽章
-      if (!AppState.isOnline) {
-        UI.updateModeUI('local');
-      }
-    }
-
-  } catch (err) {
-    // 网络错误或 HTTP 错误：隐藏打字动画，显示错误气泡 + Toast
+  // 通过 WebSocket 发送
+  const sent = API.wsSendChat(_ws, content);
+  if (!sent) {
     UI.hideTyping();
-    UI.appendBubble(`（发生错误：${err.message}）`, 'assistant', false, false);
-    UI.showToast(err.message, 'error');
-    UI.updateModeUI('local');
-
-  } finally {
-    // 无论成功还是失败，都退出加载状态，恢复输入
     AppState.setLoading(false);
-    textarea.focus();
+    UI.showToast('发送失败，请重试', 'error');
   }
 }
 
@@ -415,6 +496,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // T6：恢复当前活跃 session 的消息
   recoverCurrentSession();
+
+  // ── 建立 WebSocket 连接 ──
+  connectWebSocket();
 
   // ── 初始化完成后，聚焦到输入框（桌面端体验） ──
   // 移动端不自动聚焦，避免键盘弹出遮挡内容

@@ -152,5 +152,73 @@ const API = (() => {
       return _request(`/api/sessions/${sessionId}/messages`);
     },
 
+    // =====================================================================
+    // WebSocket 通信封装
+    // =====================================================================
+
+    /**
+     * 建立 WebSocket 连接，返回连接实例。
+     * 连接建立后自动处理：
+     *   · 消息接收（回调 onMessage）
+     *   · 连接断开（回调 onClose）
+     *   · 连接错误（回调 onError）
+     *
+     * @param {object} handlers
+     * @param {function} handlers.onMessage  收到服务端消息时的回调，参数为已解析的 JSON 对象
+     * @param {function} [handlers.onOpen]   连接建立成功时的回调
+     * @param {function} [handlers.onClose]  连接断开时的回调
+     * @param {function} [handlers.onError]  连接出错时的回调
+     * @returns {WebSocket} 连接实例，调用方保存此实例用于发送消息
+     */
+    connectWs({ onMessage, onOpen, onClose, onError }) {
+      // 根据当前页面协议自动选择 ws:// 或 wss://
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url      = `${protocol}//${location.host}/ws`;
+
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        console.log('[WS] 连接建立');
+        if (onOpen) onOpen();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          onMessage(data);
+        } catch (e) {
+          console.error('[WS] 消息解析失败', e);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('[WS] 连接断开', event.code, event.reason);
+        if (onClose) onClose(event);
+      };
+
+      ws.onerror = (error) => {
+        console.error('[WS] 连接错误', error);
+        if (onError) onError(error);
+      };
+
+      return ws;
+    },
+
+    /**
+     * 通过 WebSocket 发送一条聊天消息。
+     *
+     * @param {WebSocket} ws       已建立的 WebSocket 连接实例
+     * @param {string}    content  消息文本
+     * @returns {boolean} 发送成功返回 true，连接未就绪返回 false
+     */
+    wsSendChat(ws, content) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn('[WS] 连接未就绪，无法发送');
+        return false;
+      }
+      ws.send(JSON.stringify({ type: 'chat', content }));
+      return true;
+    },
+    
   };
 })();

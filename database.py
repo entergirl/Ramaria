@@ -1870,6 +1870,103 @@ def get_alias_kp_ids_from_conflict(conflict_id: int) -> tuple[int, int] | None:
         return None
 
 # =============================================================================
+# pending_push 表操作（主动推送功能）
+# =============================================================================
+
+def save_pending_push(content: str) -> int:
+    """
+    将一条主动推送消息写入 pending_push 表，状态为 pending。
+
+    在以下两种情况下调用：
+        1. 用户当前在线 → push_scheduler 直接通过 WebSocket 推送，
+           推送成功后调用 mark_push_sent() 更新状态
+        2. 用户当前离线 → push_scheduler 写入此表暂存，
+           用户上线（WebSocket 连接建立）时由 main.py 检查并推送
+
+    参数：
+        content — 已生成好的推送消息文本
+
+    返回：
+        int — 新写入记录的 id
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO pending_push (content, created_at, status) VALUES (?, ?, 'pending')",
+        (content, _now())
+    )
+    conn.commit()
+    push_id = cursor.lastrowid
+    conn.close()
+    return push_id
+
+
+def get_pending_pushes() -> list:
+    """
+    取出所有状态为 pending 的主动推送消息，按创建时间升序排列。
+
+    按时间升序是为了让用户上线后按消息产生的先后顺序收到，
+    还原"错过消息"的真实感（最早发的先收到）。
+
+    返回：
+        list[sqlite3.Row] — 每行包含 id / content / created_at / status
+        没有待推送消息时返回空列表
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM pending_push WHERE status = 'pending' ORDER BY created_at ASC"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def mark_push_sent(push_id: int) -> None:
+    """
+    将一条推送记录标记为已发送（status = 'sent'，写入 sent_at）。
+
+    参数：
+        push_id — pending_push 表的记录 id
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE pending_push SET status = 'sent', sent_at = ? WHERE id = ?",
+        (_now(), push_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_push_count_today() -> int:
+    """
+    查询今天（本地日期）已触发的推送条数（包含 pending 和 sent）。
+
+    push_scheduler 在决定是否触发新推送前调用此函数，
+    与 push_daily_limit 配置项比较，避免超出每日上限。
+
+    返回：
+        int — 今天已触发的推送总条数
+    """
+    conn   = _get_connection()
+    cursor = conn.cursor()
+
+    # 取今天本地日期的起止时间（ISO 8601 字符串前缀匹配）
+    # _now() 返回 UTC，这里用 date() 函数在 SQLite 侧转换
+    # 注意：SQLite 的 date() 默认处理 UTC，与 _now() 一致
+    from datetime import date
+    today_str = date.today().isoformat()   # "2026-04-05"
+
+    cursor.execute(
+        "SELECT COUNT(*) AS cnt FROM pending_push WHERE created_at LIKE ?",
+        (f"{today_str}%",)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+# =============================================================================
 # 直接运行此文件时：执行连通性验证
 # =============================================================================
 

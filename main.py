@@ -48,7 +48,7 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 from contextlib import asynccontextmanager
 from pathlib import Path
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -69,6 +69,8 @@ from database import (
     get_recent_l2,
     get_active_sessions,
     get_session,
+    get_pending_pushes,   # WebSocket：上线时推送积压消息
+    mark_push_sent,       # WebSocket：标记推送已发送
 )
 from prompt_builder import build_system_prompt
 from session_manager import SessionManager
@@ -94,6 +96,11 @@ HTML_FILE  = STATIC_DIR / "index.html"
 
 session_manager = SessionManager()
 router          = Router()
+
+# WebSocket 连接池
+# key: WebSocket 实例，value: 对应的 session_id（连接建立时赋值）
+# 使用字典便于按连接快速查找和删除
+_ws_connections: dict = {}
 
 
 # =============================================================================
@@ -1058,6 +1065,229 @@ async def stop_l1_batch():
     from importer.l1_batch import stop_batch
     status = stop_batch()
     return JSONResponse(status)
+
+
+# =============================================================================
+# WebSocket 连接池工具函数
+# =============================================================================
+
+async def _ws_send(ws: WebSocket, data: dict):
+    """
+    向单个 WebSocket 客户端发送 JSON 数据。
+    封装异常处理，发送失败时静默记录日志，不向上抛出。
+
+    所有服务端 → 客户端的消息都通过此函数发送，统一格式为：
+        {
+            "type":  消息类型字符串（见下方类型说明）,
+            ...      其他字段根据 type 不同而不同
+        }
+
+    消息类型说明：
+        "reply"    — 模型生成的对话回复
+        "push"     — 主动推送消息（push_scheduler 触发）
+        "status"   — 状态通知（如"消息已收到，正在思考"）
+        "error"    — 错误通知
+
+    参数：
+        ws   — 目标 WebSocket 连接实例
+        data — 要发送的数据字典，必须包含 "type" 字段
+    """
+    try:
+        await ws.send_json(data)
+    except Exception as e:
+        logger.warning(f"WebSocket 发送失败 — {e}")
+
+
+async def ws_broadcast(data: dict):
+    """
+    向所有当前在线的 WebSocket 客户端广播消息。
+
+    push_scheduler 触发主动推送时调用此函数。
+    如果连接池为空（用户离线），调用方应改为写入 pending_push 表。
+
+    参数：
+        data — 要广播的数据字典
+    """
+    for ws in list(_ws_connections.keys()):
+        await _ws_send(ws, data)
+
+
+def is_user_online() -> bool:
+    """
+    判断当前是否有用户在线（即连接池非空）。
+    push_scheduler 在决定直接推送还是暂存时调用此函数。
+
+    返回：
+        bool — True 表示至少有一个 WebSocket 连接存在
+    """
+    return len(_ws_connections) > 0
+
+
+# =============================================================================
+# WebSocket 路由
+# =============================================================================
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    """
+    WebSocket 主路由，处理客户端的实时双向通信。
+
+    连接生命周期：
+        1. 握手建立 → 注册到连接池 → 推送离线期间积压的 pending_push 消息
+        2. 消息循环 → 接收用户消息 → 处理 → 回复
+        3. 连接断开 → 从连接池移除
+
+    接收的消息格式（客户端 → 服务端）：
+        {
+            "type":    "chat",         必须，目前只支持 "chat"
+            "content": "用户消息文本"  必须
+        }
+
+    发送的消息格式（服务端 → 客户端）：
+        {
+            "type":       "reply",
+            "reply":      "助手回复文本",
+            "session_id": 123,
+            "mode":       "local"      "local" / "online" / "confirm"
+        }
+    """
+    await ws.accept()
+    logger.info("WebSocket 连接建立")
+
+    # ------------------------------------------------------------------
+    # 注册到连接池
+    # session_id 在第一条消息到来时由 session_manager.on_message() 赋值
+    # 连接建立时先置为 None
+    # ------------------------------------------------------------------
+    _ws_connections[ws] = None
+
+    try:
+        # ------------------------------------------------------------------
+        # 用户上线后，立即推送离线期间积压的 pending_push 消息
+        # 按 created_at 升序，还原"错过消息"的真实顺序
+        # ------------------------------------------------------------------
+        pending_pushes = get_pending_pushes()
+        if pending_pushes:
+            logger.info(f"用户上线，推送 {len(pending_pushes)} 条积压消息")
+            for push in pending_pushes:
+                await _ws_send(ws, {
+                    "type":       "push",
+                    "content":    push["content"],
+                    "created_at": push["created_at"],  # 发送原始生成时间，前端可据此显示"发送于X时"
+                })
+                mark_push_sent(push["id"])
+
+        # ------------------------------------------------------------------
+        # 消息循环：持续接收客户端消息直到连接断开
+        # ------------------------------------------------------------------
+        while True:
+            # 等待客户端发来 JSON 消息
+            # 连接断开时 receive_json() 会抛出 WebSocketDisconnect
+            data = await ws.receive_json()
+
+            msg_type = data.get("type")
+            content  = data.get("content", "").strip()
+
+            # 目前只处理 chat 类型，其他类型忽略
+            if msg_type != "chat" or not content:
+                continue
+
+            # ------------------------------------------------------------------
+            # 以下逻辑与原 /chat HTTP 路由完全一致，逐步迁移
+            # ------------------------------------------------------------------
+
+            # Session 管理
+            session_id = session_manager.on_message()
+            _ws_connections[ws] = session_id   # 更新连接池中的 session_id
+
+            # 保存用户消息到数据库
+            save_message(session_id, "user", content)
+
+            # 冲突回复检测（优先处理"更新/忽略"回复）
+            conflict_action = _detect_conflict_action(content)
+            if conflict_action is not None:
+                cr = get_conflict_question()
+                if cr is not None:
+                    conflict_id, _ = cr
+                    reply = handle_conflict_reply(conflict_id, conflict_action)
+                    save_message(session_id, "assistant", reply)
+                    await _ws_send(ws, {
+                        "type":       "reply",
+                        "reply":      reply,
+                        "session_id": session_id,
+                        "mode":       "local",
+                    })
+                    continue
+
+            # 冲突询问推送
+            cr = get_conflict_question()
+            if cr is not None:
+                _, question = cr
+                save_message(session_id, "assistant", question)
+                await _ws_send(ws, {
+                    "type":       "reply",
+                    "reply":      question,
+                    "session_id": session_id,
+                    "mode":       "local",
+                })
+                continue
+
+            # 路由判断
+            result = router.route(content)
+            action = result["action"]
+
+            # 分支 A：发确认询问
+            if action == "ask_confirm":
+                txt = result["text"]
+                save_message(session_id, "assistant", txt)
+                await _ws_send(ws, {
+                    "type":       "reply",
+                    "reply":      txt,
+                    "session_id": session_id,
+                    "mode":       "confirm",
+                })
+                continue
+
+            # 分支 B：走 Claude API
+            if action in ("online", "confirm_yes"):
+                reply = router.call_claude(result["message"])
+                save_message(session_id, "assistant", reply)
+                await _ws_send(ws, {
+                    "type":       "reply",
+                    "reply":      reply,
+                    "session_id": session_id,
+                    "mode":       "online",
+                })
+                continue
+
+            # 分支 C：用户拒绝，走本地
+            if action == "confirm_no":
+                response = _handle_local(session_id, result["message"])
+                await _ws_send(ws, {
+                    "type":       "reply",
+                    "reply":      response.reply,
+                    "session_id": session_id,
+                    "mode":       response.mode,
+                })
+                continue
+
+            # 分支 D：默认本地
+            response = _handle_local(session_id, content)
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      response.reply,
+                "session_id": session_id,
+                "mode":       response.mode,
+            })
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket 连接断开")
+    except Exception as e:
+        logger.error(f"WebSocket 处理异常 — {e}")
+    finally:
+        # 无论何种原因断开，都从连接池移除
+        _ws_connections.pop(ws, None)
+        logger.debug(f"当前在线连接数：{len(_ws_connections)}")
 
 
 # =============================================================================

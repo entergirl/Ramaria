@@ -41,7 +41,7 @@ main.py — FastAPI 应用入口
   POST /router/toggle  — 切换线上/本地模式
 """
 
-import os, tempfile
+import os, tempfile, asyncio
 # 禁止 HuggingFace 在启动时联网检查模型更新，避免离线环境启动卡顿
 os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -69,8 +69,9 @@ from database import (
     get_recent_l2,
     get_active_sessions,
     get_session,
-    get_pending_pushes,   # WebSocket：上线时推送积压消息
-    mark_push_sent,       # WebSocket：标记推送已发送
+    get_pending_pushes,
+    mark_push_sent,
+    get_setting,          # 防抖：运行时读取 debounce_seconds 配置
 )
 from prompt_builder import build_system_prompt
 from session_manager import SessionManager
@@ -1131,40 +1132,146 @@ def is_user_online() -> bool:
 async def websocket_endpoint(ws: WebSocket):
     """
     WebSocket 主路由，处理客户端的实时双向通信。
+    v2：新增服务端防抖聚合，用户连发多条消息时等待停顿后统一回复。
 
     连接生命周期：
-        1. 握手建立 → 注册到连接池 → 推送离线期间积压的 pending_push 消息
-        2. 消息循环 → 接收用户消息 → 处理 → 回复
-        3. 连接断开 → 从连接池移除
+        1. 握手建立 → 注册连接池 → 推送积压的 pending_push 消息
+        2. 消息循环 → 接收用户消息 → 存入缓冲区 → 防抖计时器到期 → 合并触发
+        3. 连接断开 → 取消计时器 → 从连接池移除
 
-    接收的消息格式（客户端 → 服务端）：
-        {
-            "type":    "chat",         必须，目前只支持 "chat"
-            "content": "用户消息文本"  必须
-        }
-
-    发送的消息格式（服务端 → 客户端）：
-        {
-            "type":       "reply",
-            "reply":      "助手回复文本",
-            "session_id": 123,
-            "mode":       "local"      "local" / "online" / "confirm"
-        }
+    防抖逻辑：
+        每个连接维护独立的 _buf（消息缓冲区）和 _timer（asyncio 计时任务）。
+        每来一条消息：
+          · 追加到 _buf
+          · 若 _timer 已存在则取消
+          · 重新创建一个 debounce_seconds 秒后触发的 _timer
+        _timer 到期时：
+          · 把 _buf 里所有消息按换行合并为一条
+          · 清空 _buf
+          · 走正常的路由 → 模型生成 → 回复流程
     """
     await ws.accept()
     logger.info("WebSocket 连接建立")
 
-    # ------------------------------------------------------------------
-    # 注册到连接池
-    # session_id 在第一条消息到来时由 session_manager.on_message() 赋值
-    # 连接建立时先置为 None
-    # ------------------------------------------------------------------
     _ws_connections[ws] = None
+
+    # ------------------------------------------------------------------
+    # 每个连接独立的防抖状态
+    # 使用列表包装，便于在嵌套函数（_flush）里修改
+    # ------------------------------------------------------------------
+    _buf:   list[str]                      = []     # 消息缓冲区
+    _timer: list[asyncio.Task | None]      = [None] # 防抖计时任务（用列表包装以便内层修改）
+
+    async def _flush():
+        """
+        防抖计时器到期时触发：合并缓冲区消息，走路由→生成→回复流程。
+        此函数运行在同一个事件循环里，不存在并发安全问题。
+        """
+        if not _buf:
+            return
+
+        # 合并缓冲区里的所有消息，按换行分隔
+        # 例如用户连发："在吗" + "想问你个问题" → "在吗\n想问你个问题"
+        combined = "\n".join(_buf)
+        _buf.clear()
+        _timer[0] = None
+
+        # 取当前连接绑定的 session_id
+        session_id = _ws_connections.get(ws)
+        if session_id is None:
+            logger.warning("_flush 触发时 session_id 为 None，跳过")
+            return
+
+        logger.debug(f"防抖触发，合并消息：{combined[:80]}")
+
+        # ------------------------------------------------------------------
+        # 以下逻辑与原路由完全一致
+        # ------------------------------------------------------------------
+
+        # 冲突回复检测
+        conflict_action = _detect_conflict_action(combined)
+        if conflict_action is not None:
+            cr = get_conflict_question()
+            if cr is not None:
+                conflict_id, _ = cr
+                reply = handle_conflict_reply(conflict_id, conflict_action)
+                save_message(session_id, "assistant", reply)
+                await _ws_send(ws, {
+                    "type":       "reply",
+                    "reply":      reply,
+                    "session_id": session_id,
+                    "mode":       "local",
+                })
+                AppState_loading_off()
+                return
+
+        # 冲突询问推送
+        cr = get_conflict_question()
+        if cr is not None:
+            _, question = cr
+            save_message(session_id, "assistant", question)
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      question,
+                "session_id": session_id,
+                "mode":       "local",
+            })
+            AppState_loading_off()
+            return
+
+        # 路由判断
+        result = router.route(combined)
+        action = result["action"]
+
+        if action == "ask_confirm":
+            txt = result["text"]
+            save_message(session_id, "assistant", txt)
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      txt,
+                "session_id": session_id,
+                "mode":       "confirm",
+            })
+
+        elif action in ("online", "confirm_yes"):
+            reply = router.call_claude(result["message"])
+            save_message(session_id, "assistant", reply)
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      reply,
+                "session_id": session_id,
+                "mode":       "online",
+            })
+
+        elif action == "confirm_no":
+            response = _handle_local(session_id, result["message"])
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      response.reply,
+                "session_id": session_id,
+                "mode":       response.mode,
+            })
+
+        else:
+            # 默认本地
+            response = _handle_local(session_id, combined)
+            await _ws_send(ws, {
+                "type":       "reply",
+                "reply":      response.reply,
+                "session_id": session_id,
+                "mode":       response.mode,
+            })
+
+    def AppState_loading_off():
+        """
+        占位函数：loading 状态由前端 onMessage 回调在收到 reply 后自动关闭。
+        服务端不需要额外通知，此函数仅作注释说明用，实际为空操作。
+        """
+        pass
 
     try:
         # ------------------------------------------------------------------
-        # 用户上线后，立即推送离线期间积压的 pending_push 消息
-        # 按 created_at 升序，还原"错过消息"的真实顺序
+        # 用户上线：推送离线积压消息
         # ------------------------------------------------------------------
         pending_pushes = get_pending_pushes()
         if pending_pushes:
@@ -1173,122 +1280,64 @@ async def websocket_endpoint(ws: WebSocket):
                 await _ws_send(ws, {
                     "type":       "push",
                     "content":    push["content"],
-                    "created_at": push["created_at"],  # 发送原始生成时间，前端可据此显示"发送于X时"
+                    "created_at": push["created_at"],
                 })
                 mark_push_sent(push["id"])
 
         # ------------------------------------------------------------------
-        # 消息循环：持续接收客户端消息直到连接断开
+        # 消息循环
         # ------------------------------------------------------------------
         while True:
-            # 等待客户端发来 JSON 消息
-            # 连接断开时 receive_json() 会抛出 WebSocketDisconnect
             data = await ws.receive_json()
 
             msg_type = data.get("type")
             content  = data.get("content", "").strip()
 
-            # 目前只处理 chat 类型，其他类型忽略
             if msg_type != "chat" or not content:
                 continue
 
-            # ------------------------------------------------------------------
-            # 以下逻辑与原 /chat HTTP 路由完全一致，逐步迁移
-            # ------------------------------------------------------------------
-
-            # Session 管理
+            # --------------------------------------------------------------
+            # Session 管理：每条消息到来时确保有活跃 session
+            # 注意：save_message 在 _flush 里不再调用，
+            # 这里只做 session 初始化和单条消息的持久化
+            # --------------------------------------------------------------
             session_id = session_manager.on_message()
-            _ws_connections[ws] = session_id   # 更新连接池中的 session_id
+            _ws_connections[ws] = session_id
 
-            # 保存用户消息到数据库
+            # 每条消息单独存入数据库（L0 永久保留原始消息）
             save_message(session_id, "user", content)
 
-            # 冲突回复检测（优先处理"更新/忽略"回复）
-            conflict_action = _detect_conflict_action(content)
-            if conflict_action is not None:
-                cr = get_conflict_question()
-                if cr is not None:
-                    conflict_id, _ = cr
-                    reply = handle_conflict_reply(conflict_id, conflict_action)
-                    save_message(session_id, "assistant", reply)
-                    await _ws_send(ws, {
-                        "type":       "reply",
-                        "reply":      reply,
-                        "session_id": session_id,
-                        "mode":       "local",
-                    })
-                    continue
+            # 存入缓冲区
+            _buf.append(content)
 
-            # 冲突询问推送
-            cr = get_conflict_question()
-            if cr is not None:
-                _, question = cr
-                save_message(session_id, "assistant", question)
-                await _ws_send(ws, {
-                    "type":       "reply",
-                    "reply":      question,
-                    "session_id": session_id,
-                    "mode":       "local",
-                })
-                continue
+            # 取防抖时长（从数据库读，支持用户实时修改配置）
+            try:
+                debounce_sec = float(get_setting("debounce_seconds") or "3")
+            except ValueError:
+                debounce_sec = 3.0
 
-            # 路由判断
-            result = router.route(content)
-            action = result["action"]
+            # 取消旧计时器（如果存在）
+            if _timer[0] is not None and not _timer[0].done():
+                _timer[0].cancel()
 
-            # 分支 A：发确认询问
-            if action == "ask_confirm":
-                txt = result["text"]
-                save_message(session_id, "assistant", txt)
-                await _ws_send(ws, {
-                    "type":       "reply",
-                    "reply":      txt,
-                    "session_id": session_id,
-                    "mode":       "confirm",
-                })
-                continue
+            # 创建新计时器：debounce_sec 秒后触发 _flush
+            async def _delayed_flush(delay: float):
+                await asyncio.sleep(delay)
+                await _flush()
 
-            # 分支 B：走 Claude API
-            if action in ("online", "confirm_yes"):
-                reply = router.call_claude(result["message"])
-                save_message(session_id, "assistant", reply)
-                await _ws_send(ws, {
-                    "type":       "reply",
-                    "reply":      reply,
-                    "session_id": session_id,
-                    "mode":       "online",
-                })
-                continue
-
-            # 分支 C：用户拒绝，走本地
-            if action == "confirm_no":
-                response = _handle_local(session_id, result["message"])
-                await _ws_send(ws, {
-                    "type":       "reply",
-                    "reply":      response.reply,
-                    "session_id": session_id,
-                    "mode":       response.mode,
-                })
-                continue
-
-            # 分支 D：默认本地
-            response = _handle_local(session_id, content)
-            await _ws_send(ws, {
-                "type":       "reply",
-                "reply":      response.reply,
-                "session_id": session_id,
-                "mode":       response.mode,
-            })
+            _timer[0] = asyncio.create_task(_delayed_flush(debounce_sec))
 
     except WebSocketDisconnect:
         logger.info("WebSocket 连接断开")
     except Exception as e:
         logger.error(f"WebSocket 处理异常 — {e}")
     finally:
-        # 无论何种原因断开，都从连接池移除
+        # 连接断开时取消未触发的计时器，避免悬空任务
+        if _timer[0] is not None and not _timer[0].done():
+            _timer[0].cancel()
+            logger.debug("已取消未触发的防抖计时器")
         _ws_connections.pop(ws, None)
         logger.debug(f"当前在线连接数：{len(_ws_connections)}")
-
 
 # =============================================================================
 # 启动

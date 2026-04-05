@@ -93,6 +93,7 @@ class SessionManager:
         self._stop_event          = threading.Event()
         self._idle_checker_thread = None
         self._l2_checker_thread   = None
+        self._push_scheduler      = None   # 主动推送调度器，由 start() 注入
 
     # -------------------------------------------------------------------------
     # 公开接口
@@ -124,10 +125,11 @@ class SessionManager:
 
         if self._idle_checker_thread and self._idle_checker_thread.is_alive():
             self._idle_checker_thread.join(timeout=IDLE_CHECK_INTERVAL_SECONDS + 1)
-
         if self._l2_checker_thread and self._l2_checker_thread.is_alive():
             self._l2_checker_thread.join(timeout=L2_CHECK_INTERVAL_SECONDS + 1)
-
+        # 停止主动推送调度器
+        if self._push_scheduler is not None:
+            self._push_scheduler.stop()
         logger.info("已停止")
 
     def on_message(self):

@@ -134,13 +134,27 @@ async def lifespan(app: FastAPI):
     logger.info("BM25 索引预热完成")
 
     session_manager.start()
+
+    # 启动主动推送调度器
+    # 在 session_manager.start() 之后启动，确保 session 状态已就绪
+    # 注入三个运行时函数：广播、在线判断、获取当前 session_id
+    from push_scheduler import PushScheduler
+    _push_scheduler = PushScheduler(
+        ws_broadcast_fn = ws_broadcast,
+        is_online_fn    = is_user_online,
+        session_id_fn   = session_manager.get_current_session_id,
+    )
+    _push_scheduler.start()
+    # 将调度器引用存入 session_manager，方便 stop() 时统一停止
+    session_manager._push_scheduler = _push_scheduler
+
     logger.info("就绪，访问 http://localhost:8000")
     yield
 
     logger.info("关闭中…")
     from vector_store import _stop_access_worker
     _stop_access_worker()
-    session_manager.stop()
+    session_manager.stop()   # 内部会调用 _push_scheduler.stop()
     logger.info("已停止")
 
 

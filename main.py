@@ -134,6 +134,11 @@ async def lifespan(app: FastAPI):
     _bm25_index.rebuild("l2")
     logger.info("BM25 索引预热完成")
 
+    # 启动时从 SQLite 加载图谱到 NetworkX 内存图
+    # 图谱为空时正常返回，不报错
+    from graph_builder import load_graph_to_memory
+    load_graph_to_memory()
+
     session_manager.start()
 
     # 启动主动推送调度器
@@ -1439,6 +1444,53 @@ async def api_post_settings(req: SettingsRequest):
         raise HTTPException(status_code=400, detail="; ".join(errors))
 
     return JSONResponse({"status": "ok"})
+
+# =============================================================================
+# 图谱构建路由（与 L1 批处理路由对称）
+# =============================================================================
+
+@app.get("/graph/pending")
+async def graph_pending():
+    """查询当前待构建图谱的 L1 数量。"""
+    from graph_builder import get_graph_pending_count
+    count = get_graph_pending_count()
+    return JSONResponse({"count": count})
+
+
+@app.post("/graph/start")
+async def graph_start():
+    """启动图谱构建后台线程，非阻塞，立即返回当前状态。"""
+    from graph_builder import start_graph_build, reload_graph
+
+    status = start_graph_build()
+
+    # 如果已经是 done 状态（无待处理 L1），确保内存图是最新的
+    if status.get("status") == "done" and status.get("total", 0) == 0:
+        reload_graph()
+
+    return JSONResponse(status)
+
+
+@app.post("/graph/stop")
+async def graph_stop():
+    """请求停止图谱构建，等当前 L1 处理完后退出。"""
+    from graph_builder import stop_graph_build
+    status = stop_graph_build()
+    return JSONResponse(status)
+
+
+@app.get("/graph/status")
+async def graph_status():
+    """查询图谱构建进度，供前端轮询（建议间隔 3 秒）。"""
+    from graph_builder import get_graph_status, reload_graph
+
+    status = get_graph_status()
+
+    # 批处理刚完成时，重新加载内存图保持同步
+    if status.get("status") == "done" and status.get("total", 0) > 0:
+        reload_graph()
+
+    return JSONResponse(status)
 
 # =============================================================================
 # 启动

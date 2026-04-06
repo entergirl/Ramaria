@@ -968,34 +968,30 @@ def _rrf_fuse(
     bm25_results:   list[dict],
     id_field:       str,
     top_k:          int,
+    graph_results:  list[dict] | None = None,
 ) -> list[dict]:
     """
-    对向量检索结果和 BM25 检索结果执行 RRF 融合。
+    对向量、BM25、图谱三路检索结果执行 RRF 融合。
 
-    RRF 公式：
-        rrf_score(doc) = BM25_WEIGHT / (RRF_K + rank_bm25(doc))
-                       + 1.0         / (RRF_K + rank_vector(doc))
+    RRF 公式（三路版）：
+        rrf_score(doc) = BM25_WEIGHT   / (RRF_K + rank_bm25(doc))
+                       + 1.0           / (RRF_K + rank_vector(doc))
+                       + GRAPH_WEIGHT  / (RRF_K + rank_graph(doc))
 
-    如果某条结果只出现在一路中（另一路没有），
-    用 (top_k * 2 + 1) 作为该路的惩罚排名，
-    表示"出现在另一路的末尾之后"，而不是完全不考虑。
-
-    这样的设计确保：
-      · 两路都命中的结果排名最高（获得双重加分）
-      · 只被向量命中的结果也能出现（不会因为 BM25 未命中就被丢弃）
-      · 只被 BM25 命中的结果同理
+    graph_results 为 None 时退化为两路融合（保持向后兼容）。
 
     参数：
         vector_results — _retrieve() 返回的向量检索结果列表
         bm25_results   — BM25Index.search() 返回的关键词检索结果列表
         id_field       — 结果 dict 中记录 id 的键名（"l1_id" 或 "l2_id"）
         top_k          — 最终返回的条数上限
+        graph_results  — retrieve_graph() 返回的图谱检索结果列表；None 表示不参与
 
     返回：
         list[dict] — 融合排序后的结果列表，按 rrf_score 降序
-                     每条结果包含原 vector_results 的所有字段，
-                     额外新增 bm25_score 和 rrf_score 字段
     """
+    from config import GRAPH_WEIGHT
+
     # 惩罚排名：未出现在某路时，视为排在该路候选池末尾之后
     penalty_rank = top_k * 2 + 1
 
@@ -1005,26 +1001,39 @@ def _rrf_fuse(
         bm25_rank_map[item["id"]] = (item["rank"], item["bm25_score"])
 
     # 建立向量结果的 id → (rank, result_dict) 查找表
-    # 向量结果按 adjusted_distance 升序排列，rank 从 1 开始
     vector_rank_map: dict[int, tuple[int, dict]] = {}
     for rank, item in enumerate(vector_results, start=1):
         record_id = item.get(id_field)
         if record_id is not None:
             vector_rank_map[record_id] = (rank, item)
 
-    # 收集所有候选 id（两路并集）
-    all_ids: set[int] = set(vector_rank_map.keys()) | set(bm25_rank_map.keys())
+    # 建立图谱结果的 id → rank 查找表（可选）
+    graph_rank_map: dict[int, int] = {}
+    if graph_results:
+        for item in graph_results:
+            record_id = item.get(id_field)
+            if record_id is not None:
+                graph_rank_map[record_id] = item["graph_rank"]
+
+    # 收集所有候选 id（三路并集）
+    all_ids: set[int] = (
+        set(vector_rank_map.keys())
+        | set(bm25_rank_map.keys())
+        | set(graph_rank_map.keys())
+    )
 
     # 计算每个 id 的 RRF 分数
-    scored: list[tuple[float, int]] = []   # (rrf_score, id)
+    scored: list[tuple[float, int]] = []
 
     for doc_id in all_ids:
-        v_rank = vector_rank_map[doc_id][0] if doc_id in vector_rank_map else penalty_rank
-        b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
+        v_rank           = vector_rank_map[doc_id][0] if doc_id in vector_rank_map else penalty_rank
+        b_rank, b_score  = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
+        g_rank           = graph_rank_map.get(doc_id, penalty_rank)
 
         rrf_score = (
-            BM25_WEIGHT / (RRF_K + b_rank)
-            + 1.0       / (RRF_K + v_rank)
+            BM25_WEIGHT   / (RRF_K + b_rank)
+            + 1.0         / (RRF_K + v_rank)
+            + GRAPH_WEIGHT / (RRF_K + g_rank)
         )
         scored.append((rrf_score, doc_id))
 
@@ -1033,41 +1042,38 @@ def _rrf_fuse(
     scored = scored[:top_k]
 
     # 组装最终结果列表
-    # 优先使用向量检索的完整 result_dict（含 distance / adjusted_distance / metadata 等字段）
-    # 若某条结果只出现在 BM25 中（向量未命中），从数据库补全基本信息
     fused = []
     for rrf_score, doc_id in scored:
         if doc_id in vector_rank_map:
-            # 向量结果有完整信息，直接复用，追加额外字段
             _, result_dict = vector_rank_map[doc_id]
-            entry = dict(result_dict)   # 浅拷贝，不修改原始对象
+            entry = dict(result_dict)
         else:
-            # 只在 BM25 中命中，向量未命中（可能因为距离超过阈值被过滤）
-            # 构造一个基本 result_dict，distance 字段标记为 None
+            # 只在 BM25 或图谱中命中，向量未命中
+            bm25_doc = next(
+                (r["document"] for r in bm25_results if r["id"] == doc_id),
+                ""
+            )
+            graph_doc = next(
+                (r["document"] for r in (graph_results or []) if r.get(id_field) == doc_id),
+                ""
+            )
             entry = {
                 id_field:            doc_id,
-                "document":          bm25_rank_map[doc_id][0],   # 实际上是 rank，此处用 bm25 doc
+                "document":          bm25_doc or graph_doc,
                 "distance":          None,
                 "adjusted_distance": None,
                 "decay_r":           None,
                 "metadata":          {},
             }
-            # 从 BM25 索引里找回原始文本
-            bm25_doc = next(
-                (r["document"] for r in bm25_results if r["id"] == doc_id),
-                ""
-            )
-            entry["document"] = bm25_doc
 
-        # 追加融合相关字段
         b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
-        entry["bm25_score"] = b_score
-        entry["rrf_score"]  = rrf_score
+        entry["bm25_score"]  = b_score
+        entry["rrf_score"]   = rrf_score
+        entry["graph_rank"]  = graph_rank_map.get(doc_id, None)  # 调试信息
 
         fused.append(entry)
 
     return fused
-
 # =============================================================================
 # 内部：通用检索逻辑（含衰减）
 # =============================================================================
@@ -1283,6 +1289,148 @@ def rebuild_all_indexes():
         f"L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片"
     )
     return counts
+
+
+# =============================================================================
+# 图谱检索通道（第三路，配合 retrieve_combined 使用）
+# =============================================================================
+
+def retrieve_graph(query_text: str, top_k: int = L1_RETRIEVE_TOP_K) -> list[dict]:
+    """
+    基于知识图谱的语义检索通道。
+
+    流程：
+      1. 从查询文本中提取可能的实体名（jieba 分词后与 keyword_pool 匹配）
+      2. 在 NetworkX 图里找到对应节点
+      3. 做 BFS 广度优先遍历（最多两跳）
+      4. 按跳数排名，返回关联的 L1 id 列表
+
+    与向量通道和 BM25 通道的区别：
+      · 向量通道：语义距离（擅长模糊匹配）
+      · BM25 通道：关键词字面匹配
+      · 图谱通道：逻辑关系遍历（擅长跨时间的实体关联）
+
+    参数：
+        query_text — 查询文本
+        top_k      — 最多返回的 L1 条数
+
+    返回：
+        list[dict] — 每条结果包含：
+            l1_id      — L1 摘要 id
+            document   — 占位空字符串（保持与其他通道格式一致）
+            graph_rank — 在图谱结果中的排名（从 1 开始，供 _rrf_fuse 使用）
+            hops       — 图遍历跳数（1 或 2）
+            distance   — None（图谱通道无距离概念）
+            adjusted_distance — None
+            decay_r    — None
+            metadata   — 空字典
+        图谱为空或无命中时返回 []
+    """
+    from graph_builder import get_nx_graph
+
+    G = get_nx_graph()
+    if G is None or G.number_of_nodes() == 0:
+        logger.debug("图谱为空或未加载，跳过图谱检索")
+        return []
+
+    # ── 第一步：从查询文本提取候选实体名 ──
+    # 策略：jieba 分词后，只保留在 keyword_pool 里能找到规范词的词条
+    # 这样可以避免把停用词、动词等无效实体送进图里查询
+    from database import get_all_canonical_keywords
+    import jieba
+
+    canonical_keywords = {kw["keyword"] for kw in get_all_canonical_keywords()}
+    if not canonical_keywords:
+        logger.debug("keyword_pool 为空，图谱检索无法提取查询实体")
+        return []
+
+    # jieba 分词，过滤出在 keyword_pool 里的词
+    tokens = list(jieba.cut(query_text, cut_all=False))
+    query_entities = [t.strip() for t in tokens
+                      if t.strip() in canonical_keywords and len(t.strip()) >= 2]
+
+    if not query_entities:
+        logger.debug(f"查询文本中未找到已知实体，跳过图谱检索：{query_text[:50]}")
+        return []
+
+    logger.debug(f"图谱检索实体：{query_entities}")
+
+    # ── 第二步：在图里找到对应节点 ──
+    # 用 entity_name 属性做反向查找
+    entity_to_node = {
+        data["entity_name"]: node_id
+        for node_id, data in G.nodes(data=True)
+    }
+
+    start_node_ids = []
+    for entity in query_entities:
+        if entity in entity_to_node:
+            start_node_ids.append(entity_to_node[entity])
+
+    if not start_node_ids:
+        logger.debug("查询实体在图谱中无对应节点")
+        return []
+
+    # ── 第三步：BFS 遍历，收集关联的 L1 id ──
+    # 多个起始节点各自遍历，结果合并，跳数取最小值
+    all_l1_results: dict[int, int] = {}   # {l1_id: min_hops}
+
+    for start_node_id in start_node_ids:
+        # networkx 的 single_source_shortest_path_length 做 BFS 最短路径
+        import networkx as nx
+        try:
+            path_lengths = nx.single_source_shortest_path_length(
+                G, start_node_id, cutoff=2   # 最多两跳
+            )
+        except Exception:
+            continue
+
+        for neighbor_node_id, hops in path_lengths.items():
+            if hops == 0:
+                # 起始节点本身，跳过
+                continue
+
+            # 找出从起始节点到 neighbor_node_id 的所有关联 L1
+            # 只考虑邻居节点的直接边（BFS 已保证在两跳以内）
+            if G.has_edge(start_node_id, neighbor_node_id):
+                edge_data = G[start_node_id][neighbor_node_id]
+            else:
+                # 两跳路径，找中间节点的边
+                edge_data = {}
+
+            # 取出这条边上关联的所有 l1_id
+            l1_ids_on_edge = edge_data.get("l1_ids", [])
+            for l1_id in l1_ids_on_edge:
+                if l1_id not in all_l1_results:
+                    all_l1_results[l1_id] = hops
+                else:
+                    # 同一个 L1 通过多条路径找到，保留最小跳数
+                    all_l1_results[l1_id] = min(all_l1_results[l1_id], hops)
+
+    if not all_l1_results:
+        logger.debug("图谱遍历无命中结果")
+        return []
+
+    # ── 第四步：按跳数排名，截断到 top_k ──
+    # 跳数越小排名越靠前（1跳 > 2跳）
+    sorted_l1s = sorted(all_l1_results.items(), key=lambda x: x[1])
+    sorted_l1s = sorted_l1s[:top_k]
+
+    results = []
+    for rank, (l1_id, hops) in enumerate(sorted_l1s, start=1):
+        results.append({
+            "l1_id":            l1_id,
+            "document":         "",     # 图谱通道不携带文本，_rrf_fuse 里会从其他通道补全
+            "graph_rank":       rank,   # 供 _rrf_fuse 使用
+            "hops":             hops,   # 调试信息
+            "distance":         None,
+            "adjusted_distance": None,
+            "decay_r":          None,
+            "metadata":         {},
+        })
+
+    logger.debug(f"图谱检索命中 {len(results)} 条 L1，起始实体：{query_entities}")
+    return results
 
 
 # =============================================================================

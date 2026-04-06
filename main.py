@@ -71,7 +71,8 @@ from database import (
     get_session,
     get_pending_pushes,
     mark_push_sent,
-    get_setting,          # 防抖：运行时读取 debounce_seconds 配置
+    get_setting,
+    set_setting,
 )
 from prompt_builder import build_system_prompt
 from session_manager import SessionManager
@@ -1352,6 +1353,92 @@ async def websocket_endpoint(ws: WebSocket):
             logger.debug("已取消未触发的防抖计时器")
         _ws_connections.pop(ws, None)
         logger.debug(f"当前在线连接数：{len(_ws_connections)}")
+
+# =============================================================================
+# GET /api/settings — 读取用户配置
+# =============================================================================
+
+@app.get("/api/settings")
+async def api_get_settings():
+    """
+    读取前端设置面板需要的所有配置项。
+    返回字典，key 为配置项名，value 为已转换好类型的值。
+    """
+    return JSONResponse({
+        "debounce_seconds":  float(get_setting("debounce_seconds")  or "3"),
+        "push_enabled":      int(get_setting("push_enabled")         or "1"),
+        "push_window_start": int(get_setting("push_window_start")    or "8"),
+        "push_window_end":   int(get_setting("push_window_end")      or "24"),
+        "push_daily_limit":  int(get_setting("push_daily_limit")     or "4"),
+    })
+
+
+# =============================================================================
+# POST /api/settings — 保存用户配置
+# =============================================================================
+
+class SettingsRequest(BaseModel):
+    """设置面板提交的配置项，所有字段可选，只更新传入的字段。"""
+    debounce_seconds:  float | None = None
+    push_enabled:      int   | None = None
+    push_window_start: int   | None = None
+    push_window_end:   int   | None = None
+    push_daily_limit:  int   | None = None
+
+
+@app.post("/api/settings")
+async def api_post_settings(req: SettingsRequest):
+    """
+    保存用户配置到 settings 表。
+    只更新请求体中明确传入的字段，其余字段保持不变。
+
+    参数合法性校验：
+        debounce_seconds  — 必须在 1~10 之间
+        push_window_start — 必须在 0~23 之间
+        push_window_end   — 必须在 1~24 之间，且大于 push_window_start
+        push_daily_limit  — 必须在 1~10 之间
+    """
+    errors = []
+
+    if req.debounce_seconds is not None:
+        if not (1 <= req.debounce_seconds <= 10):
+            errors.append("debounce_seconds 必须在 1~10 之间")
+        else:
+            set_setting("debounce_seconds", str(req.debounce_seconds))
+
+    if req.push_enabled is not None:
+        if req.push_enabled not in (0, 1):
+            errors.append("push_enabled 必须是 0 或 1")
+        else:
+            set_setting("push_enabled", str(req.push_enabled))
+
+    if req.push_window_start is not None:
+        if not (0 <= req.push_window_start <= 23):
+            errors.append("push_window_start 必须在 0~23 之间")
+        else:
+            set_setting("push_window_start", str(req.push_window_start))
+
+    if req.push_window_end is not None:
+        if not (1 <= req.push_window_end <= 24):
+            errors.append("push_window_end 必须在 1~24 之间")
+        else:
+            set_setting("push_window_end", str(req.push_window_end))
+
+    if req.push_daily_limit is not None:
+        if not (1 <= req.push_daily_limit <= 10):
+            errors.append("push_daily_limit 必须在 1~10 之间")
+        else:
+            set_setting("push_daily_limit", str(req.push_daily_limit))
+
+    # 窗口起止时间交叉校验
+    if req.push_window_start is not None and req.push_window_end is not None:
+        if req.push_window_end <= req.push_window_start:
+            errors.append("push_window_end 必须大于 push_window_start")
+
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    return JSONResponse({"status": "ok"})
 
 # =============================================================================
 # 启动

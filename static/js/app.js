@@ -313,6 +313,169 @@ async function recoverCurrentSession() {
 }
 
 
+// =============================================================================
+// 设置面板
+// =============================================================================
+
+/**
+ * 初始化设置面板：绑定事件、加载当前配置。
+ * 在 DOMContentLoaded 时调用一次。
+ */
+function initSettingsPanel() {
+
+  // ── DOM 元素引用 ──
+  const overlay      = document.getElementById('settings-overlay');
+  const panel        = document.getElementById('settings-panel');
+  const openBtn      = document.getElementById('settings-btn');
+  const closeBtn     = document.getElementById('settings-close');
+  const saveBtn      = document.getElementById('settings-save');
+
+  const debounceSlider  = document.getElementById('debounce-slider');
+  const debounceValue   = document.getElementById('debounce-value');
+
+  const pushToggle      = document.getElementById('push-enabled-toggle');
+  const pushDetail      = document.getElementById('push-detail');
+
+  const pushStartSlider = document.getElementById('push-start-slider');
+  const pushStartValue  = document.getElementById('push-start-value');
+
+  const pushEndSlider   = document.getElementById('push-end-slider');
+  const pushEndValue    = document.getElementById('push-end-value');
+
+  const pushLimitSlider = document.getElementById('push-limit-slider');
+  const pushLimitValue  = document.getElementById('push-limit-value');
+
+  // 任一元素不存在则跳过（防御性处理）
+  if (!panel || !openBtn) return;
+
+  // ── 打开面板 ──
+  function openPanel() {
+    overlay.classList.add('visible');
+    panel.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    // 打开时从服务端加载最新配置
+    loadSettings();
+  }
+
+  // ── 关闭面板 ──
+  function closePanel() {
+    overlay.classList.remove('visible');
+    panel.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  // ── 事件绑定 ──
+  openBtn.addEventListener('click', () => {
+    UI.hideSidebar();   // 先关闭侧边栏
+    openPanel();
+  });
+
+  closeBtn.addEventListener('click', closePanel);
+  overlay.addEventListener('click', closePanel);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) {
+      closePanel();
+    }
+  });
+
+  // ── 防抖滑块 ──
+  debounceSlider.addEventListener('input', () => {
+    debounceValue.textContent = `${debounceSlider.value}秒`;
+  });
+
+  // ── 推送开关 ──
+  pushToggle.addEventListener('change', () => {
+    // 开关打开时显示详细配置，关闭时隐藏
+    pushDetail.style.display = pushToggle.checked ? 'flex' : 'none';
+  });
+
+  // ── 推送开始时间滑块 ──
+  pushStartSlider.addEventListener('input', () => {
+    pushStartValue.textContent = `${pushStartSlider.value}:00`;
+    // 确保结束时间始终大于开始时间
+    if (parseInt(pushEndSlider.value) <= parseInt(pushStartSlider.value)) {
+      pushEndSlider.value      = String(parseInt(pushStartSlider.value) + 1);
+      pushEndValue.textContent = `${pushEndSlider.value}:00`;
+    }
+  });
+
+  // ── 推送结束时间滑块 ──
+  pushEndSlider.addEventListener('input', () => {
+    const val = parseInt(pushEndSlider.value);
+    pushEndValue.textContent = val === 24 ? '24:00（午夜）' : `${val}:00`;
+  });
+
+  // ── 每日上限滑块 ──
+  pushLimitSlider.addEventListener('input', () => {
+    pushLimitValue.textContent = `${pushLimitSlider.value}条`;
+  });
+
+  // ── 加载当前配置 ──
+  async function loadSettings() {
+    try {
+      const s = await API.getSettings();
+
+      // 防抖时长
+      debounceSlider.value      = s.debounce_seconds;
+      debounceValue.textContent = `${s.debounce_seconds}秒`;
+
+      // 推送开关
+      pushToggle.checked        = s.push_enabled === 1;
+      pushDetail.style.display  = pushToggle.checked ? 'flex' : 'none';
+
+      // 推送窗口
+      pushStartSlider.value      = s.push_window_start;
+      pushStartValue.textContent = `${s.push_window_start}:00`;
+
+      pushEndSlider.value        = s.push_window_end;
+      pushEndValue.textContent   = s.push_window_end === 24
+        ? '24:00（午夜）'
+        : `${s.push_window_end}:00`;
+
+      // 每日上限
+      pushLimitSlider.value      = s.push_daily_limit;
+      pushLimitValue.textContent = `${s.push_daily_limit}条`;
+
+    } catch (e) {
+      UI.showToast('加载设置失败', 'error');
+    }
+  }
+
+  // ── 保存配置 ──
+  saveBtn.addEventListener('click', async () => {
+    // 收集当前面板值
+    const payload = {
+      debounce_seconds:  parseFloat(debounceSlider.value),
+      push_enabled:      pushToggle.checked ? 1 : 0,
+      push_window_start: parseInt(pushStartSlider.value),
+      push_window_end:   parseInt(pushEndSlider.value),
+      push_daily_limit:  parseInt(pushLimitSlider.value),
+    };
+
+    // 简单前端校验：结束时间必须大于开始时间
+    if (payload.push_window_end <= payload.push_window_start) {
+      UI.showToast('结束时间必须晚于开始时间', 'error');
+      return;
+    }
+
+    saveBtn.disabled     = true;
+    saveBtn.textContent  = '保存中…';
+
+    try {
+      await API.saveSettings(payload);
+      UI.showToast('设置已保存', 'success');
+      closePanel();
+    } catch (e) {
+      UI.showToast(`保存失败：${e.message}`, 'error');
+    } finally {
+      saveBtn.disabled    = false;
+      saveBtn.textContent = '保存';
+    }
+  });
+}
+
+
 /* =============================================================================
    事件绑定与初始化（DOMContentLoaded）
    ============================================================================= */
@@ -499,6 +662,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── 建立 WebSocket 连接 ──
   connectWebSocket();
+
+  // ── 设置面板初始化 ──
+  initSettingsPanel();
 
   // ── 初始化完成后，聚焦到输入框（桌面端体验） ──
   // 移动端不自动聚焦，避免键盘弹出遮挡内容

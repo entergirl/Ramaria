@@ -117,8 +117,9 @@
   </div>
   
   <div class="sidebar-footer">
-    <button id="save-btn" class="sidebar-action">💾 保存对话</button>
+    <button id="save-btn"      class="sidebar-action">💾 保存对话</button>
     <a href="/static/import.html" class="sidebar-action">📥 导入对话</a>
+    <button id="settings-btn"  class="sidebar-action">⚙️ 设置</button>
   </div>
 </aside>
 
@@ -185,6 +186,115 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/ui.js"></script>
 <script src="/static/js/app.js"></script>
+
+<!-- ============================================================
+     设置面板（浮层，点击设置按钮时显示）
+     ============================================================ -->
+<div id="settings-overlay" aria-hidden="true"></div>
+
+<div id="settings-panel" role="dialog" aria-label="设置" aria-modal="true">
+  <div class="settings-header">
+    <span class="settings-title">设置</span>
+    <button id="settings-close" aria-label="关闭设置">✕</button>
+  </div>
+
+  <div class="settings-body">
+
+    <!-- 防抖等待时长 -->
+    <div class="settings-section">
+      <div class="settings-section-title">消息等待时长</div>
+      <div class="settings-section-desc">
+        连续发消息时，等待多少秒后再回复。调大可以让你把话说完再收到回复。
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">等待时长</span>
+        <div class="settings-control">
+          <input
+            type="range"
+            id="debounce-slider"
+            min="1" max="10" step="0.5"
+            aria-label="防抖等待时长（秒）"
+          >
+          <span class="settings-value" id="debounce-value">3秒</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-divider"></div>
+
+    <!-- 主动推送 -->
+    <div class="settings-section">
+      <div class="settings-section-title">主动消息</div>
+      <div class="settings-section-desc">
+        开启后，黎杋枫会在你设定的时间段内主动发消息。
+      </div>
+
+      <!-- 总开关 -->
+      <div class="settings-row">
+        <span class="settings-label">主动消息</span>
+        <label class="toggle-wrap" title="开启或关闭主动消息">
+          <input
+            type="checkbox"
+            id="push-enabled-toggle"
+            class="toggle-input"
+            aria-label="主动消息开关"
+            role="switch"
+          >
+          <div class="toggle-track" aria-hidden="true"></div>
+        </label>
+      </div>
+
+      <!-- 时间窗口 -->
+      <div class="settings-row" id="push-detail" style="display:none; flex-direction:column; gap:10px;">
+
+        <div class="settings-row">
+          <span class="settings-label">开始时间</span>
+          <div class="settings-control">
+            <input
+              type="range"
+              id="push-start-slider"
+              min="0" max="23" step="1"
+              aria-label="推送开始时间"
+            >
+            <span class="settings-value" id="push-start-value">8:00</span>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-label">结束时间</span>
+          <div class="settings-control">
+            <input
+              type="range"
+              id="push-end-slider"
+              min="1" max="24" step="1"
+              aria-label="推送结束时间"
+            >
+            <span class="settings-value" id="push-end-value">24:00</span>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <span class="settings-label">每日上限</span>
+          <div class="settings-control">
+            <input
+              type="range"
+              id="push-limit-slider"
+              min="1" max="10" step="1"
+              aria-label="每日推送上限"
+            >
+            <span class="settings-value" id="push-limit-value">4条</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /.settings-body -->
+
+  <div class="settings-footer">
+    <button id="settings-save" class="settings-save-btn">保存</button>
+  </div>
+</div>
 
 </body>
 </html>

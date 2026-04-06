@@ -220,5 +220,35 @@ const API = (() => {
       return true;
     },
     
+    // =====================================================================
+    // 设置面板 API
+    // =====================================================================
+
+    /**
+     * 读取所有用户配置项。
+     * @returns {Promise<{
+     *   debounce_seconds: number,
+     *   push_enabled: number,
+     *   push_window_start: number,
+     *   push_window_end: number,
+     *   push_daily_limit: number
+     * }>}
+     */
+    async getSettings() {
+      return _request('/api/settings');
+    },
+
+    /**
+     * 保存用户配置项（只传需要更新的字段）。
+     * @param {object} settings 要更新的配置项键值对
+     * @returns {Promise<{status: string}>}
+     */
+    async saveSettings(settings) {
+      return _request('/api/settings', {
+        method: 'POST',
+        body:   JSON.stringify(settings),
+      });
+    },
+
   };
 })();

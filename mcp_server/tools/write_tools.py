@@ -44,7 +44,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from mcp_server.permissions import is_allowed
-
+from constants import PROFILE_FIELDS, VALID_FIELD_KEYS
 
 # =============================================================================
 # 内部工具函数
@@ -321,20 +321,9 @@ def update_profile(arguments: dict) -> str:
         )
 
     # 合法 field 集合（与 user_profile 表和 conflict_checker 保持一致）
-    valid_fields = {
-        "basic_info", "personal_status", "interests",
-        "social", "history", "recent_context",
-    }
-    field_labels = {
-        "basic_info":      "基础信息",
-        "personal_status": "近期状态",
-        "interests":       "兴趣爱好",
-        "social":          "社交情况",
-        "history":         "重要经历",
-        "recent_context":  "近期背景",
-    }
-
-    # 参数解析
+    valid_fields = VALID_FIELD_KEYS  
+    field_labels = PROFILE_FIELDS    
+    
     field = str(arguments.get("field", "")).strip()
     if not field:
         return "错误：field 参数必填。"

@@ -34,7 +34,7 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
+from constants import PROFILE_FIELDS, VALID_FIELD_KEYS, PROFILE_FIELD_LIST
 
 # =============================================================================
 # search_memory
@@ -147,14 +147,7 @@ def get_profile(arguments: dict) -> str:
     from database import get_current_profile
 
     # 板块名到中文标签的映射
-    field_labels = {
-        "basic_info":      "基础信息",
-        "personal_status": "近期状态",
-        "interests":       "兴趣爱好",
-        "social":          "社交情况",
-        "history":         "重要经历",
-        "recent_context":  "近期背景",
-    }
+    field_labels = PROFILE_FIELDS
 
     try:
         profile = get_current_profile()

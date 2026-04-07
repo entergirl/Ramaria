@@ -65,7 +65,7 @@ from database import (
     ignore_conflict,
     update_profile_field,
 )
-
+from constants import PROFILE_FIELDS, VALID_FIELD_KEYS
 from logger import get_logger
 logger = get_logger(__name__)
 
@@ -75,15 +75,7 @@ logger = get_logger(__name__)
 # =============================================================================
 
 # 板块名到中文标签的映射，与 prompt_builder.py 保持一致
-_FIELD_LABELS = {
-    "basic_info":      "基础信息",
-    "personal_status": "近期状态",
-    "interests":       "兴趣爱好",
-    "social":          "社交情况",
-    "history":         "重要经历",
-    "recent_context":  "近期背景",
-}
-
+_FIELD_LABELS = PROFILE_FIELDS
 
 def _format_profile_for_check(profile_dict):
     """
@@ -178,7 +170,7 @@ def _validate_conflict_item(item):
     返回：
         bool — True 表示校验通过，False 表示此条应丢弃
     """
-    valid_fields = set(_FIELD_LABELS.keys())
+    valid_fields = VALID_FIELD_KEYS
 
     for key in ("field", "old_content", "new_content", "conflict_desc"):
         if not str(item.get(key, "")).strip():

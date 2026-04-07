@@ -37,6 +37,7 @@
 import sys
 from datetime import datetime
 from pathlib import Path
+from constants import PROFILE_FIELD_LIST
 
 # Python 3.11+ 内置 tomllib；低版本需要：pip install tomli
 if sys.version_info >= (3, 11):

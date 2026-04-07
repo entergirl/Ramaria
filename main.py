@@ -81,7 +81,7 @@ from router import Router
 from importer.l1_batch import start_batch, stop_batch, get_status, get_pending_count
 from logger import get_logger
 logger = get_logger(__name__)
-
+from constants import PROFILE_FIELD_LIST
 
 # =============================================================================
 # 静态文件路径
@@ -439,14 +439,7 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
     # ------------------------------------------------------------------
     profile_dict = get_current_profile()
     if profile_dict:
-        field_labels = [
-            ("basic_info",      "基础信息"),
-            ("personal_status", "近期状态"),
-            ("interests",       "兴趣爱好"),
-            ("social",          "社交情况"),
-            ("history",         "重要经历"),
-            ("recent_context",  "近期背景"),
-        ]
+        field_labels = PROFILE_FIELD_LIST
         lines = []
         for key, label in field_labels:
             val = profile_dict.get(key, "").strip()

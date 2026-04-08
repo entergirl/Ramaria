@@ -309,6 +309,32 @@ def init_db():
         VALUES (?, ?, ?)
     """, push_settings)
 
+# ------------------------------------------------------------------
+    # 建立高频查询字段的索引
+    #
+    # 放在建表语句之后、commit 之前。
+    # CREATE INDEX IF NOT EXISTS 保证幂等：重复运行 init_db.py 不会报错。
+    #
+    # 索引作用说明：
+    #   idx_messages_session_id    — get_messages() 每次对话都走，最高频
+    #   idx_messages_created_at    — get_last_message_time() 排序，空闲检测每分钟触发
+    #   idx_memory_l1_session_id   — get_l1_by_session() 查询
+    #   idx_memory_l1_absorbed     — get_unabsorbed_l1() 每次 L1 写入后触发
+    #   idx_memory_l1_created_at   — L2 触发检查排序 / get_latest_l1()
+    #   idx_conflict_queue_status  — get_pending_conflicts() 每次对话前检查
+    #   idx_pending_push_status    — get_pending_pushes() WebSocket 建立时查询
+    # ------------------------------------------------------------------
+    index_sqls = [
+        "CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_memory_l1_session_id ON memory_l1(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_memory_l1_absorbed ON memory_l1(absorbed)",
+        "CREATE INDEX IF NOT EXISTS idx_memory_l1_created_at ON memory_l1(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_conflict_queue_status ON conflict_queue(status)",
+        "CREATE INDEX IF NOT EXISTS idx_pending_push_status ON pending_push(status)",
+    ]
+    for sql in index_sqls:
+        cursor.execute(sql)
 
 # =============================================================================
 # 辅助函数 — 后续模块直接 import 使用

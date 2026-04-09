@@ -23,8 +23,7 @@ migrate_add_graph_tables.py — 知识图谱数据库迁移脚本
 import sqlite3
 import os
 from datetime import datetime, timezone
-
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assistant.db")
+from ramaria.config import DB_PATH
 
 
 def migrate():

@@ -29,9 +29,7 @@ migrate_add_indexes.py — 数据库索引迁移脚本
 
 import sqlite3
 import os
-
-# 数据库路径：与 config.py 保持一致
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assistant.db")
+from ramaria.config import DB_PATH
 
 
 # =============================================================================

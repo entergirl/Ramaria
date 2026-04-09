@@ -15,10 +15,7 @@ init_db.py — 数据库初始化脚本
 import sqlite3
 import os
 from datetime import datetime, timezone
-
-# 数据库文件路径，和本脚本放在同一目录
-DB_PATH = os.path.join(os.path.dirname(__file__), "assistant.db")
-
+from ramaria.config import DB_PATH
 
 # =============================================================================
 # 数据库连接

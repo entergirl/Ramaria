@@ -25,9 +25,7 @@ migrate_add_push.py — 主动推送功能数据库迁移脚本
 import sqlite3
 import os
 from datetime import datetime, timezone
-
-# 数据库路径：与 config.py 保持一致
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assistant.db")
+from ramaria.config import DB_PATH
 
 
 def migrate():

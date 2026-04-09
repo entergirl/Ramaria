@@ -203,7 +203,7 @@ L2_TRIGGER_DAYS = 7
 # =============================================================================
 
 LOCAL_API_URL = "http://localhost:1234/v1/chat/completions"
-LOCAL_MODEL_NAME = "qwen/qwen3.5-9b"
+LOCAL_MODEL_NAME = "google/gemma-4-e4b"
 LOCAL_TEMPERATURE = 0.3
 LOCAL_MAX_TOKENS_SUMMARY = 512
 LOCAL_MAX_TOKENS_CHAT = 1024

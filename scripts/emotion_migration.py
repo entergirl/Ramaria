@@ -24,9 +24,7 @@ migrate_add_emotion_fields.py — 数据库迁移脚本
 
 import sqlite3
 import os
-
-# 数据库路径：和 config.py 保持一致，取本文件所在目录下的 assistant.db
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assistant.db")
+from ramaria.config import DB_PATH
 
 
 def migrate():

@@ -1033,16 +1033,9 @@ def retrieve_graph(
         图谱为空或无命中时返回 []
     """
     from ramaria.adapters.mcp import get_nx_graph  # 懒加载，避免循环依赖
-
-    # 注意：graph_builder 迁移后 get_nx_graph 的 import 路径会更新
-    # 此处暂时使用占位，第五批处理 graph_builder 时一并修正
     try:
         import sys
-        # 兼容迁移前后两种路径
-        try:
-            from ramaria.memory.graph_builder import get_nx_graph
-        except ImportError:
-            from graph_builder import get_nx_graph
+        from ramaria.memory.graph_builder import get_nx_graph
     except ImportError:
         logger.warning("graph_builder 未找到，图谱检索跳过")
         return []

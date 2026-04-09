@@ -43,21 +43,12 @@ def trigger_l1_summary(session_id: int) -> None:
     """
     触发指定 session 的 L1 摘要生成。
 
-    使用兼容导入：优先使用新路径，回退到旧路径。
-    第四批迁移完成后，可以将此函数改为直接从新路径导入。
-
     参数：
         session_id — 需要生成摘要的 session id
+
     """
     logger.info(f"触发 session {session_id} 的 L1 摘要生成")
-
-    # 兼容导入：第四批迁移完成后统一改为
-    # from ramaria.memory.summarizer import generate_l1_summary
-    try:
-        from ramaria.memory.summarizer import generate_l1_summary
-    except ImportError:
-        from summarizer import generate_l1_summary  # type: ignore[no-redef]
-
+    from ramaria.memory.summarizer import generate_l1_summary
     generate_l1_summary(session_id)
 
 
@@ -316,17 +307,10 @@ class SessionManager:
         """
         执行一次 L2 合并触发检查（路径B：时间触发）。
         使用懒加载 import 避免循环依赖。
-        第四批迁移完成后，可以将 import 路径改为 ramaria.memory.merger。
         """
         logger.debug("线程B 触发 L2 定时检查")
         try:
-            # 兼容导入：第四批迁移完成后统一改为
-            # from ramaria.memory.merger import check_and_merge
-            try:
-                from ramaria.memory.merger import check_and_merge
-            except ImportError:
-                from merger import check_and_merge  # type: ignore[no-redef]
-
+            from ramaria.memory.merger import check_and_merge
             check_and_merge()
         except Exception as e:
             logger.warning(f"L2 定时检查出现异常 — {e}")

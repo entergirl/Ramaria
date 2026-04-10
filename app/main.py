@@ -18,11 +18,18 @@ lifespan 负责：
 """
 
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 # 禁止 HuggingFace 在启动时联网检查模型更新，避免离线环境启动卡顿
 os.environ["HF_HUB_OFFLINE"] = "1"
+
+# 直接执行 app/main.py 时，将 src/ 加入 Python 模块搜索路径
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+_SRC_DIR = _ROOT_DIR / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 import uvicorn
 from fastapi import FastAPI

@@ -1,5 +1,5 @@
 """
-test_qwen3_embedding.py — Qwen3-Embedding-0.6B 完整验证脚本
+test_embedding_model.py — Qwen3-Embedding-0.6B 完整验证脚本
 =====================================================================
 
 目的：
@@ -12,7 +12,7 @@ test_qwen3_embedding.py — Qwen3-Embedding-0.6B 完整验证脚本
        （默认缓存路径通常是 ~/.cache/huggingface/hub/）
 
 运行方式：
-    python test_qwen3_embedding.py
+    python test_embedding_model.py
 
 预期结果：
     六个测试阶段全部打印 [PASS]，最后输出"全部测试通过"。

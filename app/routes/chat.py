@@ -60,9 +60,9 @@ class ChatResponse(BaseModel):
     /chat 接口的响应体。
 
     mode 字段说明：
-        "local"   — 由本地 Qwen 生成
-        "online"  — 由 Claude API 生成
-        "confirm" — 等待用户确认是否调用 Claude
+        "local"   — 由本地模型生成
+        "online"  — 由云端 API 生成
+        "confirm" — 等待用户确认是否调用云端 API
     """
     reply:      str
     session_id: int

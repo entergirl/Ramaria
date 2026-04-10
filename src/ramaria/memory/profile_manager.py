@@ -11,7 +11,7 @@ src/ramaria/memory/profile_manager.py — L3 画像半自动维护模块
 
     Step 1  读取刚生成的 L1 摘要内容（直接按主键查）
     Step 2  读取当前生效的 L3 用户画像
-    Step 3  调用本地 Qwen，判断 L1 里哪些是"新信息"
+    Step 3  调用本地模型，判断 L1 里哪些是"新信息"
     Step 4  解析模型返回的 JSON，校验字段合法性
     Step 5  逐字段追加写入 user_profile 表（带时间戳前缀）
 

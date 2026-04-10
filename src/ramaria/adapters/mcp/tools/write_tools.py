@@ -132,7 +132,7 @@ def trigger_l1(arguments: dict) -> str:
 
     此工具会调用 summarizer.generate_l1_summary()，
     和实时对话结束后的自动触发路径完全一致，包括：
-      · 调用本地 Qwen 模型生成摘要（需要 LM Studio 运行中）
+      · 调用本地模型生成摘要（需要 LM Studio 运行中）
       · 写入 memory_l1 表
       · 写入 L1 向量索引
       · 触发画像提取（profile_manager）

@@ -2,19 +2,19 @@
 src/ramaria/core/router.py — 任务路由层
 
 职责：
-    负责判断当前消息是否需要切换到 Claude API 处理，
+    负责判断当前消息是否需要切换到云端API处理，
     并管理线上/本地模式的全局状态。
 
 设计原则：
-    · 本地 Qwen 是主体，负责日常对话和记忆维护
-    · Claude 是一次性专家工具，处理完当前消息立即回到本地模式
-    · Claude 不注入任何记忆上下文，只拿到用户的当前消息
-    · 自动检测到可能需要 Claude 时，先向用户发确认询问，不直接调用
+    · 本地模型是主体，负责日常对话和记忆维护
+    · 云端模型是一次性专家工具，处理完当前消息立即回到本地模式
+    · 云端模型不注入任何记忆上下文，只拿到用户的当前消息
+    · 自动检测到可能需要云端模型时，先向用户发确认询问，不直接调用
 
 状态机：
     模式状态（mode）：
-        "local"   — 默认状态，消息走本地 Qwen
-        "online"  — 当前消息走 Claude API（处理完后自动回到 local）
+        "local"   — 默认状态，消息走本地模型
+        "online"  — 当前消息走云端模型API（处理完后自动回到 local）
 
     API 开关（api_enabled）：
         True  — 允许自动检测和手动切换到 Claude（默认）
@@ -57,10 +57,10 @@ TRIGGER_KEYWORDS = [
     "怎么设计", "架构", "方案", "怎么实现",
 ]
 
-# 用户确认调用 Claude 的关键词（包含匹配）
+# 用户确认调用云端模型的关键词（包含匹配）
 CONFIRM_YES_KEYWORDS = {"好", "好的", "行", "是", "是的", "要", "可以", "嗯", "ok", "yes"}
 
-# 用户拒绝调用 Claude 的关键词（包含匹配）
+# 用户拒绝调用云端模型的关键词（包含匹配）
 CONFIRM_NO_KEYWORDS = {"不用", "不", "算了", "不要", "不行", "no", "本地", "本地处理"}
 
 # 自动检测触发时，发给用户的确认询问文本
@@ -70,7 +70,7 @@ CONFIRM_ASK_TEXT = "要不我用线上 API 为你解决？"
 # 超过此时长无新消息，自动 reset 回本地模式
 FORCE_ONLINE_TIMEOUT_MINUTES = 30
 
-# Claude API 端点
+#云端模型API 端点
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 
 
@@ -191,7 +191,7 @@ class Router:
             2. API 已关闭   → 强制本地
             3. API Key 未配置 → 强制本地
             4. 自动检测     → 检测代码块和关键词，触发时发确认询问
-            5. 默认         → 本地 Qwen
+            5. 默认         → 本地模型
 
         参数：
             message — 用户发送的消息文本（已去除首尾空白）
@@ -226,25 +226,25 @@ class Router:
         return {"action": "local", "message": message}
 
     # -------------------------------------------------------------------------
-    # 公开接口：调用 Claude API
+    # 公开接口：调用云端模型API
     # -------------------------------------------------------------------------
 
     def call_claude(self, message: str) -> str:
         """
-        调用 Claude API 处理单条消息，返回回复文本。
+        调用云端模型API 处理单条消息，返回回复文本。
 
-        Claude 作为无状态工具：
+       云端模型作为无状态工具：
             · 不注入任何记忆上下文（隐私保护）
             · 只带一个简短的角色说明 system prompt
             · 处理完后路由自动回到本地模式（无论成功还是失败）
 
         参数：
-            message — 需要 Claude 处理的用户消息
+            message — 需要云端模型处理的用户消息
 
         返回：
-            str — Claude 的回复文本；调用失败时返回括号包裹的错误信息
+            str —云端模型的回复文本；调用失败时返回括号包裹的错误信息
         """
-        logger.info(f"调用 Claude API，消息长度={len(message)}")
+        logger.info(f"调用云端模型API，消息长度={len(message)}")
 
         system_prompt = (
             "你是一个专业、精准的 AI 助手。"
@@ -287,7 +287,7 @@ class Router:
                 return "（API Key 无效，请检查 ANTHROPIC_API_KEY 配置）"
             return f"（线上 API 请求失败：{e}）"
         except (KeyError, IndexError) as e:
-            return f"（解析 Claude 响应失败：{e}）"
+            return f"（解析云端模型响应失败：{e}）"
         finally:
             # 无论成功还是失败，用完立即回到本地模式
             self._reset()
@@ -358,13 +358,13 @@ class Router:
 
         # 用户确认（包含匹配，兼容"好啊"/"嗯嗯"等变体）
         if any(kw in message_lower for kw in CONFIRM_YES_KEYWORDS):
-            logger.info("用户确认，走 Claude API")
+            logger.info("用户确认，走云端模型API")
             self._reset()
             return {"action": "confirm_yes", "message": cached}
 
         # 用户拒绝（包含匹配，兼容"那不用了"/"算了吧"等变体）
         if any(kw in message_lower for kw in CONFIRM_NO_KEYWORDS):
-            logger.info("用户拒绝，走本地 Qwen")
+            logger.info("用户拒绝，走本地模型")
             self._reset()
             return {"action": "confirm_no", "message": cached}
 

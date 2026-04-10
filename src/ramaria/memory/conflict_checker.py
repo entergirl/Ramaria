@@ -6,7 +6,7 @@ src/ramaria/memory/conflict_checker.py — 记忆冲突检测模块
 
 核心流程：
     1. 读取最新 L1 摘要 + 当前生效的 L3 用户画像
-    2. 调用本地 Qwen 模型做语义比对，返回冲突列表（JSON 数组）
+    2. 调用本地模型做语义比对，返回冲突列表（JSON 数组）
     3. 将每条冲突写入 conflict_queue 表，状态为 pending
     4. 对外暴露两个接口供 main.py 调用：
            get_conflict_question()  — 查询是否有待确认冲突

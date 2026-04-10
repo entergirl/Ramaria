@@ -1,14 +1,14 @@
 """
 src/ramaria/memory/summarizer.py — L1 摘要生成模块
 
-负责在 session 结束后，调用本地 Qwen 模型生成结构化摘要，
+负责在 session 结束后，调用本地模型生成结构化摘要，
 并写入 memory_l1 表。
 
 核心流程：
     1.  从数据库读取指定 session 的全部消息
     2.  从 keyword_pool 表读取历史关键词，作为候选列表
     3.  将消息格式化为纯文本对话，连同候选词一起填入 Prompt 模板
-    4.  调用本地 LM Studio API（Qwen）生成摘要
+    4.  调用本地 LM Studio API 生成摘要
     5.  解析模型返回的 JSON 结果
     6.  校验字段合法性，写入 memory_l1 表
     7.  将本次使用的关键词同步写回 keyword_pool 表

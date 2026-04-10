@@ -3,7 +3,7 @@ src/ramaria/core/llm_client.py — 本地模型调用公共模块
 
 职责：
     1. 封装对本地模型服务（Ollama / LM Studio）的 HTTP 请求
-    2. 提供 strip_thinking() 工具函数，剥离 Qwen 等模型输出中的思考链
+    2. 提供 strip_thinking() 工具函数，剥离本地模型输出中的思考链
 
 对外暴露三个函数：
     strip_thinking()     — 剥离模型思考链，返回纯 JSON 文本
@@ -38,7 +38,7 @@ def strip_thinking(raw_text: str) -> str:
 
     支持三种格式：
 
-        格式一：标签格式（Qwen /think 模式开启时）
+        格式一：标签格式（思考链模式开启时）
             输入：<think>\\n这是思考过程\\n</think>\\n{"summary": "..."}
             输出：{"summary": "..."}
 

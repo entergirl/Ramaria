@@ -12,15 +12,6 @@ src/ramaria/memory/conflict_checker.py — 记忆冲突检测模块
            get_conflict_question()  — 查询是否有待确认冲突
            handle_conflict_reply()  — 处理用户的"更新"/"忽略"回复
 
-迁移记录：
-    从根目录 conflict_checker.py 迁移到 src/ramaria/memory/conflict_checker.py
-    import 路径更新：
-        from config import ...    →  from ramaria.config import ...（已无需要）
-        from database import ...  →  from ramaria.storage.database import ...
-        from llm_client import ... →  from ramaria.core.llm_client import ...
-    CONFLICT_CHECK_PROMPT 和 CONFLICT_ASK_TEMPLATE 从 config.py 迁入本模块顶部。
-    验证块移至 tests/（后续补充）。
-    内部逻辑不变。
 """
 
 import json

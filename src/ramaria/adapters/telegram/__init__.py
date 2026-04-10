@@ -1,0 +1,1 @@
+"""Telegram Bot 适配器。"""

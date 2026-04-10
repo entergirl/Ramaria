@@ -243,88 +243,166 @@ ramaria/
 
 ### 环境要求
 
-- **Python 3.10+**
-- **本地模型推理服务**（如 LM Studio、Ollama 等，兼容 OpenAI API 格式即可）
-- **本地嵌入模型文件**（需提前下载至本地路径）
-- **云端推理 API Key**（可选，不配置不影响核心功能）
+| 要求 | 说明 |
+|------|------|
+| Python | 3.10+ |
+| 本地推理服务 | LM Studio / Ollama 等，兼容 OpenAI API 格式 |
+| 嵌入模型 | 本地文件（程序直接加载，无需额外服务） |
+| 云端 API Key | 可选，不影响核心功能 |
 
-### 安装步骤
+### 安装方式
+
+#### 方式一：一键安装脚本（推荐）
+
+```bash
+# Windows
+install.bat
+
+# Linux / macOS
+bash install.sh
+```
+
+#### 方式二：手动安装
 
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/entergirl/Ramaria.git
 cd Ramaria
 
-# 2. 创建虚拟环境（推荐）
+# 2. 创建虚拟环境
 python -m venv venv
+
+# 3. 激活虚拟环境
 # Windows
 venv\Scripts\activate
-# macOS / Linux
+# Linux / macOS
 source venv/bin/activate
 
-# 3. 安装依赖
+# 4. 安装依赖
+pip install -r requirements.txt
+
+# 或使用 editable 模式安装
 pip install -e .
-
-# 4. 配置环境变量（可选，使用云端推理时需要）
-cp .env.example .env
-# 编辑 .env，填入 API Key
 ```
 
-### 配置模型
-
-#### 对话模型（必须）
-
-启动本地模型推理服务，加载你选择的对话模型，确认服务运行在本地某个端口（默认 `http://localhost:1234`）。
-
-在 `src/ramaria/config.py` 中配置：
-
-```python
-LOCAL_API_URL    = "http://localhost:1234/v1/chat/completions"  # 推理服务地址
-LOCAL_MODEL_NAME = "your-model-name"                            # 模型标识符
-```
-
-#### 嵌入模型（必须）
-
-嵌入模型用于将文本转换为语义向量，程序直接加载本地文件，**无需启动额外服务**。
-
-将模型文件夹放置到本地任意路径，然后在 `src/ramaria/config.py` 中配置：
-
-```python
-EMBEDDING_MODEL = r"C:\your\path\to\embedding-model"  # 改为你的模型文件路径
-```
-
-#### 云端推理 API（可选）
+#### 方式三：Docker 部署
 
 ```bash
-# Windows PowerShell
-$env:ANTHROPIC_API_KEY = "your-api-key"
-
-# macOS / Linux
-export ANTHROPIC_API_KEY="your-api-key"
+docker-compose up -d
 ```
 
-也可以直接写入 `.env` 文件。
+### 配置
 
-### 配置人设
+#### 1. 配置环境变量
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件，填写必要配置：
+
+```ini
+# === 必须配置 ===
+
+# 本地推理服务地址
+LOCAL_API_URL=http://localhost:1234/v1/chat/completions
+
+# 模型标识符（需与推理服务中加载的模型名称一致）
+LOCAL_MODEL_NAME=qwen/qwen3.5-9b
+
+# 嵌入模型路径（程序直接加载本地文件）
+EMBEDDING_MODEL_PATH=./models/embedding-model
+
+# === 可选配置 ===
+
+# 云端推理 API Key（用于复杂推理任务）
+ANTHROPIC_API_KEY=sk-ant-xxxxxx
+```
+
+#### 2. 配置对话模型
+
+启动本地模型推理服务（LM Studio / Ollama 等），确保：
+- 服务运行在 `http://localhost:1234`
+- 已加载对话模型
+
+#### 3. 配置嵌入模型
+
+下载嵌入模型（如 [Qwen3-Embedding](https://modelscope.cn/models/Qwen/Qwen3-Embedding-0.6B)），放置到本地目录：
+
+```bash
+# 示例目录结构
+models/
+└── Qwen3-Embedding-0.6B/
+    ├── config.json
+    └── ...
+```
+
+在 `.env` 中配置路径：
+
+```ini
+EMBEDDING_MODEL_PATH=./models/Qwen3-Embedding-0.6B
+```
+
+#### 4. 配置人设（可选）
 
 ```bash
 cp config/persona.toml.example config/persona.toml
 # 编辑 persona.toml，填写角色设定
 ```
 
-### 初始化并启动
+### 初始化与启动
+
+#### 检查环境
 
 ```bash
-# 一键初始化数据库（首次运行，包含全部建表与迁移）
-python scripts/setup_db.py
+python scripts/check_env.py
+```
 
-# 启动服务
+#### 初始化数据库
+
+```bash
+# 首次运行或数据库不存在时执行
+python scripts/setup_db.py
+```
+
+#### 启动服务
+
+```bash
+# 方式一：使用启动脚本（Windows）
+start.bat
+
+# 方式二：直接运行
 python app/main.py
 ```
 
-浏览器访问 `http://localhost:8000` 开始对话。
+#### 访问应用
 
-局域网其他设备访问：`http://[电脑IP]:8000`
+- 本地访问：`http://localhost:8000`
+- 局域网访问：`http://<电脑IP>:8000`
+
+### 可选依赖安装
+
+```bash
+# Telegram 机器人支持
+pip install -r requirements.txt[telegram]
+
+# MCP Server 支持（用于 Claude Desktop 集成）
+pip install -r requirements.txt[mcp]
+
+# 开发依赖
+pip install -r requirements-dev.txt
+```
+
+### 常见问题
+
+**Q: 启动报错 "无法连接到本地模型"**
+> 请确认 LM Studio / Ollama 已启动，并检查 `.env` 中的 `LOCAL_API_URL` 配置。
+
+**Q: 嵌入模型加载失败**
+> 确认 `EMBEDDING_MODEL_PATH` 路径正确，模型文件夹下有 `config.json` 等必要文件。
+
+**Q: 首次运行无响应**
+> 首次启动会预热 BM25 索引，请耐心等待几秒钟。
 
 ---
 

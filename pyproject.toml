@@ -5,8 +5,36 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ramaria"
 version = "0.3.6"
-description = "本地运行的个人 AI 陪伴记忆系统"
+description = "珊瑚菌 - 本地运行的个人 AI 陪伴记忆系统"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "黎烧酒", email = "entergirl@example.com" }
+]
 requires-python = ">=3.10"
+keywords = [
+    "ai",
+    "memory",
+    "personal-assistant",
+    "local-llm",
+    "rag",
+    "knowledge-graph",
+    "chatbot",
+    "珊瑚菌"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
@@ -24,9 +52,37 @@ dependencies = [
 telegram = ["python-telegram-bot>=20.0"]
 mcp      = ["mcp>=1.0.0,<2.0.0"]
 dev      = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+all      = [
+    "python-telegram-bot>=20.0",
+    "mcp>=1.0.0,<2.0.0",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+]
+
+[project.urls]
+Homepage = "https://github.com/entergirl/Ramaria"
+Repository = "https://github.com/entergirl/Ramaria"
+Documentation = "https://github.com/entergirl/Ramaria#readme"
+Changelog = "https://github.com/entergirl/Ramaria/releases"
+Issues = "https://github.com/entergirl/Ramaria/issues"
+
+[project.scripts]
+ramaria = "app.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.setuptools.package-data]
+ramaria = [
+    "py.typed",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

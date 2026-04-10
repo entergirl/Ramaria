@@ -1,0 +1,45 @@
+# =============================================================================
+# 珊瑚菌 Ramaria Docker Compose 配置
+# =============================================================================
+# 使用方法:
+#   启动服务: docker-compose up -d
+#   查看日志: docker-compose logs -f
+#   停止服务: docker-compose down
+#
+# 注意事项:
+#   - 需要在宿主机运行 LM Studio / Ollama 等本地推理服务
+#   - 将 .env 文件中的 LOCAL_API_URL 改为宿主机的 IP 地址
+
+services:
+  ramaria:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ramaria
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # 数据持久化
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+      # 模型文件 (如果本地存储)
+      # - /path/to/models:/models:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HF_HUB_OFFLINE=1
+      # 本地推理服务地址 (改为宿主机的局域网IP)
+      - LOCAL_API_URL=http://host.docker.internal:1234/v1/chat/completions
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ramaria-net
+
+networks:
+  ramaria-net:
+    driver: bridge

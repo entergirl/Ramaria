@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from ramaria.storage.database import get_setting, set_setting
 
+
 router = APIRouter()
 
 

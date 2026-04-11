@@ -30,12 +30,13 @@ import re
 from ramaria.config import TIME_PERIOD_OPTIONS
 from ramaria.core.llm_client import call_local_summary, strip_thinking
 from ramaria.storage.database import (
-    get_messages,
-    save_l1_summary,
     get_all_keywords,
+    get_messages,
     get_top_keywords,
+    save_l1_summary,
     upsert_keywords,
 )
+
 from logger import get_logger
 
 logger = get_logger(__name__)

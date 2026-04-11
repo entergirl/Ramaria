@@ -6,38 +6,38 @@ src/ramaria/storage/vector_store.py — 向量索引与语义检索模块
 
 """
 
-import os
 import json
 import math
+import os
 import queue
 import threading
 from datetime import datetime, timezone
-import jieba
-import jieba.analyse
-from rank_bm25 import BM25Okapi
 
 import chromadb
+import jieba
+import jieba.analyse
 from chromadb.utils.embedding_functions import (
     DefaultEmbeddingFunction,
     SentenceTransformerEmbeddingFunction,
 )
+from rank_bm25 import BM25Okapi
 
 from ramaria.config import (
+    BM25_WEIGHT,
     CHROMA_DIR,
     EMBEDDING_MODEL,
-    L0_WINDOW_SIZE,
     L0_RETRIEVE_TOP_K,
+    L0_WINDOW_SIZE,
     L1_RETRIEVE_TOP_K,
     L2_RETRIEVE_TOP_K,
-    SIMILARITY_THRESHOLD,
-    MEMORY_DECAY_S_L0,
-    MEMORY_DECAY_S_L1,
-    MEMORY_DECAY_S_L2,
     MEMORY_DECAY_ENABLE_ACCESS_BOOST,
     MEMORY_DECAY_RECENT_BOOST_DAYS,
     MEMORY_DECAY_RECENT_BOOST_FLOOR,
+    MEMORY_DECAY_S_L0,
+    MEMORY_DECAY_S_L1,
+    MEMORY_DECAY_S_L2,
     RRF_K,
-    BM25_WEIGHT,
+    SIMILARITY_THRESHOLD,
 )
 from ramaria.storage.database import get_messages
 

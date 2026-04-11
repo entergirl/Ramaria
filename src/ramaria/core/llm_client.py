@@ -14,15 +14,17 @@ src/ramaria/core/llm_client.py — 本地模型调用公共模块
 """
 
 import re
+
 import requests
 
 from ramaria.config import (
     LOCAL_API_URL,
+    LOCAL_MAX_TOKENS_CHAT,
+    LOCAL_MAX_TOKENS_SUMMARY,
     LOCAL_MODEL_NAME,
     LOCAL_TEMPERATURE,
-    LOCAL_MAX_TOKENS_SUMMARY,
-    LOCAL_MAX_TOKENS_CHAT,
 )
+
 from logger import get_logger
 
 logger = get_logger(__name__)

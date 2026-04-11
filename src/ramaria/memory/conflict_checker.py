@@ -22,11 +22,12 @@ from ramaria.storage.database import (
     get_current_profile,
     get_l1_by_id,
     get_pending_conflicts,
-    save_conflict,
-    resolve_conflict,
     ignore_conflict,
+    resolve_conflict,
+    save_conflict,
     update_profile_field,
 )
+
 from constants import PROFILE_FIELDS, VALID_FIELD_KEYS
 from logger import get_logger
 

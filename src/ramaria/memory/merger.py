@@ -21,11 +21,12 @@ from ramaria.config import (
 )
 from ramaria.core.llm_client import call_local_summary, strip_thinking
 from ramaria.storage.database import (
-    get_unabsorbed_l1,
-    save_l2_summary,
-    mark_l1_absorbed,
     get_setting,
+    get_unabsorbed_l1,
+    mark_l1_absorbed,
+    save_l2_summary,
 )
+
 from logger import get_logger
 
 logger = get_logger(__name__)

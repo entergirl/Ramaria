@@ -27,8 +27,9 @@ migrate_add_indexes.py — 数据库索引迁移脚本
     idx_pending_push_status     pending_push.status
 """
 
-import sqlite3
 import os
+import sqlite3
+
 from ramaria.config import DB_PATH
 
 

@@ -23,21 +23,22 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ramaria.config import RETRIEVAL_WEIGHT_L2, RETRIEVAL_WEIGHT_L1
+from ramaria.config import RETRIEVAL_WEIGHT_L1, RETRIEVAL_WEIGHT_L2
 from ramaria.core.llm_client import call_local_chat
 from ramaria.core.prompt_builder import build_system_prompt
+from ramaria.memory.conflict_checker import get_conflict_question, handle_conflict_reply
 from ramaria.storage.database import (
-    get_messages,
-    get_messages_as_dicts,
-    save_message,
     get_current_profile,
     get_latest_l1,
-    get_recent_l2,
+    get_messages,
+    get_messages_as_dicts,
     get_pending_pushes,
-    mark_push_sent,
+    get_recent_l2,
     get_setting,
+    mark_push_sent,
+    save_message,
 )
-from ramaria.memory.conflict_checker import get_conflict_question, handle_conflict_reply
+
 from constants import PROFILE_FIELD_LIST
 from logger import get_logger
 

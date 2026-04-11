@@ -22,9 +22,10 @@ migrate_add_push.py — 主动推送功能数据库迁移脚本
     python migrate_add_push.py
 """
 
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime, timezone
+
 from ramaria.config import DB_PATH
 
 

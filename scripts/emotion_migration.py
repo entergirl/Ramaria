@@ -22,8 +22,9 @@ migrate_add_emotion_fields.py — 数据库迁移脚本
     确保数据库结构就绪后再启动主服务。
 """
 
-import sqlite3
 import os
+import sqlite3
+
 from ramaria.config import DB_PATH
 
 

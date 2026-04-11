@@ -12,9 +12,10 @@ init_db.py — 数据库初始化脚本
     python init_db.py
 """
 
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime, timezone
+
 from ramaria.config import DB_PATH
 
 # =============================================================================

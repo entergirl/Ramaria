@@ -20,9 +20,10 @@ migrate_add_graph_tables.py — 知识图谱数据库迁移脚本
     python migrate_add_graph_tables.py
 """
 
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime, timezone
+
 from ramaria.config import DB_PATH
 
 

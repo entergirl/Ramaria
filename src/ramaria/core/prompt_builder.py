@@ -30,9 +30,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ramaria.config import PERSONA_PATH
-from constants import PROFILE_FIELD_LIST
-
 # Python 3.11+ 内置 tomllib；低版本需要：pip install tomli
 if sys.version_info >= (3, 11):
     import tomllib
@@ -43,6 +40,9 @@ else:
         raise ImportError(
             "Python < 3.11 需要安装 tomli：pip install tomli"
         )
+
+from ramaria.config import PERSONA_PATH
+from constants import PROFILE_FIELD_LIST
 
 from logger import get_logger
 logger = get_logger(__name__)
@@ -76,18 +76,17 @@ class PromptBuilder:
     """
 
     def __init__(
-        self,
+    self,
         persona_path: str | Path = DEFAULT_PERSONA_PATH,
     ):
         """
         初始化构建器，加载静态人设文件。
-
-        参数：
-            persona_path — persona.toml 的路径。
-                           默认使用 ramaria.config.PERSONA_PATH，
-                           即 <项目根>/config/persona.toml。
         """
-        self._blocks = self._load_persona(persona_path)
+        # _load_persona 现在返回包含 blocks 和 identity 的完整字典
+        _data          = self._load_persona(persona_path)
+        self._blocks   = _data["blocks"]
+        self._identity = _data["identity"]
+
 
     # -------------------------------------------------------------------------
     # 公开方法
@@ -133,10 +132,12 @@ class PromptBuilder:
     @staticmethod
     def _load_persona(path: str | Path) -> dict:
         """
-        加载并解析 persona.toml，返回 blocks 字典。
+        加载并解析 persona.toml，返回完整数据字典。
 
         返回：
-            {"A_persona": "...", "E_rules": "...", ...}
+            dict，包含：
+                "blocks"   → {"A_persona": "...", "E_rules": "...", ...}
+                "identity" → {"assistant_name": "...", "user_name": "..."}
 
         异常：
             FileNotFoundError — 文件不存在时抛出
@@ -158,7 +159,13 @@ class PromptBuilder:
                 "persona.toml 中未找到 [blocks] 节，请检查文件格式。"
             )
 
-        return blocks
+        # 读取 [identity] 块，提供默认值保证向后兼容
+        # 旧版 persona.toml 没有此块时不会报错
+        identity = data.get("identity", {})
+        identity.setdefault("assistant_name", "助手")
+        identity.setdefault("user_name", "用户")
+
+        return {"blocks": blocks, "identity": identity}
 
     # -------------------------------------------------------------------------
     # 私有方法：Block B — 时间与状态上下文
@@ -356,3 +363,17 @@ def build_system_prompt(context: dict | None = None) -> str:
         完整的 system prompt 字符串。
     """
     return get_builder().build(context)
+    
+def get_identity(self) -> dict:
+    """
+    返回 persona.toml 中的 [identity] 配置。
+
+    返回格式：
+        {
+            "assistant_name": str,  # 助手名字
+            "user_name":      str,  # 用户名字
+        }
+
+    调用方：push_scheduler.py 的推送消息生成函数
+    """
+    return dict(self._identity)

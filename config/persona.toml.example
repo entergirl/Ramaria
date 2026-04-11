@@ -1,3 +1,9 @@
+[identity]
+# 助手的名字，会出现在主动推送的消息生成 prompt 中
+assistant_name = "助手"
+# 用户的名字，会出现在主动推送的消息生成 prompt 中
+user_name = "用户"
+
 [blocks]
 
 A_persona = """

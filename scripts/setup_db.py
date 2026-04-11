@@ -64,6 +64,23 @@ from ramaria.config import DB_PATH  # noqa: E402
 
 
 # =============================================================================
+# 路径配置
+# =============================================================================
+
+# 脚本自身在 scripts/ 下，项目根目录是它的上一级
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_ROOT_DIR    = _SCRIPTS_DIR.parent
+_SRC_DIR     = _ROOT_DIR / "src"
+
+# 将 src/ 加入模块搜索路径，以便 import ramaria.config
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+# 延迟导入，等路径设置完成后再 import
+from ramaria.config import DB_PATH  # noqa: E402
+
+
+# =============================================================================
 # 数据库连接工具
 # =============================================================================
 

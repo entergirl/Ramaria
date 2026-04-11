@@ -23,17 +23,18 @@ from typing import Optional
 
 import numpy as np
 
-from ramaria.config import EMBEDDING_MODEL, DB_PATH
+from ramaria.config import DB_PATH, EMBEDDING_MODEL
 from ramaria.core.llm_client import call_local_summary, strip_thinking
 from ramaria.storage.database import (
-    get_l1_by_id,
-    get_all_l1_ids_in_graph,
-    get_or_create_node,
-    save_edge,
     get_all_canonical_keywords,
-    save_keyword_with_alias,
+    get_all_l1_ids_in_graph,
+    get_l1_by_id,
+    get_or_create_node,
     save_alias_conflict,
+    save_edge,
+    save_keyword_with_alias,
 )
+
 from logger import get_logger
 
 logger = get_logger(__name__)

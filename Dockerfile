@@ -22,12 +22,9 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HUB_OFFLINE=1 \
     PIP_NO_CACHE_DIR=1
 
-# 复制依赖文件
-COPY requirements.txt .
-
-# 安装 Python 依赖
+# 使用 pyproject.toml 安装依赖
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -e .
 
 # 复制项目文件
 COPY . .

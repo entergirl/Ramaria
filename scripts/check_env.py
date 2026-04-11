@@ -93,7 +93,7 @@ def check_dependencies() -> bool:
             all_ok = False
 
     if not all_ok:
-        print(f"\n      修复: pip install -r requirements.txt")
+        print(f"\n      修复: pip install -e .")
 
     return all_ok
 
@@ -280,7 +280,7 @@ def main():
     if all(results):
         print(f"\n{green('🎉 所有检查通过！可以启动应用了。')}")
         print("\n  启动方式:")
-        print("    Windows: start.bat")
+        print("    Windows: win\\start.bat")
         print("    或:      python app/main.py")
         return 0
     else:

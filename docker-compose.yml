@@ -1,14 +1,14 @@
 # =============================================================================
 # 珊瑚菌 Ramaria Docker Compose 配置
 # =============================================================================
-# 使用方法:
+# 使用方法（在项目根目录执行）:
 #   启动服务: docker-compose up -d
 #   查看日志: docker-compose logs -f
 #   停止服务: docker-compose down
 #
 # 注意事项:
 #   - 需要在宿主机运行 LM Studio / Ollama 等本地推理服务
-#   - 将 .env 文件中的 LOCAL_API_URL 改为宿主机的 IP 地址
+#   - 将 .env 文件中的 LOCAL_API_URL 改为宿主机的局域网 IP 地址
 
 services:
   ramaria:

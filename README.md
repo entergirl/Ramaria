@@ -198,10 +198,9 @@ Ramaria/
 ├── linux/, mac/, win/                # 平台脚本
 │   ├── install.sh/.bat              # 一键安装脚本
 │   └── start.sh/.bat                # 启动脚本
-├── scripts/                          # 数据库管理脚本
-│   ├── setup_db.py                   # 一键初始化（含全部迁移）
-│   ├── check_env.py                  # 环境检查脚本
-│   └── migrate_*.py                  # 历史迁移脚本
+├── scripts/                          # 数据库与运维脚本
+│   ├── setup_db.py                   # 数据库初始化脚本（新环境/升级）
+│   └── check_env.py                  # 环境检查脚本
 ├── static/                           # 前端静态资源
 │   ├── index.html                    # 主对话界面
 │   ├── import.html                   # 聊天记录导入界面
@@ -243,6 +242,43 @@ Ramaria/
 
 ---
 
+## 数据库初始化
+
+项目使用 SQLite 数据库存储所有结构化数据，数据库文件位于 `data/assistant.db`。
+
+### 首次使用
+
+```bash
+python scripts/setup_db.py
+```
+
+这会自动完成：
+1. 创建完整的 12 张表（sessions、messages、memory_l1、memory_l2、l2_sources、user_profile、keyword_pool、graph_nodes、graph_edges、conflict_queue、pending_push、settings）
+2. 建立 12 个查询索引
+3. 写入默认配置项
+
+### 已有环境升级
+
+```bash
+python scripts/setup_db.py
+```
+
+幂等迁移设计：脚本会检测现有表结构，自动补齐缺失的列/表/索引，不会覆盖已有数据。
+
+### 强制重建（谨慎使用）
+
+```bash
+python scripts/setup_db.py --force-rebuild
+```
+
+会删除现有数据库并重建，**所有数据将丢失**。执行前会要求输入 `YES` 二次确认，并自动备份到 `data/assistant.db.backup_YYYYMMDD_HHMMSS.db`。
+
+### 应用启动时的自动迁移
+
+应用启动时（`python app/main.py`）会自动执行幂等迁移，确保 `last_accessed_at` 列存在。
+
+---
+
 ## 🚀 快速开始
 
 ### 环境要求
@@ -267,6 +303,8 @@ docker-compose up -d
 ```
 
 安装脚本自动完成：创建虚拟环境 → 安装依赖 → 初始化数据库
+
+> **首次运行**：如果数据库尚未初始化，应用启动时会自动创建。
 
 ### 配置
 

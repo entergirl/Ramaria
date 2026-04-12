@@ -287,70 +287,33 @@ python scripts/setup_db.py --force-rebuild
 - **本地模型服务** LM Studio / Ollama 等（兼容 OpenAI API 格式）
 - **嵌入模型** 首次启动时自动下载（约 300MB），或手动配置
 
-### 安装并启动
+### 安装
 
 ```bash
 # Windows
 win\install.bat
-win\start.bat
 
 # Linux / macOS
 bash linux/install.sh
-bash linux/start.sh
 
 # Docker
 docker-compose up -d
 ```
 
-安装脚本自动完成：创建虚拟环境 → 安装依赖 → 初始化数据库
+### 启动与访问
 
-> **首次运行**：如果数据库尚未初始化，应用启动时会自动创建。
+```bash
+# Windows
+win\start.bat
 
-### 配置
-
-编辑 `.env` 文件（首次运行后自动创建）：
-
-```ini
-# 本地模型服务地址（默认：LM Studio）
-LOCAL_API_URL=http://localhost:1234/v1/chat/completions
-
-# 模型名称（需与推理服务中加载的模型一致）
-LOCAL_MODEL_NAME=qwen/qwen3.5-9b
-
-# 嵌入模型（首次启动自动下载，或手动指定路径）
-EMBEDDING_MODEL=  # 留空自动下载，或指定本地路径
+# Linux / macOS
+source venv/bin/activate && python app/main.py
 ```
-
-> **提示**：确保 LM Studio / Ollama 已启动并加载模型后，再启动珊瑚菌。
-
-### 访问
 
 - 本地：`http://localhost:8000`
 - 局域网：`http://<电脑IP>:8000`
 
-### 可选依赖安装
-
-```bash
-# Telegram 机器人支持
-pip install -e ".[telegram]"
-
-# MCP Server 支持（用于 Claude Desktop 集成）
-pip install -e ".[mcp]"
-
-# 开发依赖
-pip install -e ".[dev]"
-```
-
-### 常见问题
-
-**Q: 启动报错 "无法连接到本地模型"**
-> 请确认 LM Studio / Ollama 已启动，并检查 `.env` 中的 `LOCAL_API_URL` 配置。
-
-**Q: 嵌入模型加载失败**
-> 确认 `EMBEDDING_MODEL_PATH` 路径正确，模型文件夹下有 `config.json` 等必要文件。
-
-**Q: 首次运行无响应**
-> 首次启动会预热 BM25 索引，请耐心等待几秒钟。
+> 详细安装配置说明请查阅：[快速开始指南](README_快速开始.md)
 
 ---
 

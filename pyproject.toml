@@ -60,29 +60,59 @@ all      = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/entergirl/Ramaria"
-Repository = "https://github.com/entergirl/Ramaria"
+Homepage      = "https://github.com/entergirl/Ramaria"
+Repository    = "https://github.com/entergirl/Ramaria"
 Documentation = "https://github.com/entergirl/Ramaria#readme"
-Changelog = "https://github.com/entergirl/Ramaria/releases"
-Issues = "https://github.com/entergirl/Ramaria/issues"
+Changelog     = "https://github.com/entergirl/Ramaria/releases"
+Issues        = "https://github.com/entergirl/Ramaria/issues"
 
 [project.scripts]
 ramaria = "app.main:main"
 
+# =============================================================================
+# 临时修复（v0.3.6-hotfix）
+#
+# 原始问题：
+#   logger.py 和 constants.py 位于项目根目录。
+#   原配置 where = ["src"] 只扫描 src/ 子目录，导致这两个文件在
+#   pip install -e . 后不在 Python 模块搜索路径内，运行时抛出
+#   ModuleNotFoundError: No module named 'logger'
+#
+# 修复方案：
+#   · [tool.setuptools] py-modules 显式声明根目录的两个散文件模块
+#   · [tool.setuptools.packages.find] 改为从根目录扫描，include 白名单
+#     精确限定 app 和 ramaria 两个包，避免把无关目录打进安装包
+#   · [tool.setuptools.package-dir] 保持 ramaria -> src/ramaria 的映射，
+#     确保 from ramaria.xxx import ... 的写法继续有效
+#
+# 后续（正式版 v0.4）：
+#   将 logger.py 和 constants.py 移入 src/ramaria/，
+#   将所有 from logger import ... 改为 from ramaria.logger import ...
+#   届时可删除此 hotfix 注释，恢复 where = ["src"] 的简洁配置。
+# =============================================================================
+
+[tool.setuptools]
+# 声明根目录的单文件模块，pip install -e . 后可直接 import logger / import constants
+py-modules = ["logger", "constants"]
+
 [tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-dir]
-"" = "src"
-
-[tool.setuptools.package-data]
-ramaria = [
-    "py.typed",
+# 从根目录扫描，而非只扫描 src/
+where = ["."]
+# 白名单：只打包 app 包和 ramaria 包（ramaria 通过 package-dir 映射到 src/ramaria）
+include = [
+    "app",
+    "app.*",
+    "ramaria",
+    "ramaria.*",
 ]
 
+[tool.setuptools.package-dir]
+# ramaria 包的实际位置是 src/ramaria/，保持现有 import 路径不变
+"ramaria" = "src/ramaria"
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
+testpaths        = ["tests"]
+python_files     = ["test_*.py"]
+python_classes   = ["Test*"]
 python_functions = ["test_*"]
-asyncio_mode = "auto"
+asyncio_mode     = "auto"

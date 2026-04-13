@@ -208,6 +208,53 @@ def check_and_init_db() -> None:
 # 启动服务
 # =============================================================================
 
+def run_health_check() -> None:
+    """
+    以子进程方式运行 scripts/health_check.py。
+
+    使用子进程而非直接 import，好处是：
+        · health_check 失败时不污染 start.py 的进程环境
+        · 用户可以单独运行 health_check.py 进行排障，行为与 start.py 调用完全一致
+        · health_check 内部的 sys.exit() 不会直接终止 start.py
+
+    退出码约定：
+        0 — 全部通过，继续启动
+        非 0 — 有失败项，终止启动（错误信息已在子进程中打印）
+    """
+    health_check_script = ROOT / "scripts" / "health_check.py"
+
+    if not health_check_script.exists():
+        # health_check.py 不存在时跳过检查，允许继续启动
+        # 避免脚本缺失导致所有用户无法启动
+        warn(
+            "未找到 scripts/health_check.py，跳过启动前检查。\n"
+            "  建议确认项目文件完整，或重新拉取最新代码。"
+        )
+        return
+
+    print("\n  正在执行启动前健康检查...\n")
+
+    result = subprocess.run(
+        [str(VENV_PYTHON), str(health_check_script)],
+        cwd=str(ROOT),   # 工作目录设为项目根目录，与 health_check 内的路径推断一致
+    )
+
+    if result.returncode != 0:
+        # 错误信息已由 health_check.py 打印，这里只补充操作提示
+        print()
+        print("  ┌─────────────────────────────────────────────────────┐")
+        print("  │  健康检查未通过，启动已终止。                        │")
+        print("  │  请根据上方提示修复问题后重新运行 start.py。          │")
+        print("  │                                                     │")
+        print("  │  如需跳过检查直接启动（调试用）：                    │")
+        print("  │    python app/main.py                               │")
+        print("  └─────────────────────────────────────────────────────┘")
+        print()
+        input("按回车键退出...")
+        sys.exit(1)
+
+    print("  健康检查通过，正在启动服务...\n")
+
 def start_service() -> None:
     """通过 venv 内的 Python 启动 app/main.py。"""
     main_script = ROOT / "app" / "main.py"
@@ -262,7 +309,7 @@ def main() -> None:
     check_venv()
     check_env_file()
     check_and_init_db()
-
+    run_health_check()
     print()
     info("前置检查全部通过，正在启动服务...")
     start_service()

@@ -166,6 +166,7 @@ from app.routes.import_ctrl import router as import_ctrl_router
 from app.routes.sessions    import router as sessions_router
 from app.routes.settings    import router as settings_router
 from app.routes.graph_ctrl  import router as graph_ctrl_router
+from app.routes.memory      import router as memory_router
 
 app.include_router(chat_router)
 app.include_router(router_ctrl_router)
@@ -173,6 +174,7 @@ app.include_router(import_ctrl_router)
 app.include_router(sessions_router)
 app.include_router(settings_router)
 app.include_router(graph_ctrl_router)
+app.include_router(memory_router)
 
 
 # =============================================================================

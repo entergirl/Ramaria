@@ -408,6 +408,22 @@ def generate_l1_summary(session_id: int) -> int | None:
     # 第六步：校验字段，写入 memory_l1 表
     validated = _validate_and_fix(parsed)
 
+    # 推断本条 L1 的基准时间：
+    # 优先取 session 内最后一条消息的时间（最贴近对话结束时刻），
+    # 其次取第一条消息的时间，最后才退化为当前时间。
+    # 这样历史导入的摘要 created_at 会反映原始对话时间，
+    # 而非批处理运行时间，衰减计算和前端显示均正确。
+    l1_created_at: str | None = None
+    if messages:
+        # messages 已按 created_at ASC 排序（get_messages 的默认行为）
+        # 取最后一条的时间作为"对话结束时刻"
+        last_msg = messages[-1]
+        try:
+            # sqlite3.Row 支持列名访问
+            l1_created_at = last_msg["created_at"]
+        except (KeyError, IndexError):
+            pass
+
     l1_id = save_l1_summary(
         session_id  = session_id,
         summary     = validated["summary"],
@@ -416,6 +432,7 @@ def generate_l1_summary(session_id: int) -> int | None:
         atmosphere  = validated["atmosphere"],
         valence     = validated["valence"],
         salience    = validated["salience"],
+        created_at  = l1_created_at,   # 传入原始时间，None 时 database 层自动用 _now()
     )
 
     logger.info(f"L1 摘要已写入，id = {l1_id}")

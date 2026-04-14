@@ -242,6 +242,7 @@ def save_l1_summary(
     atmosphere: str | None,
     valence: float = 0.0,
     salience: float = 0.5,
+    created_at: str | None = None,
 ) -> int:
     """
     将一条 L1 摘要写入 memory_l1 表。
@@ -254,6 +255,11 @@ def save_l1_summary(
         atmosphere  — 对话氛围，四字以内，如 "专注高效"
         valence     — 情绪效价，五档：-1.0/-0.5/0.0/0.5/1.0，默认中性 0.0
         salience    — 情感显著性，五档：0.0/0.25/0.5/0.75/1.0，默认中等 0.5
+        created_at  — 可选，摘要的基准时间（ISO 8601 字符串）。
+                      正常对话路径不传此参数，使用 _now()（摘要生成时刻）。
+                      历史数据导入路径传入 session 的原始结束时间，
+                      确保衰减计算和前端显示反映真实的对话发生时间，
+                      而非批处理运行时间。
 
     返回：
         int — 新插入 L1 记录的 id
@@ -261,6 +267,10 @@ def save_l1_summary(
     if time_period not in TIME_PERIOD_OPTIONS:
         logger.warning(f"time_period 值 {time_period!r} 不在合法列表内，已置为 None")
         time_period = None
+
+    # created_at 未传入时使用当前时间（正常对话路径）
+    # 传入时使用调用方指定的时间（历史导入路径，保留原始对话时间）
+    record_time = created_at if created_at is not None else _now()
 
     with _db_conn() as conn:
         cursor = conn.cursor()
@@ -272,7 +282,7 @@ def save_l1_summary(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (session_id, summary, keywords, time_period, atmosphere,
-             valence, salience, _now())
+             valence, salience, record_time)
         )
         conn.commit()
         return cursor.lastrowid

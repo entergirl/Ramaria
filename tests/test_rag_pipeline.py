@@ -119,14 +119,25 @@ def test_save_l1_with_emotion():
         close_session(sid)
 
         # 写入带情感字段的 L1（高兴奋、高显著性）
+        # 测试自定义 created_at（模拟历史导入路径）
+        fake_past_time = "2025-01-15T20:30:00+00:00"
         l1_id = save_l1_summary(
             session_id  = sid,
             summary     = "烧酒完成了重要里程碑，情绪高涨。",
             keywords    = "里程碑,成就,激动",
             time_period = "夜间",
             atmosphere  = "兴奋激动",
-            valence     = 1.0,    # 非常积极
-            salience    = 1.0,    # 极高显著
+            valence     = 1.0,
+            salience    = 1.0,
+            created_at  = fake_past_time,   # 验证自定义时间被正确写入
+        )
+
+        # 读回验证 created_at 是否使用了传入值而非 _now()
+        row = get_l1_by_id(l1_id)
+        ok_time = print_result(
+            "自定义 created_at 被正确写入",
+            row["created_at"].startswith("2025-01-15"),
+            f"期望前缀 2025-01-15，实际 {row['created_at']}"
         )
 
         # 读回并验证
@@ -168,7 +179,7 @@ def test_save_l1_with_emotion():
             f"valence={row2['valence']}（期望0.0），salience={row2['salience']}（期望0.5）"
         )
 
-        return ok_valence and ok_salience and ok_default
+        return ok_valence and ok_salience and ok_default and ok_time
 
     except Exception as e:
         print_result("情感字段写入测试", False, str(e))

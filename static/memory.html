@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0,
+        user-scalable=no, viewport-fit=cover">
+  <title>珊瑚菌 · 记忆查看器</title>
+
+  <!-- 复用主界面的字体和设计变量 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap"
+        rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+
+  <style>
+    /* ==========================================================
+       memory.html 专用样式
+       复用 variables.css 的 CSS 变量，保持视觉风格一致
+       ========================================================== */
+
+    body {
+      padding: 0 20px;
+      font-family: var(--font-body);
+    }
+
+    /* ── 顶部导航 ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg);
+    }
+
+    .nav-back {
+      font-size: .75rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      text-decoration: none;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: color var(--transition-normal), border-color var(--transition-normal);
+    }
+    .nav-back:hover { color: var(--coral); border-color: var(--coral-light); }
+
+    /* ── 页面主体 ── */
+    .page-body {
+      width: 100%;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    /* ── 页面标题 ── */
+    .page-title {
+      font-family: var(--font-title);
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: var(--coral);
+      letter-spacing: .04em;
+      margin-bottom: 4px;
+    }
+    .page-subtitle {
+      font-size: .72rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      margin-bottom: 20px;
+    }
+
+    /* ── Tab 导航 ── */
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      padding: 8px 18px;
+      font-size: .78rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color var(--transition-normal), border-color var(--transition-normal);
+      margin-bottom: -1px;  /* 压住下方分隔线 */
+    }
+    .tab-btn:hover { color: var(--coral); }
+    .tab-btn.active {
+      color: var(--coral);
+      border-bottom-color: var(--coral);
+      font-weight: 500;
+    }
+
+    /* ── Tab 内容面板 ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── 加载/错误/空状态 ── */
+    .state-box {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: .78rem;
+    }
+    .state-box.error { color: #c0534a; }
+
+    /* ── 分页控件 ── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+      font-size: .75rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+    }
+
+    .page-btn {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text-mid);
+      font-family: var(--font-mono);
+      font-size: .75rem;
+      cursor: pointer;
+      transition: border-color var(--transition-normal), color var(--transition-normal);
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--coral-light);
+      color: var(--coral);
+    }
+    .page-btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    /* ── L1 / L2 记忆卡片 ── */
+    .memory-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      transition: border-color var(--transition-normal), background var(--transition-slow);
+    }
+    .memory-card:hover { border-color: var(--coral-light); }
+
+    /* 卡片顶行：衰减度 + 删除按钮 */
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+
+    .card-meta-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* 衰减度标签 */
+    .decay-badge {
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+    /* 颜色由 JS 动态设置 data-level 属性 */
+    .decay-badge[data-level="high"] {
+      color: #4f8f4f;
+      border-color: #7cad7c;
+      background: rgba(124, 173, 124, .1);
+    }
+    .decay-badge[data-level="mid"] {
+      color: var(--coral-dim);
+      border-color: var(--coral-light);
+      background: rgba(201, 124, 90, .08);
+    }
+    .decay-badge[data-level="low"] {
+      color: var(--text-dim);
+      border-color: var(--border);
+      background: transparent;
+    }
+
+    /* 时间段、氛围、absorbed 等小标签 */
+    .tag {
+      font-size: .65rem;
+      font-family: var(--font-mono);
+      padding: 2px 7px;
+      border-radius: 8px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border-light);
+      color: var(--text-mid);
+      white-space: nowrap;
+    }
+    .tag.absorbed {
+      color: var(--text-dim);
+      border-color: var(--border-light);
+    }
+
+    /* 删除按钮 */
+    .del-btn {
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      padding: 3px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all var(--transition-normal);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .del-btn:hover { border-color: #d4756b; color: #c0534a; }
+
+    /* 二次确认状态：按钮变红，文字变"确认删除？" */
+    .del-btn.confirming {
+      border-color: #c0534a;
+      color: #fff;
+      background: #c0534a;
+    }
+
+    /* 摘要正文 */
+    .card-summary {
+      font-size: .88rem;
+      color: var(--text);
+      line-height: 1.7;
+      margin-bottom: 8px;
+    }
+
+    /* 关键词 */
+    .card-keywords {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .kw-tag {
+      font-size: .65rem;
+      font-family: var(--font-mono);
+      padding: 1px 7px;
+      border-radius: 8px;
+      background: rgba(201, 124, 90, .08);
+      border: 1px solid var(--coral-light);
+      color: var(--coral-dim);
+    }
+
+    /* 底部时间行 */
+    .card-footer {
+      font-size: .66rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* ── L3 画像板块 ── */
+    .profile-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 10px;
+    }
+
+    .profile-label {
+      font-size: .72rem;
+      font-family: var(--font-mono);
+      color: var(--coral);
+      font-weight: 500;
+      letter-spacing: .04em;
+      margin-bottom: 8px;
+    }
+
+    .profile-content {
+      font-size: .86rem;
+      color: var(--text);
+      line-height: 1.75;
+      white-space: pre-wrap;   /* 保留换行，自动折行 */
+      word-break: break-word;
+    }
+
+    .profile-empty {
+      font-size: .78rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-style: italic;
+    }
+
+    /* ── Toast（复用主界面样式，内联实现） ── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+      font-size: .75rem;
+      font-family: var(--font-mono);
+      padding: 8px 18px;
+      border-radius: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.1);
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s ease, transform .25s ease;
+      z-index: 100;
+    }
+    #toast.show     { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.error    { border-color: #d4756b; color: #c0534a; }
+    #toast.success  { border-color: var(--dot-local); color: #4f8f4f; }
+
+    /* ── 响应式 ── */
+    @media (max-width: 600px) {
+      .card-header { flex-direction: column; align-items: flex-start; }
+      .del-btn { align-self: flex-end; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ========================================================
+     顶部导航
+     ======================================================== -->
+<header role="banner">
+  <div class="header-title">
+    <span class="title-main">珊瑚菌 · 记忆查看器</span>
+    <span class="title-sub">Memory Viewer</span>
+  </div>
+  <div id="controls" role="toolbar">
+    <a href="/" class="nav-back">← 返回对话</a>
+  </div>
+</header>
+
+
+<!-- ========================================================
+     页面主体
+     ======================================================== -->
+<div class="page-body">
+
+  <div class="page-title">记忆内容</div>
+  <div class="page-subtitle">
+    L1 单次摘要 · L2 聚合摘要 · L3 用户画像 — 页面加载时一次性读取
+  </div>
+
+  <!-- Tab 导航 -->
+  <div class="tab-bar" role="tablist">
+    <button class="tab-btn active" role="tab" data-tab="l1"
+            aria-selected="true">L1 单次摘要</button>
+    <button class="tab-btn" role="tab" data-tab="l2"
+            aria-selected="false">L2 聚合摘要</button>
+    <button class="tab-btn" role="tab" data-tab="l3"
+            aria-selected="false">L3 用户画像</button>
+  </div>
+
+  <!-- ── L1 面板 ── -->
+  <div class="tab-panel active" id="panel-l1" role="tabpanel">
+    <div id="l1-content">
+      <div class="state-box">加载中…</div>
+    </div>
+    <div class="pagination" id="l1-pagination" style="display:none"></div>
+  </div>
+
+  <!-- ── L2 面板 ── -->
+  <div class="tab-panel" id="panel-l2" role="tabpanel">
+    <div id="l2-content">
+      <div class="state-box">加载中…</div>
+    </div>
+    <div class="pagination" id="l2-pagination" style="display:none"></div>
+  </div>
+
+  <!-- ── L3 面板 ── -->
+  <div class="tab-panel" id="panel-l3" role="tabpanel">
+    <div id="l3-content">
+      <div class="state-box">加载中…</div>
+    </div>
+  </div>
+
+</div><!-- /.page-body -->
+
+<div id="toast" role="alert" aria-live="polite"></div>
+
+
+<!-- ========================================================
+     JavaScript
+     ======================================================== -->
+<script>
+'use strict';
+
+// ============================================================
+// 全局数据缓存
+// 页面加载时一次性请求三层数据，缓存在这里，Tab 切换不重新请求
+// ============================================================
+const _cache = {
+  l1: { items: [], total: 0, page: 1, limit: 20 },
+  l2: { items: [], total: 0, page: 1, limit: 10 },
+  l3: null,   // 对象或 null
+};
+
+// 记录哪些层已完成初次加载（防止重复请求）
+const _loaded = { l1: false, l2: false, l3: false };
+
+
+// ============================================================
+// Toast 通知
+// ============================================================
+let _toastTimer = null;
+
+function showToast(msg, type = 'default', duration = 3000) {
+  const el = document.getElementById('toast');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  el.className = type !== 'default' ? type : '';
+  el.textContent = msg;
+  el.classList.remove('show');
+  void el.offsetWidth;   // 强制回流，使动画重新触发
+  el.classList.add('show');
+  _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+
+// ============================================================
+// Tab 切换
+// ============================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    // 切换按钮状态
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+
+    // 切换面板显示
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(`panel-${tab}`).classList.add('active');
+  });
+});
+
+
+// ============================================================
+// 工具函数
+// ============================================================
+
+/**
+ * 将 ISO 8601 时间字符串格式化为 "YYYY-MM-DD HH:mm" 显示。
+ * @param {string|null} isoStr
+ * @returns {string}
+ */
+function fmtTime(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} `
+         + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return isoStr.slice(0, 16); }
+}
+
+/**
+ * 根据衰减保留率 R（0~1）返回显示级别。
+ * high: R >= 0.6，mid: R >= 0.3，low: R < 0.3
+ * @param {number} r
+ * @returns {'high'|'mid'|'low'}
+ */
+function decayLevel(r) {
+  if (r >= 0.6) return 'high';
+  if (r >= 0.3) return 'mid';
+  return 'low';
+}
+
+/**
+ * 将关键词字符串（逗号分隔）转为 HTML 标签组。
+ * @param {string|null} kwStr
+ * @returns {string}  HTML 字符串
+ */
+function renderKeywords(kwStr) {
+  if (!kwStr) return '';
+  return kwStr.split(',')
+    .map(k => k.trim())
+    .filter(Boolean)
+    .map(k => `<span class="kw-tag">${_esc(k)}</span>`)
+    .join('');
+}
+
+/**
+ * HTML 转义，防止 XSS。
+ * @param {string} str
+ * @returns {string}
+ */
+function _esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+
+// ============================================================
+// 删除按钮二次确认逻辑
+//
+// 第一次点击：按钮变为"确认删除？"红色状态，3 秒后自动复位
+// 第二次点击（confirming 状态）：执行删除
+// ============================================================
+
+/**
+ * 为单个删除按钮绑定二次确认逻辑。
+ *
+ * @param {HTMLButtonElement} btn      删除按钮元素
+ * @param {Function}          onConfirm 确认后的异步回调
+ */
+function bindDeleteBtn(btn, onConfirm) {
+  let resetTimer = null;
+
+  btn.addEventListener('click', async () => {
+    if (!btn.classList.contains('confirming')) {
+      // 第一次点击：进入确认状态
+      btn.classList.add('confirming');
+      btn.textContent = '确认删除？';
+
+      // 3 秒后自动复位
+      resetTimer = setTimeout(() => {
+        btn.classList.remove('confirming');
+        btn.textContent = '删除';
+      }, 3000);
+
+    } else {
+      // 第二次点击：执行删除
+      clearTimeout(resetTimer);
+      btn.disabled = true;
+      btn.textContent = '删除中…';
+
+      try {
+        await onConfirm();
+      } catch (e) {
+        // 删除失败：复位按钮，显示错误
+        btn.disabled = false;
+        btn.classList.remove('confirming');
+        btn.textContent = '删除';
+        showToast(e.message || '删除失败', 'error');
+      }
+    }
+  });
+}
+
+
+// ============================================================
+// L1：渲染与分页
+// ============================================================
+
+/**
+ * 从缓存数据渲染 L1 列表。
+ * 分页在后端完成，前端只渲染当前页的 items。
+ */
+function renderL1() {
+  const { items, total, page, limit } = _cache.l1;
+  const container = document.getElementById('l1-content');
+  const pagEl     = document.getElementById('l1-pagination');
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="state-box">暂无 L1 摘要记录</div>';
+    pagEl.style.display = 'none';
+    return;
+  }
+
+  // 渲染卡片列表
+  container.innerHTML = items.map(item => {
+    const pct    = Math.round(item.decay_r * 100);
+    const level  = decayLevel(item.decay_r);
+    const kws    = renderKeywords(item.keywords);
+    const tp     = item.time_period ? `<span class="tag">${_esc(item.time_period)}</span>` : '';
+    const atm    = item.atmosphere  ? `<span class="tag">${_esc(item.atmosphere)}</span>`  : '';
+    const abs    = item.absorbed    ? '<span class="tag absorbed">已吸收</span>' : '';
+    const sal    = `<span class="tag">显著性 ${item.salience ?? '—'}</span>`;
+
+    return `
+      <div class="memory-card" data-id="${item.id}">
+        <div class="card-header">
+          <div class="card-meta-group">
+            <span class="decay-badge" data-level="${level}">记忆留存 ${pct}%</span>
+            ${tp}${atm}${sal}${abs}
+          </div>
+          <button class="del-btn" data-layer="l1" data-id="${item.id}"
+                  aria-label="删除 L1 摘要 ${item.id}">删除</button>
+        </div>
+        <div class="card-summary">${_esc(item.summary)}</div>
+        ${kws ? `<div class="card-keywords">${kws}</div>` : ''}
+        <div class="card-footer">
+          <span>创建于 ${fmtTime(item.created_at)}</span>
+          ${item.last_accessed_at
+            ? `<span>最近访问 ${fmtTime(item.last_accessed_at)}</span>` : ''}
+          <span>L1 id: ${item.id}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 为每个删除按钮绑定二次确认逻辑
+  container.querySelectorAll('.del-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    bindDeleteBtn(btn, async () => {
+      await deleteMemory('l1', id);
+    });
+  });
+
+  // 渲染分页控件
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) {
+    pagEl.style.display = 'none';
+  } else {
+    pagEl.style.display = 'flex';
+    pagEl.innerHTML = `
+      <button class="page-btn" id="l1-prev"
+              ${page <= 1 ? 'disabled' : ''}>← 上一页</button>
+      <span>第 ${page} / ${totalPages} 页，共 ${total} 条</span>
+      <button class="page-btn" id="l1-next"
+              ${page >= totalPages ? 'disabled' : ''}>下一页 →</button>
+    `;
+
+    document.getElementById('l1-prev').addEventListener('click', () => {
+      if (_cache.l1.page > 1) {
+        _cache.l1.page--;
+        fetchL1(_cache.l1.page);
+      }
+    });
+    document.getElementById('l1-next').addEventListener('click', () => {
+      if (_cache.l1.page < totalPages) {
+        _cache.l1.page++;
+        fetchL1(_cache.l1.page);
+      }
+    });
+  }
+}
+
+/**
+ * 请求 L1 分页数据并刷新渲染。
+ * @param {number} page
+ */
+async function fetchL1(page = 1) {
+  document.getElementById('l1-content').innerHTML =
+    '<div class="state-box">加载中…</div>';
+
+  try {
+    const resp = await fetch(`/api/memory/l1?page=${page}&limit=${_cache.l1.limit}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    _cache.l1.items = data.items;
+    _cache.l1.total = data.total;
+    _cache.l1.page  = data.page;
+    _loaded.l1      = true;
+
+    renderL1();
+  } catch (e) {
+    document.getElementById('l1-content').innerHTML =
+      `<div class="state-box error">L1 数据加载失败：${_esc(e.message)}</div>`;
+  }
+}
+
+
+// ============================================================
+// L2：渲染与分页
+// ============================================================
+
+/**
+ * 从缓存数据渲染 L2 列表。
+ */
+function renderL2() {
+  const { items, total, page, limit } = _cache.l2;
+  const container = document.getElementById('l2-content');
+  const pagEl     = document.getElementById('l2-pagination');
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="state-box">暂无 L2 聚合摘要记录</div>';
+    pagEl.style.display = 'none';
+    return;
+  }
+
+  container.innerHTML = items.map(item => {
+    const pct   = Math.round(item.decay_r * 100);
+    const level = decayLevel(item.decay_r);
+    const kws   = renderKeywords(item.keywords);
+
+    // 覆盖时间段（period_start ~ period_end），只显示到日期
+    const period = (item.period_start && item.period_end)
+      ? `${item.period_start.slice(0,10)} ~ ${item.period_end.slice(0,10)}`
+      : '—';
+
+    return `
+      <div class="memory-card" data-id="${item.id}">
+        <div class="card-header">
+          <div class="card-meta-group">
+            <span class="decay-badge" data-level="${level}">记忆留存 ${pct}%</span>
+            <span class="tag">覆盖 ${period}</span>
+          </div>
+          <button class="del-btn" data-layer="l2" data-id="${item.id}"
+                  aria-label="删除 L2 摘要 ${item.id}">删除</button>
+        </div>
+        <div class="card-summary">${_esc(item.summary)}</div>
+        ${kws ? `<div class="card-keywords">${kws}</div>` : ''}
+        <div class="card-footer">
+          <span>创建于 ${fmtTime(item.created_at)}</span>
+          ${item.last_accessed_at
+            ? `<span>最近访问 ${fmtTime(item.last_accessed_at)}</span>` : ''}
+          <span>L2 id: ${item.id}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.del-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    bindDeleteBtn(btn, async () => {
+      await deleteMemory('l2', id);
+    });
+  });
+
+  // 分页控件
+  const totalPages = Math.ceil(total / limit);
+  if (totalPages <= 1) {
+    pagEl.style.display = 'none';
+  } else {
+    pagEl.style.display = 'flex';
+    pagEl.innerHTML = `
+      <button class="page-btn" id="l2-prev"
+              ${page <= 1 ? 'disabled' : ''}>← 上一页</button>
+      <span>第 ${page} / ${totalPages} 页，共 ${total} 条</span>
+      <button class="page-btn" id="l2-next"
+              ${page >= totalPages ? 'disabled' : ''}>下一页 →</button>
+    `;
+
+    document.getElementById('l2-prev').addEventListener('click', () => {
+      if (_cache.l2.page > 1) {
+        _cache.l2.page--;
+        fetchL2(_cache.l2.page);
+      }
+    });
+    document.getElementById('l2-next').addEventListener('click', () => {
+      if (_cache.l2.page < totalPages) {
+        _cache.l2.page++;
+        fetchL2(_cache.l2.page);
+      }
+    });
+  }
+}
+
+/**
+ * 请求 L2 分页数据并刷新渲染。
+ * @param {number} page
+ */
+async function fetchL2(page = 1) {
+  document.getElementById('l2-content').innerHTML =
+    '<div class="state-box">加载中…</div>';
+
+  try {
+    const resp = await fetch(`/api/memory/l2?page=${page}&limit=${_cache.l2.limit}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    _cache.l2.items = data.items;
+    _cache.l2.total = data.total;
+    _cache.l2.page  = data.page;
+    _loaded.l2      = true;
+
+    renderL2();
+  } catch (e) {
+    document.getElementById('l2-content').innerHTML =
+      `<div class="state-box error">L2 数据加载失败：${_esc(e.message)}</div>`;
+  }
+}
+
+
+// ============================================================
+// L3：渲染
+// ============================================================
+
+/** L3 六个板块的中文标签，顺序与 constants.py PROFILE_FIELDS 一致 */
+const L3_LABELS = {
+  basic_info:      '基础信息',
+  personal_status: '近期状态',
+  interests:       '兴趣爱好',
+  social:          '社交情况',
+  history:         '历史事件',
+  recent_context:  '近期背景',
+};
+
+/**
+ * 从缓存数据渲染 L3 画像。
+ */
+function renderL3() {
+  const profile   = _cache.l3;
+  const container = document.getElementById('l3-content');
+
+  if (!profile || Object.values(profile).every(v => !v)) {
+    container.innerHTML =
+      '<div class="state-box">用户画像为空（冷启动阶段，对话积累后自动填充）</div>';
+    return;
+  }
+
+  container.innerHTML = Object.entries(L3_LABELS).map(([field, label]) => {
+    const content = profile[field];
+    return `
+      <div class="profile-section">
+        <div class="profile-label">${label}
+          <span style="color:var(--text-dim);font-weight:400;margin-left:6px;
+                       font-size:.65rem;">${field}</span>
+        </div>
+        ${content
+          ? `<div class="profile-content">${_esc(content)}</div>`
+          : `<div class="profile-empty">（暂无内容）</div>`
+        }
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * 请求 L3 数据并渲染。
+ */
+async function fetchL3() {
+  try {
+    const resp = await fetch('/api/memory/profile');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    _cache.l3  = await resp.json();
+    _loaded.l3 = true;
+    renderL3();
+  } catch (e) {
+    document.getElementById('l3-content').innerHTML =
+      `<div class="state-box error">L3 画像加载失败：${_esc(e.message)}</div>`;
+  }
+}
+
+
+// ============================================================
+// 删除操作
+// ============================================================
+
+/**
+ * 调用后端删除接口，成功后从缓存中移除对应条目并刷新当前页渲染。
+ *
+ * 删除后的刷新策略：
+ *   · 从本地缓存 items 数组中移除该条（不重新请求网络），total - 1
+ *   · 若当前页删完了（items 为空）且不是第一页，自动跳到上一页重新请求
+ *   · 否则直接重新渲染当前页（已更新的缓存）
+ *
+ * @param {'l1'|'l2'} layer
+ * @param {number}     id
+ */
+async function deleteMemory(layer, id) {
+  const resp = await fetch(`/api/memory/${layer}/${id}`, { method: 'DELETE' });
+
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    // 409 冲突（L1 被 L2 引用）给出更具体的提示
+    const msg = resp.status === 409
+      ? `无法删除：该 L1 已被 L2 引用，请先删除对应 L2`
+      : (body.detail || `删除失败 HTTP ${resp.status}`);
+    throw new Error(msg);
+  }
+
+  showToast('已删除', 'success', 2000);
+
+  // 更新本地缓存
+  const c = _cache[layer];
+  c.items  = c.items.filter(item => item.id !== id);
+  c.total  = Math.max(0, c.total - 1);
+
+  // 刷新渲染：若当前页已空且不是第一页，请求上一页
+  if (c.items.length === 0 && c.page > 1) {
+    c.page--;
+    layer === 'l1' ? await fetchL1(c.page) : await fetchL2(c.page);
+  } else {
+    layer === 'l1' ? renderL1() : renderL2();
+  }
+}
+
+
+// ============================================================
+// 页面初始化：进入时并发请求三层数据
+// ============================================================
+(async () => {
+  // 三个请求并发发出，互不阻塞
+  await Promise.all([
+    fetchL1(1),
+    fetchL2(1),
+    fetchL3(),
+  ]);
+})();
+</script>
+
+</body>
+</html>

@@ -4,6 +4,12 @@ src/ramaria/storage/vector_store.py — 向量索引与语义检索模块
 负责维护三层向量索引（L0 / L1 / L2），并对外提供语义检索接口。
 是分层 RAG 检索链路的核心模块。
 
+v0.4.0 变更：
+    · BM25Index 支持增量更新：新记录先进 _pending 缓冲区，
+      累积到 BM25_INCREMENTAL_THRESHOLD 条或定时器触发时合并重建，
+      重建期间用旧索引继续服务，完成后原子替换（threading.Lock 保护）
+    · 新增 _start_bm25_timer() / _stop_bm25_timer() 供 main.py lifespan 调用
+    · get_all_l1() / get_all_l2() 支持传入外部连接复用，减少 BM25 重建时的连接开销
 """
 
 import json
@@ -23,6 +29,8 @@ from chromadb.utils.embedding_functions import (
 from rank_bm25 import BM25Okapi
 
 from ramaria.config import (
+    BM25_INCREMENTAL_THRESHOLD,
+    BM25_REBUILD_INTERVAL,
     BM25_WEIGHT,
     CHROMA_DIR,
     EMBEDDING_MODEL,
@@ -37,6 +45,7 @@ from ramaria.config import (
     MEMORY_DECAY_S_L1,
     MEMORY_DECAY_S_L2,
     RRF_K,
+    SALIENCE_DECAY_MULTIPLIER,
     SIMILARITY_THRESHOLD,
 )
 from ramaria.storage.database import get_messages
@@ -46,7 +55,7 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
-# 后台访问回写线程配置
+# 后台访问回写线程配置（与原版完全一致）
 # =============================================================================
 
 ACCESS_WRITE_INTERVAL_SECONDS = 30
@@ -59,14 +68,7 @@ _access_worker_stop   = threading.Event()
 def _start_access_worker():
     """
     启动后台访问回写线程（AccessBoostWorker）。
-
-    线程行为：
-        每隔 ACCESS_WRITE_INTERVAL_SECONDS 秒，
-        从 _access_queue 取出所有待写记录，按层级分组后批量调用
-        database.batch_update_last_accessed()。
-
     调用时机：main.py 的 lifespan startup 阶段。
-    MEMORY_DECAY_ENABLE_ACCESS_BOOST=False 时直接返回，不启动线程。
     """
     global _access_worker_thread
 
@@ -135,34 +137,79 @@ def _enqueue_access(layer: str, record_id: int):
         pass
 
 
+def _db_conn_for_rebuild():
+    """
+    为 BM25 重建提供数据库连接上下文管理器。
+    独立封装避免在 vector_store 内直接 import database 的私有函数 _db_conn。
+
+    使用方式：
+        with _db_conn_for_rebuild() as conn:
+            rows = get_all_l1(conn=conn)
+    """
+    import sqlite3
+    from contextlib import contextmanager
+    from ramaria.config import DB_PATH
+
+    @contextmanager
+    def _ctx():
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    return _ctx()
+
+
 # =============================================================================
-# BM25 索引管理
+# BM25 索引管理（v0.4.0 增量更新版）
 # =============================================================================
 
 class BM25Index:
     """
-    BM25 关键词索引，与 Chroma 向量索引并行运行。
+    BM25 关键词索引，v0.4.0 起支持增量更新。
 
-    职责：
-        · 维护内存中的 BM25 索引（基于 memory_l1 / memory_l2 的摘要文本）
-        · 提供线程安全的检索接口
-        · 在新记录写入后自动重建索引（rank_bm25 不支持增量更新）
+    增量更新流程：
+        1. index_l1() / index_l2() 写入新记录后，调用 add_pending()
+           将新文档追加到 _pending_l1 / _pending_l2 缓冲区
+        2. 缓冲区条数达到 BM25_INCREMENTAL_THRESHOLD，或后台定时器触发，
+           调用 rebuild() 合并重建索引
+        3. 重建在锁外完成计算，只在最终替换时持锁（原子替换），
+           重建期间旧索引继续正常服务检索请求
 
-    线程安全：使用 threading.RLock 保护索引读写。
+    线程安全：
+        · _rw_lock（threading.RLock）保护所有对索引变量的读写
+        · 重建计算（tokenize + BM25Okapi）在锁外执行，只有赋值时加锁
+        · _pending 缓冲区的追加和清空都在 _rw_lock 内完成
     """
 
     def __init__(self):
-        self._lock = threading.RLock()
+        # 读写锁：RLock 允许同一线程重入，防止 rebuild 内部调用 search 时死锁
+        self._rw_lock = threading.RLock()
 
-        self._l1_ids:   list[int] = []
-        self._l1_docs:  list[str] = []
-        self._l1_bm25:  BM25Okapi | None = None
+        # 当前生效的 L1 索引
+        self._l1_ids:  list[int] = []
+        self._l1_docs: list[str] = []
+        self._l1_bm25: BM25Okapi | None = None
 
-        self._l2_ids:   list[int] = []
-        self._l2_docs:  list[str] = []
-        self._l2_bm25:  BM25Okapi | None = None
+        # 当前生效的 L2 索引
+        self._l2_ids:  list[int] = []
+        self._l2_docs: list[str] = []
+        self._l2_bm25: BM25Okapi | None = None
 
+        # 增量缓冲区：存放尚未合并进主索引的新记录
+        # 格式：[(id, doc_text), ...]
+        self._pending_l1: list[tuple[int, str]] = []
+        self._pending_l2: list[tuple[int, str]] = []
+
+        # jieba 自定义词典是否已加载（只加载一次）
         self._jieba_dict_loaded = False
+
+    # -------------------------------------------------------------------------
+    # 分词与文档构建（私有）
+    # -------------------------------------------------------------------------
 
     def _tokenize(self, text: str) -> list[str]:
         """
@@ -176,9 +223,8 @@ class BM25Index:
 
     def _build_doc_text(self, summary: str, keywords: str | None) -> str:
         """
-        将 summary 和 keywords 拼成一段完整的索引文本。
-        关键词用空格分隔追加，让 jieba 把每个关键词当独立词处理，
-        同时提升关键词在 BM25 词频统计中的权重。
+        将 summary 和 keywords 拼成完整索引文本。
+        关键词用空格分隔追加，提升关键词在 BM25 词频统计中的权重。
         """
         if keywords:
             kw_text = keywords.replace(",", " ").replace("，", " ")
@@ -188,11 +234,10 @@ class BM25Index:
     def _load_jieba_custom_dict(self):
         """
         从 keyword_pool 表加载自定义词典到 jieba。
-        只在首次重建索引时执行一次，提升项目专有词汇的分词准确性。
+        只在首次重建索引时执行一次，之后标记为已加载跳过。
         """
         if self._jieba_dict_loaded:
             return
-
         try:
             from ramaria.storage.database import get_all_keywords
             keywords = get_all_keywords()
@@ -205,13 +250,64 @@ class BM25Index:
             logger.warning(f"jieba 自定义词典加载失败，使用默认分词 — {e}")
             self._jieba_dict_loaded = True
 
-    def rebuild(self, layer: str):
-        """
-        从数据库读取全量数据，重建指定层的 BM25 索引。
+    # -------------------------------------------------------------------------
+    # 增量写入接口（供 index_l1 / index_l2 调用）
+    # -------------------------------------------------------------------------
 
-        调用时机：
-            · 服务启动时（main.py lifespan startup）
-            · 新 L1/L2 写入后（index_l1/index_l2 调用结束时）
+    def add_pending(self, layer: str, record_id: int, summary: str,
+                    keywords: str | None) -> None:
+        """
+        将一条新记录追加到增量缓冲区。
+        缓冲区达到阈值时自动触发合并重建。
+
+        调用时机：index_l1() / index_l2() 写入 Chroma 后立即调用。
+
+        参数：
+            layer     — "l1" 或 "l2"
+            record_id — memory_l1 / memory_l2 的主键 id
+            summary   — 摘要文本
+            keywords  — 关键词字符串，可为 None
+        """
+        if layer not in ("l1", "l2"):
+            logger.warning(f"add_pending: 未知 layer={layer!r}，跳过")
+            return
+
+        doc_text = self._build_doc_text(summary, keywords)
+
+        with self._rw_lock:
+            if layer == "l1":
+                self._pending_l1.append((record_id, doc_text))
+                pending_count = len(self._pending_l1)
+            else:
+                self._pending_l2.append((record_id, doc_text))
+                pending_count = len(self._pending_l2)
+
+        logger.debug(
+            f"add_pending: layer={layer} id={record_id}，"
+            f"缓冲区当前 {pending_count} 条"
+        )
+
+        # 缓冲区达到阈值，触发合并重建
+        if pending_count >= BM25_INCREMENTAL_THRESHOLD:
+            logger.info(
+                f"BM25 缓冲区达到阈值（{pending_count} >= "
+                f"{BM25_INCREMENTAL_THRESHOLD}），触发增量合并重建"
+            )
+            self.rebuild(layer)
+
+    # -------------------------------------------------------------------------
+    # 全量重建（启动预热 / 定时器 / 阈值触发 均调用此函数）
+    # -------------------------------------------------------------------------
+
+    def rebuild(self, layer: str) -> None:
+        """
+        重建指定层的 BM25 索引。
+
+        v0.4.0 重建策略：
+            1. 从数据库读取全量数据（在锁外完成，不阻塞检索）
+            2. 合并缓冲区中的待写条目（在锁内取出缓冲，锁外计算）
+            3. 对合并后的完整数据集重新 tokenize + 构建 BM25Okapi
+            4. 只在最终赋值时加锁（原子替换），旧索引在步骤 1-3 期间继续服务
 
         参数：
             layer — "l1" 或 "l2"
@@ -222,45 +318,71 @@ class BM25Index:
 
         self._load_jieba_custom_dict()
 
+        # ── 步骤 1：从数据库读取全量数据（锁外，不阻塞检索）──
+        # 使用单个连接完成查询后立即关闭，减少连接开销
         try:
-            if layer == "l1":
-                from ramaria.storage.database import get_all_l1
-                rows = get_all_l1()
-            else:
-                from ramaria.storage.database import get_all_l2
-                rows = get_all_l2()
+            with _db_conn_for_rebuild() as rebuild_conn:
+                if layer == "l1":
+                    from ramaria.storage.database import get_all_l1
+                    rows = get_all_l1(conn=rebuild_conn)
+                else:
+                    from ramaria.storage.database import get_all_l2
+                    rows = get_all_l2(conn=rebuild_conn)
         except Exception as e:
             logger.warning(f"BM25 rebuild({layer}): 读取数据库失败 — {e}")
             return
 
-        if not rows:
-            logger.debug(f"BM25 rebuild({layer}): 数据为空，跳过")
-            return
+        # ── 步骤 2：取出当前缓冲区（加锁取出后立即清空，缩短持锁时间）──
+        with self._rw_lock:
+            if layer == "l1":
+                pending_snapshot = list(self._pending_l1)
+                self._pending_l1.clear()
+            else:
+                pending_snapshot = list(self._pending_l2)
+                self._pending_l2.clear()
 
-        ids       = []
-        docs      = []
-        tokenized = []
+        # ── 步骤 3：在锁外合并全量数据和缓冲区数据，完整重新分词 ──
+        # 先用数据库全量数据建立基础
+        ids:       list[int] = []
+        docs:      list[str] = []
+        tokenized: list[list[str]] = []
+
+        # 数据库全量数据中已有的 id 集合，用于去重（缓冲区可能包含已入库的条目）
+        db_ids: set[int] = set()
 
         for row in rows:
             doc_text = self._build_doc_text(
-                summary  = row["summary"]  or "",
+                summary  = row["summary"] or "",
                 keywords = row["keywords"] if "keywords" in row.keys() else None,
             )
             tokens = self._tokenize(doc_text)
             if not tokens:
                 continue
-
             ids.append(row["id"])
+            docs.append(doc_text)
+            tokenized.append(tokens)
+            db_ids.add(row["id"])
+
+        # 追加缓冲区中尚未入库（或刚入库）的新条目，跳过已在全量数据中的 id
+        for record_id, doc_text in pending_snapshot:
+            if record_id in db_ids:
+                # 已在数据库全量数据中，无需重复追加
+                continue
+            tokens = self._tokenize(doc_text)
+            if not tokens:
+                continue
+            ids.append(record_id)
             docs.append(doc_text)
             tokenized.append(tokens)
 
         if not tokenized:
-            logger.debug(f"BM25 rebuild({layer}): 分词后无有效文档，跳过")
+            logger.debug(f"BM25 rebuild({layer}): 合并后无有效文档，跳过")
             return
 
         new_bm25 = BM25Okapi(tokenized)
 
-        with self._lock:
+        # ── 步骤 4：原子替换（加锁，只做赋值，极短持锁时间）──
+        with self._rw_lock:
             if layer == "l1":
                 self._l1_ids  = ids
                 self._l1_docs = docs
@@ -270,26 +392,35 @@ class BM25Index:
                 self._l2_docs = docs
                 self._l2_bm25 = new_bm25
 
-        logger.debug(f"BM25 rebuild({layer}): 完成，共 {len(ids)} 条记录")
+        logger.debug(
+            f"BM25 rebuild({layer}): 完成，"
+            f"全量 {len(db_ids)} 条 + 缓冲 {len(pending_snapshot)} 条 "
+            f"= 最终 {len(ids)} 条"
+        )
+
+    # -------------------------------------------------------------------------
+    # 检索接口（与原版接口完全一致，加锁保护读操作）
+    # -------------------------------------------------------------------------
 
     def search(self, query: str, layer: str, top_k: int) -> list[dict]:
         """
         在指定层的 BM25 索引中检索，返回最相关的前 top_k 条结果。
 
+        加 _rw_lock 读锁保护，防止检索时索引正在被替换。
+
         返回：
-            list[dict]，每个元素包含：
-                id, document, bm25_score, rank
+            list[dict]，每个元素包含：id, document, bm25_score, rank
             索引为空时返回 []。
         """
-        with self._lock:
+        with self._rw_lock:
             if layer == "l1":
                 bm25 = self._l1_bm25
-                ids  = self._l1_ids
-                docs = self._l1_docs
+                ids  = list(self._l1_ids)
+                docs = list(self._l1_docs)
             else:
                 bm25 = self._l2_bm25
-                ids  = self._l2_ids
-                docs = self._l2_docs
+                ids  = list(self._l2_ids)
+                docs = list(self._l2_docs)
 
         if bm25 is None or not ids:
             return []
@@ -325,7 +456,89 @@ _bm25_index = BM25Index()
 
 
 # =============================================================================
-# 内部：Chroma 客户端与 Collection 管理
+# BM25 后台定时重建线程
+# =============================================================================
+
+_bm25_timer_thread: threading.Thread | None = None
+_bm25_timer_stop   = threading.Event()
+
+
+def _start_bm25_timer() -> None:
+    """
+    启动 BM25 后台定时重建线程。
+
+    每隔 BM25_REBUILD_INTERVAL 秒检查一次两个层的缓冲区：
+        · 缓冲区非空 → 触发合并重建（兜底，保证低写入量场景下索引也能更新）
+        · 缓冲区为空 → 跳过（无新数据，不做无效重建）
+
+    调用时机：main.py lifespan startup，在 BM25 预热之后调用。
+    """
+    global _bm25_timer_thread
+
+    if _bm25_timer_thread and _bm25_timer_thread.is_alive():
+        logger.debug("BM25 定时重建线程已在运行，跳过重复启动")
+        return
+
+    _bm25_timer_stop.clear()
+    _bm25_timer_thread = threading.Thread(
+        target=_bm25_timer_loop,
+        name="BM25TimerRebuilder",
+        daemon=True,
+    )
+    _bm25_timer_thread.start()
+    logger.info(
+        f"BM25 定时重建线程已启动，间隔 {BM25_REBUILD_INTERVAL} 秒"
+    )
+
+
+def _stop_bm25_timer() -> None:
+    """
+    通知 BM25 定时重建线程退出。
+    在 lifespan shutdown 阶段调用。
+    """
+    _bm25_timer_stop.set()
+    if _bm25_timer_thread and _bm25_timer_thread.is_alive():
+        _bm25_timer_thread.join(timeout=BM25_REBUILD_INTERVAL + 2)
+    logger.debug("BM25 定时重建线程已停止")
+
+
+def _bm25_timer_loop() -> None:
+    """BM25 定时重建线程主循环。"""
+    logger.debug(
+        f"BM25TimerRebuilder 进入循环，间隔 {BM25_REBUILD_INTERVAL} 秒"
+    )
+
+    while not _bm25_timer_stop.is_set():
+        _bm25_timer_stop.wait(timeout=BM25_REBUILD_INTERVAL)
+        if _bm25_timer_stop.is_set():
+            break
+
+        # 检查两个层的缓冲区，非空才重建（避免无意义重建）
+        for layer in ("l1", "l2"):
+            with _bm25_index._rw_lock:
+                pending = (
+                    _bm25_index._pending_l1
+                    if layer == "l1"
+                    else _bm25_index._pending_l2
+                )
+                has_pending = len(pending) > 0
+
+            if has_pending:
+                logger.info(
+                    f"BM25 定时重建触发：layer={layer}，"
+                    f"缓冲区有待合并数据"
+                )
+                _bm25_index.rebuild(layer)
+            else:
+                logger.debug(
+                    f"BM25 定时重建跳过：layer={layer}，缓冲区为空"
+                )
+
+    logger.debug("BM25TimerRebuilder 退出循环")
+
+
+# =============================================================================
+# 内部：Chroma 客户端与 Collection 管理（与原版完全一致）
 # =============================================================================
 
 _client      = None
@@ -366,7 +579,6 @@ _COLL_L0 = "memory_l0"
 _COLL_L1 = "memory_l1"
 _COLL_L2 = "memory_l2"
 
-# Collection 名称到层级的映射
 _COLL_TO_LAYER = {
     _COLL_L0: "l0",
     _COLL_L1: "l1",
@@ -375,7 +587,7 @@ _COLL_TO_LAYER = {
 
 
 # =============================================================================
-# 内部：衰减计算
+# 内部：衰减计算（与原版完全一致）
 # =============================================================================
 
 def _calc_decay_factor(
@@ -390,20 +602,7 @@ def _calc_decay_factor(
     公式：R = e^(-t / S_adjusted)
         t           = 距记忆生成（created_at）的天数
         S_adjusted  = decay_s × (1 + salience × SALIENCE_DECAY_MULTIPLIER)
-
-    salience 加成：
-        salience=0.0 → S 不变
-        salience=0.5 → S × 1.25（MULTIPLIER=0.5时）
-        salience=1.0 → S × 1.5
-
-    last_accessed_at 保底加成（MEMORY_DECAY_ENABLE_ACCESS_BOOST=True 时）：
-        若在 RECENT_BOOST_DAYS 天内访问过，R = max(R, RECENT_BOOST_FLOOR)
-
-    返回：
-        float — 保留率 R，范围 (0, 1]；解析时间失败时返回 1.0（安全降级）
     """
-    from ramaria.config import SALIENCE_DECAY_MULTIPLIER
-
     now = datetime.now(timezone.utc)
 
     try:
@@ -415,14 +614,12 @@ def _calc_decay_factor(
         logger.warning(f"无法解析 created_at={created_at_str!r}，衰减跳过（R=1.0）")
         return 1.0
 
-    # salience 调整稳定性系数
     s_val = salience if salience is not None else 0.5
     s_val = max(0.0, min(1.0, s_val))
     decay_s_adjusted = decay_s * (1.0 + s_val * SALIENCE_DECAY_MULTIPLIER)
 
     R = math.exp(-t_days / decay_s_adjusted)
 
-    # 保底加成
     if (
         MEMORY_DECAY_ENABLE_ACCESS_BOOST
         and last_accessed_at_str is not None
@@ -441,25 +638,16 @@ def _calc_decay_factor(
 
 
 def _adjust_distance(semantic_distance: float, R: float) -> float:
-    """
-    用保留率 R 调整语义检索距离。
-
-    公式：adjusted_distance = semantic_distance / max(R, 0.1)
-    max(R, 0.1) 防止极老记忆导致距离无限爆炸（最多放大 10 倍）。
-    """
+    """用保留率 R 调整语义检索距离。adjusted = distance / max(R, 0.1)"""
     return semantic_distance / max(R, 0.1)
 
 
 # =============================================================================
-# 内部：L0 滑动窗口切片生成
+# 内部：L0 滑动窗口切片生成（与原版完全一致）
 # =============================================================================
 
 def _make_l0_chunks(messages, session_id: int, window_size: int = L0_WINDOW_SIZE):
-    """
-    将一个 session 的消息列表切分为滑动窗口片段，用于 L0 索引。
-
-    切片规则：步长为 1，每次向前移动一条消息。
-    """
+    """将一个 session 的消息列表切分为滑动窗口片段，用于 L0 索引。"""
     chunks   = []
     msg_list = list(messages)
 
@@ -494,7 +682,7 @@ def _make_l0_chunks(messages, session_id: int, window_size: int = L0_WINDOW_SIZE
 
 
 # =============================================================================
-# 对外接口：写入索引
+# 对外接口：写入索引（v0.4.0：写入后调用 add_pending 进增量缓冲区）
 # =============================================================================
 
 def index_l1(
@@ -506,15 +694,10 @@ def index_l1(
     salience: float | None = None,
 ):
     """
-    将一条 L1 摘要写入向量索引。
+    将一条 L1 摘要写入向量索引，同时追加到 BM25 增量缓冲区。
 
-    参数：
-        l1_id      — memory_l1 表的主键 id
-        summary    — L1 摘要文本
-        keywords   — 关键词字符串，逗号分隔；可为 None
-        session_id — 对应的 session id；可为 None
-        created_at — 摘要生成时间（ISO 8601）；为 None 时不加日期前缀
-        salience   — 情感显著性；写入 metadata 供衰减计算使用
+    v0.4.0 变更：写入 Chroma 后调用 _bm25_index.add_pending()，
+    不再立即触发全量重建，由增量机制决定重建时机。
     """
     try:
         collection = _get_collection(_COLL_L1)
@@ -542,9 +725,10 @@ def index_l1(
             documents = [document],
             metadatas = [metadata],
         )
-        logger.info(f"L1 索引写入成功，l1_id={l1_id}")
+        logger.info(f"L1 向量索引写入成功，l1_id={l1_id}")
 
-        _bm25_index.rebuild("l1")
+        # v0.4.0：改为增量追加，不再全量重建
+        _bm25_index.add_pending("l1", l1_id, summary, keywords)
 
     except Exception as e:
         logger.warning(f"L1 索引写入失败，l1_id={l1_id} — {e}")
@@ -558,9 +742,9 @@ def index_l2(
     period_end: str | None = None,
 ):
     """
-    将一条 L2 聚合摘要写入向量索引。
+    将一条 L2 聚合摘要写入向量索引，同时追加到 BM25 增量缓冲区。
 
-    索引文本格式：[YYYY-MM-DD ~ YYYY-MM-DD] <摘要文本> 关键词：<关键词>
+    v0.4.0 变更：同 index_l1，改为增量追加。
     """
     try:
         collection = _get_collection(_COLL_L2)
@@ -589,9 +773,10 @@ def index_l2(
             documents = [document],
             metadatas = [metadata],
         )
-        logger.info(f"L2 索引写入成功，l2_id={l2_id}")
+        logger.info(f"L2 向量索引写入成功，l2_id={l2_id}")
 
-        _bm25_index.rebuild("l2")
+        # v0.4.0：改为增量追加
+        _bm25_index.add_pending("l2", l2_id, summary, keywords)
 
     except Exception as e:
         logger.warning(f"L2 索引写入失败，l2_id={l2_id} — {e}")
@@ -600,10 +785,7 @@ def index_l2(
 def index_l0_session(session_id: int) -> int | None:
     """
     对一个 session 的所有原始消息做滑动窗口切片，批量写入 L0 向量索引。
-
-    返回：
-        int  — 成功写入的切片数量
-        None — 跳过或失败时返回 None
+    L0 不参与 BM25 索引，此函数与原版完全一致。
     """
     try:
         messages = get_messages(session_id)
@@ -613,11 +795,6 @@ def index_l0_session(session_id: int) -> int | None:
             return None
 
         if len(messages) < L0_WINDOW_SIZE:
-            # 消息数不足一个窗口，整体作为一条索引
-            logger.debug(
-                f"session {session_id} 消息数({len(messages)}) < "
-                f"窗口({L0_WINDOW_SIZE})，使用整体索引"
-            )
             lines = []
             for msg in messages:
                 role_label = "用户" if msg["role"] == "user" else "助手"
@@ -641,7 +818,6 @@ def index_l0_session(session_id: int) -> int | None:
             return 1
 
         chunks = _make_l0_chunks(messages, session_id)
-
         if not chunks:
             return None
 
@@ -664,7 +840,7 @@ def index_l0_session(session_id: int) -> int | None:
 
 
 # =============================================================================
-# 对外接口：语义检索
+# 对外接口：语义检索（与原版完全一致）
 # =============================================================================
 
 def retrieve_l2(query_text: str, top_k: int = L2_RETRIEVE_TOP_K) -> list:
@@ -694,14 +870,7 @@ def retrieve_l0(query_text: str, top_k: int = L0_RETRIEVE_TOP_K) -> list:
 def retrieve_combined(query_text: str) -> dict:
     """
     同时在 L1 和 L2 索引中检索，融合向量检索和 BM25 关键词检索的结果。
-
-    融合策略：RRF（倒数排名融合）
-        rrf_score = BM25_WEIGHT / (RRF_K + bm25_rank)
-                  + 1.0         / (RRF_K + vector_rank)
-
-    返回：
-        dict — {"l2": list[dict], "l1": list[dict]}
-               每条结果新增 bm25_score 和 rrf_score 字段
+    与原版完全一致。
     """
     l1_candidate_k = L1_RETRIEVE_TOP_K * 2
     l2_candidate_k = L2_RETRIEVE_TOP_K * 2
@@ -739,13 +908,7 @@ def _rrf_fuse(
 ) -> list[dict]:
     """
     对向量、BM25、图谱三路检索结果执行 RRF 融合。
-
-    RRF 公式（三路版）：
-        rrf_score = BM25_WEIGHT   / (RRF_K + rank_bm25)
-                  + 1.0           / (RRF_K + rank_vector)
-                  + GRAPH_WEIGHT  / (RRF_K + rank_graph)
-
-    graph_results 为 None 时退化为两路融合。
+    与原版完全一致。
     """
     from ramaria.config import GRAPH_WEIGHT
 
@@ -775,15 +938,14 @@ def _rrf_fuse(
     )
 
     scored: list[tuple[float, int]] = []
-
     for doc_id in all_ids:
         v_rank          = vector_rank_map[doc_id][0] if doc_id in vector_rank_map else penalty_rank
         b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
         g_rank          = graph_rank_map.get(doc_id, penalty_rank)
 
         rrf_score = (
-            BM25_WEIGHT   / (RRF_K + b_rank)
-            + 1.0         / (RRF_K + v_rank)
+            BM25_WEIGHT    / (RRF_K + b_rank)
+            + 1.0          / (RRF_K + v_rank)
             + GRAPH_WEIGHT / (RRF_K + g_rank)
         )
         scored.append((rrf_score, doc_id))
@@ -798,13 +960,11 @@ def _rrf_fuse(
             entry = dict(result_dict)
         else:
             bm25_doc = next(
-                (r["document"] for r in bm25_results if r["id"] == doc_id),
-                ""
+                (r["document"] for r in bm25_results if r["id"] == doc_id), ""
             )
             graph_doc = next(
                 (r["document"] for r in (graph_results or [])
-                 if r.get(id_field) == doc_id),
-                ""
+                 if r.get(id_field) == doc_id), ""
             )
             entry = {
                 id_field:            doc_id,
@@ -816,9 +976,9 @@ def _rrf_fuse(
             }
 
         b_rank, b_score = bm25_rank_map.get(doc_id, (penalty_rank, 0.0))
-        entry["bm25_score"]  = b_score
-        entry["rrf_score"]   = rrf_score
-        entry["graph_rank"]  = graph_rank_map.get(doc_id, None)
+        entry["bm25_score"] = b_score
+        entry["rrf_score"]  = rrf_score
+        entry["graph_rank"] = graph_rank_map.get(doc_id, None)
 
         fused.append(entry)
 
@@ -826,7 +986,7 @@ def _rrf_fuse(
 
 
 # =============================================================================
-# 内部：通用检索逻辑（含衰减）
+# 内部：通用检索逻辑（与原版完全一致）
 # =============================================================================
 
 def _retrieve(
@@ -837,14 +997,7 @@ def _retrieve(
     decay_s: float,
 ) -> list:
     """
-    通用检索函数，被 retrieve_l0/l1/l2 调用。
-
-    在语义检索基础上叠加衰减调整：
-        1. Chroma 返回原始语义距离
-        2. 从 metadata["created_at"] 取时间，计算保留率 R
-        3. 若开启访问加成，读取 last_accessed_at 做保底
-        4. adjusted_distance = distance / max(R, 0.1)
-        5. 按 adjusted_distance 过滤（阈值 SIMILARITY_THRESHOLD）并排序
+    通用检索函数，含衰减调整。与原版完全一致。
     """
     try:
         collection = _get_collection(collection_name)
@@ -929,15 +1082,11 @@ def _retrieve(
 
 
 # =============================================================================
-# 对外接口：索引管理工具
+# 对外接口：索引管理工具（与原版完全一致）
 # =============================================================================
 
 def get_index_stats() -> dict:
-    """
-    返回三个 Collection 当前的索引条数。
-
-    返回：dict — {"l0": int, "l1": int, "l2": int}
-    """
+    """返回三个 Collection 当前的索引条数。"""
     stats  = {"l0": 0, "l1": 0, "l2": 0}
     client = _get_client()
 
@@ -954,11 +1103,7 @@ def get_index_stats() -> dict:
 def rebuild_all_indexes() -> dict:
     """
     重建全部三层向量索引（切换嵌入模型时使用）。
-
-    ⚠️  此操作不可逆，旧索引会被彻底删除，重建期间检索功能暂时不可用。
-
-    返回：
-        dict — {"l0_chunks": int, "l1_count": int, "l2_count": int}
+    同时触发 BM25 全量重建。
     """
     from ramaria.storage.database import (
         get_all_l1, get_all_l2, get_all_session_ids,
@@ -1004,6 +1149,10 @@ def rebuild_all_indexes() -> dict:
         if n:
             counts["l0_chunks"] += n
 
+    # 重建后强制全量刷新 BM25（绕过增量缓冲区）
+    _bm25_index.rebuild("l1")
+    _bm25_index.rebuild("l2")
+
     logger.info(
         f"索引重建完成：L1={counts['l1_count']} 条，"
         f"L2={counts['l2_count']} 条，L0={counts['l0_chunks']} 个切片"
@@ -1012,7 +1161,7 @@ def rebuild_all_indexes() -> dict:
 
 
 # =============================================================================
-# 图谱检索通道
+# 图谱检索通道（与原版完全一致）
 # =============================================================================
 
 def retrieve_graph(
@@ -1020,21 +1169,10 @@ def retrieve_graph(
     top_k: int = L1_RETRIEVE_TOP_K,
 ) -> list[dict]:
     """
-    基于知识图谱的语义检索通道（第三路，配合 retrieve_combined 使用）。
-
-    流程：
-        1. 从查询文本提取候选实体名（jieba 分词 + keyword_pool 匹配）
-        2. 在 NetworkX 图里找对应节点
-        3. BFS 广度优先遍历（最多两跳）
-        4. 按跳数排名，返回关联的 L1 id 列表
-
-    返回：
-        list[dict]，每条包含 l1_id, document, graph_rank, hops 等字段
-        图谱为空或无命中时返回 []
+    基于知识图谱的语义检索通道（第三路）。
+    与原版完全一致。
     """
-    from ramaria.adapters.mcp import get_nx_graph  # 懒加载，避免循环依赖
     try:
-        import sys
         from ramaria.memory.graph_builder import get_nx_graph
     except ImportError:
         logger.warning("graph_builder 未找到，图谱检索跳过")
@@ -1061,8 +1199,6 @@ def retrieve_graph(
     if not query_entities:
         logger.debug(f"查询文本中未找到已知实体，跳过图谱检索：{query_text[:50]}")
         return []
-
-    logger.debug(f"图谱检索实体：{query_entities}")
 
     entity_to_node = {
         data["entity_name"]: node_id
@@ -1092,12 +1228,10 @@ def retrieve_graph(
         for neighbor_node_id, hops in path_lengths.items():
             if hops == 0:
                 continue
-
             if G.has_edge(start_node_id, neighbor_node_id):
                 edge_data = G[start_node_id][neighbor_node_id]
             else:
                 edge_data = {}
-
             l1_ids_on_edge = edge_data.get("l1_ids", [])
             for l1_id in l1_ids_on_edge:
                 if l1_id not in all_l1_results:

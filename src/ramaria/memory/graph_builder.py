@@ -467,6 +467,50 @@ def _extract_triples_for_l1(l1_id: int) -> int | None:
                 relation_detail = triple["relation_detail"].strip(),
                 source_l1_id    = l1_id,
             )
+            for triple in valid_triples:
+                try:
+                    subject_name = _normalize_entity(triple["subject"].strip(), l1_id)
+                    object_name  = _normalize_entity(triple["object"].strip(),  l1_id)
+
+                    source_node_id = get_or_create_node(
+                        entity_name  = subject_name,
+                        entity_type  = triple["subject_type"],
+                        source_l1_id = l1_id,
+                    )
+                    target_node_id = get_or_create_node(
+                        entity_name  = object_name,
+                        entity_type  = triple["object_type"],
+                        source_l1_id = l1_id,
+                    )
+                    save_edge(
+                        source_node_id  = source_node_id,
+                        target_node_id  = target_node_id,
+                        relation_type   = triple["relation_type"],
+                        relation_detail = triple["relation_detail"].strip(),
+                        source_l1_id    = l1_id,
+                    )
+
+                    # v0.4.0：增量更新内存图谱，无需全量重载
+                    _add_edge_to_graph(
+                        source_node_id  = source_node_id,
+                        source_name     = subject_name,
+                        source_type     = triple["subject_type"],
+                        target_node_id  = target_node_id,
+                        target_name     = object_name,
+                        target_type     = triple["object_type"],
+                        relation_type   = triple["relation_type"],
+                        relation_detail = triple["relation_detail"].strip(),
+                        source_l1_id    = l1_id,
+                    )
+
+                    written += 1
+                    logger.debug(
+                        f"三元组写入：{subject_name} "
+                        f"—[{triple['relation_type']}]→ {object_name}"
+                    )
+                except Exception as e:
+                    logger.warning(f"L1 {l1_id} 单条三元组写入失败 — {e}")
+                    continue
             written += 1
             logger.debug(
                 f"三元组写入：{subject_name} "
@@ -693,7 +737,8 @@ def load_graph_to_memory() -> None:
                     l1_ids          = [edge["source_l1_id"]],
                 )
 
-        _nx_graph = G
+        with _nx_graph_lock:
+            _nx_graph = G
         logger.info(
             f"NetworkX 图谱加载完成：{G.number_of_nodes()} 个节点，"
             f"{G.number_of_edges()} 条边"
@@ -701,27 +746,140 @@ def load_graph_to_memory() -> None:
 
     except ImportError:
         logger.warning("networkx 未安装，图谱检索功能不可用")
-        _nx_graph = None
+        with _nx_graph_lock:
+            _nx_graph = None
     except Exception as e:
         logger.error(f"图谱加载失败 — {e}")
-        _nx_graph = None
+        with _nx_graph_lock:
+            _nx_graph = None
 
 
 # 模块级图对象
 _nx_graph = None
+
+# 图谱读写锁：保护 _nx_graph 的并发读写
+# 使用 RLock 防止同一线程（如 graph_builder 批处理）内重入时死锁
+_nx_graph_lock = threading.RLock()
 
 
 def get_nx_graph():
     """
     获取当前内存中的 NetworkX 图对象。
     供 vector_store.retrieve_graph() 调用。
+    加 _nx_graph_lock 保护，防止读取时图正在被替换。
     """
-    return _nx_graph
+    with _nx_graph_lock:
+        return _nx_graph
+
+
+def _add_edge_to_graph(
+    source_node_id: int,
+    source_name:    str,
+    source_type:    str,
+    target_node_id: int,
+    target_name:    str,
+    target_type:    str,
+    relation_type:  str,
+    relation_detail: str,
+    source_l1_id:   int,
+) -> None:
+    """
+    增量更新内存图谱：将一条新边（及其节点）追加到 _nx_graph，
+    无需全量重载整个图，避免 reload_graph() 的高开销。
+
+    调用时机：_extract_triples_for_l1() 成功写入数据库后立即调用。
+
+    节点处理策略：
+        · 节点已存在（entity_name 相同）→ 只更新 use_count（+1）
+        · 节点不存在 → 新增节点，use_count 初始为 1
+
+    边处理策略：
+        · 两节点间边已存在 → 在现有边的 l1_ids 列表中追加 source_l1_id
+        · 两节点间边不存在 → 新增边，l1_ids 初始为 [source_l1_id]
+
+    线程安全：所有操作在 _nx_graph_lock 内完成。
+
+    参数：
+        source_node_id  — 起点节点的数据库 id（graph_nodes.id）
+        source_name     — 起点实体名
+        source_type     — 起点实体类型
+        target_node_id  — 终点节点的数据库 id
+        target_name     — 终点实体名
+        target_type     — 终点实体类型
+        relation_type   — 关系类型（七类之一）
+        relation_detail — 关系描述
+        source_l1_id    — 来源 L1 的 id
+    """
+    global _nx_graph
+
+    with _nx_graph_lock:
+        # 图谱未初始化时静默跳过，不阻断主流程
+        # 下次 reload_graph() 会把这条边从数据库全量加载进来
+        if _nx_graph is None:
+            logger.debug(
+                f"_add_edge_to_graph: 图谱未初始化，跳过增量更新 "
+                f"({source_name} → {target_name})"
+            )
+            return
+
+        # ── 处理起点节点 ──
+        if _nx_graph.has_node(source_node_id):
+            # 节点已存在，更新 use_count
+            _nx_graph.nodes[source_node_id]["use_count"] = (
+                _nx_graph.nodes[source_node_id].get("use_count", 1) + 1
+            )
+        else:
+            _nx_graph.add_node(
+                source_node_id,
+                entity_name = source_name,
+                entity_type = source_type,
+                use_count   = 1,
+            )
+
+        # ── 处理终点节点 ──
+        if _nx_graph.has_node(target_node_id):
+            _nx_graph.nodes[target_node_id]["use_count"] = (
+                _nx_graph.nodes[target_node_id].get("use_count", 1) + 1
+            )
+        else:
+            _nx_graph.add_node(
+                target_node_id,
+                entity_name = target_name,
+                entity_type = target_type,
+                use_count   = 1,
+            )
+
+        # ── 处理边 ──
+        if _nx_graph.has_edge(source_node_id, target_node_id):
+            # 边已存在，追加 l1_id（避免重复）
+            existing_l1_ids = _nx_graph[source_node_id][target_node_id].get(
+                "l1_ids", []
+            )
+            if source_l1_id not in existing_l1_ids:
+                existing_l1_ids.append(source_l1_id)
+                _nx_graph[source_node_id][target_node_id]["l1_ids"] = existing_l1_ids
+        else:
+            _nx_graph.add_edge(
+                source_node_id,
+                target_node_id,
+                relation_type   = relation_type,
+                relation_detail = relation_detail,
+                l1_ids          = [source_l1_id],
+            )
+
+    logger.debug(
+        f"图谱增量更新：{source_name} —[{relation_type}]→ {target_name}，"
+        f"L1 id={source_l1_id}"
+    )
 
 
 def reload_graph() -> None:
-    """重新从 SQLite 加载图谱到内存。批处理完成后调用。"""
-    load_graph_to_memory()
+    """
+    重新从 SQLite 加载图谱到内存。
+    批处理完成后调用。reload 会重新全量加载，覆盖增量更新的内容，
+    但数据库是权威来源，结果是一致的。
+    """
+    load_graph_to_memory()   # 内部已加锁
     logger.info("图谱已重新加载")
 
 

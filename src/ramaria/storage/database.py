@@ -337,32 +337,55 @@ def get_unabsorbed_l1(limit: int | None = None) -> list:
         return cursor.fetchall()
 
 
-def get_all_l1() -> list:
+def get_all_l1(conn: sqlite3.Connection | None = None) -> list:
     """
     返回 memory_l1 表中的全部记录。
 
     用途：vector_store.rebuild_all_indexes() 重建 L1 向量索引时调用。
+
+    参数：
+        conn — 可选的外部数据库连接。
+               传入时复用该连接（调用方负责连接的生命周期），不额外开关连接。
+               不传时内部自己开关连接（原有行为，向后兼容）。
+
+    v0.4.0 变更：新增 conn 可选参数，供 BM25 rebuild 路径复用连接，
+               减少 BM25 重建时的重复开关连接开销。
     """
-    with _db_conn() as conn:
+    sql = "SELECT id, summary, keywords, session_id, created_at FROM memory_l1"
+
+    if conn is not None:
+        # 复用外部连接：直接查询，不关闭连接
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, summary, keywords, session_id, created_at FROM memory_l1"
-        )
+        cursor.execute(sql)
         return cursor.fetchall()
+    else:
+        # 原有行为：自己管理连接
+        with _db_conn() as _conn:
+            cursor = _conn.cursor()
+            cursor.execute(sql)
+            return cursor.fetchall()
 
 
-def get_all_l2() -> list:
+def get_all_l2(conn: sqlite3.Connection | None = None) -> list:
     """
     返回 memory_l2 表中的全部记录。
 
     用途：vector_store.rebuild_all_indexes() 重建 L2 向量索引时调用。
+
+    参数：
+        conn — 可选的外部数据库连接，含义同 get_all_l1()。
     """
-    with _db_conn() as conn:
+    sql = "SELECT id, summary, keywords, period_start, period_end FROM memory_l2"
+
+    if conn is not None:
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, summary, keywords, period_start, period_end FROM memory_l2"
-        )
+        cursor.execute(sql)
         return cursor.fetchall()
+    else:
+        with _db_conn() as _conn:
+            cursor = _conn.cursor()
+            cursor.execute(sql)
+            return cursor.fetchall()
 
 
 def get_all_session_ids() -> list[int]:

@@ -79,12 +79,13 @@ async def lifespan(app: FastAPI):
     _start_access_worker()
 
     # 步骤3：BM25 索引预热
-    # 必须在 SessionManager.start() 之前完成，
-    # 确保第一条消息到来时 BM25 已就绪
-    from ramaria.storage.vector_store import _bm25_index
+    from ramaria.storage.vector_store import _bm25_index, _start_bm25_timer
     _bm25_index.rebuild("l1")
     _bm25_index.rebuild("l2")
     logger.info("BM25 索引预热完成")
+
+    # 步骤3.5：启动 BM25 后台定时重建线程（预热之后启动，避免启动时重复重建）
+    _start_bm25_timer()
 
     # 步骤4：图谱加载
     from ramaria.memory.graph_builder import load_graph_to_memory
@@ -116,9 +117,10 @@ async def lifespan(app: FastAPI):
 
     # ── shutdown ──
     logger.info("关闭中…")
-    from ramaria.storage.vector_store import _stop_access_worker
+    from ramaria.storage.vector_store import _stop_access_worker, _stop_bm25_timer
     _stop_access_worker()
-    session_manager.stop()   # 内部调用 _push_scheduler.stop()
+    _stop_bm25_timer() 
+    session_manager.stop()
     logger.info("已停止")
 
 

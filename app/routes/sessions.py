@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from ramaria.config import DB_PATH
 from ramaria.storage.database import get_messages, get_session
 
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

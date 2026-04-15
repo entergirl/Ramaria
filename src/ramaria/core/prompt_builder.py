@@ -42,9 +42,9 @@ else:
         )
 
 from ramaria.config import PERSONA_PATH
-from constants import PROFILE_FIELD_LIST
+from ramaria.constants import PROFILE_FIELD_LIST
+from ramaria.logger import get_logger
 
-from logger import get_logger
 logger = get_logger(__name__)
 
 

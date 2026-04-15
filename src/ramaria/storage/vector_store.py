@@ -50,7 +50,7 @@ from ramaria.config import (
 )
 from ramaria.storage.database import get_messages
 
-from logger import get_logger
+from ramaria.logger import get_logger
 logger = get_logger(__name__)
 
 

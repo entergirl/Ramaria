@@ -17,7 +17,7 @@ src/ramaria/adapters/mcp/tools/read_tools.py — MCP 只读工具集
 
 import sqlite3
 from ramaria.config import DB_PATH, L1_RETRIEVE_TOP_K, L2_RETRIEVE_TOP_K
-from constants import PROFILE_FIELDS, PROFILE_FIELD_LIST
+from ramaria.constants import PROFILE_FIELDS, PROFILE_FIELD_LIST
 
 
 # =============================================================================

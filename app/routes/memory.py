@@ -31,7 +31,7 @@ from ramaria.config import (
     MEMORY_DECAY_RECENT_BOOST_FLOOR,
     SALIENCE_DECAY_MULTIPLIER,
 )
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

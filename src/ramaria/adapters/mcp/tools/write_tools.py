@@ -18,7 +18,7 @@ import hashlib
 from datetime import datetime, timezone
 
 from ramaria.adapters.mcp.permissions import is_allowed
-from constants import PROFILE_FIELDS, VALID_FIELD_KEYS
+from ramaria.constants import PROFILE_FIELDS, VALID_FIELD_KEYS
 
 
 # =============================================================================

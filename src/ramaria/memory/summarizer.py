@@ -37,7 +37,7 @@ from ramaria.storage.database import (
     upsert_keywords,
 )
 
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

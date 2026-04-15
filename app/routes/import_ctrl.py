@@ -18,7 +18,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

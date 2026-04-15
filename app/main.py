@@ -37,7 +37,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from ramaria.config import DEBUG, SERVER_HOST, SERVER_PORT
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

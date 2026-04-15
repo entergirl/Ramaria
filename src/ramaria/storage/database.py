@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from ramaria.config import DB_PATH, TIME_PERIOD_OPTIONS
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

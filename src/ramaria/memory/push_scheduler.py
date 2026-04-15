@@ -23,7 +23,7 @@ import time
 from datetime import datetime, timezone, date, timedelta
 from typing import Callable, Awaitable, Optional
 
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

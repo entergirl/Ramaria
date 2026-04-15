@@ -39,8 +39,8 @@ from ramaria.storage.database import (
     save_message,
 )
 
-from constants import PROFILE_FIELD_LIST
-from logger import get_logger
+from ramaria.constants import PROFILE_FIELD_LIST
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

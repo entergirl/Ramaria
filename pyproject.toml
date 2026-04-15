@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ramaria"
-version = "0.3.6"
+version = "0.4.0"
 description = "珊瑚菌 - 本地运行的个人 AI 陪伴记忆系统"
 readme = "README.md"
 license = { text = "MIT" }
@@ -70,45 +70,21 @@ Issues        = "https://github.com/entergirl/Ramaria/issues"
 ramaria = "app.main:main"
 
 # =============================================================================
-# 临时修复（v0.3.6-hotfix）
+# 包发现配置（v0.4.0 清理版）
 #
-# 原始问题：
-#   logger.py 和 constants.py 位于项目根目录。
-#   原配置 where = ["src"] 只扫描 src/ 子目录，导致这两个文件在
-#   pip install -e . 后不在 Python 模块搜索路径内，运行时抛出
-#   ModuleNotFoundError: No module named 'logger'
-#
-# 修复方案：
-#   · [tool.setuptools] py-modules 显式声明根目录的两个散文件模块
-#   · [tool.setuptools.packages.find] 改为从根目录扫描，include 白名单
-#     精确限定 app 和 ramaria 两个包，避免把无关目录打进安装包
-#   · [tool.setuptools.package-dir] 保持 ramaria -> src/ramaria 的映射，
-#     确保 from ramaria.xxx import ... 的写法继续有效
-#
-# 后续（正式版 v0.4）：
-#   将 logger.py 和 constants.py 移入 src/ramaria/，
-#   将所有 from logger import ... 改为 from ramaria.logger import ...
-#   届时可删除此 hotfix 注释，恢复 where = ["src"] 的简洁配置。
+# v0.3.6 中 logger.py 和 constants.py 位于项目根目录，
+# 需要 py-modules 和复杂的 packages.find 白名单才能正确安装。
+# v0.4.0 将两个文件迁移进 src/ramaria/，根目录不再有散文件模块，
+# 配置恢复为标准的 where=["src"] 简洁写法。
 # =============================================================================
 
-[tool.setuptools]
-# 声明根目录的单文件模块，pip install -e . 后可直接 import logger / import constants
-py-modules = ["logger", "constants"]
-
 [tool.setuptools.packages.find]
-# 从根目录扫描，而非只扫描 src/
-where = ["."]
-# 白名单：只打包 app 包和 ramaria 包（ramaria 通过 package-dir 映射到 src/ramaria）
-include = [
-    "app",
-    "app.*",
-    "ramaria",
-    "ramaria.*",
-]
+# 只扫描 src/ 目录，自动发现 ramaria 包及其所有子包
+where = ["src"]
 
 [tool.setuptools.package-dir]
-# ramaria 包的实际位置是 src/ramaria/，保持现有 import 路径不变
-"ramaria" = "src/ramaria"
+# ramaria 包的实际位置是 src/ramaria/
+"" = "src"
 
 [tool.pytest.ini_options]
 testpaths        = ["tests"]

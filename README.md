@@ -204,6 +204,7 @@ Ramaria/
 ├── static/                           # 前端静态资源
 │   ├── index.html                    # 主对话界面
 │   ├── import.html                   # 聊天记录导入界面
+│   ├── memory.html                   # 记忆查看器
 │   ├── css/                          # 样式文件
 │   └── js/                           # 前端脚本
 ├── config/                           # 配置文件
@@ -321,22 +322,40 @@ source venv/bin/activate && python app/main.py
 
 ### 阶段一（已完成）
 
-核心对话链路验证，L1 / L2 / L3 主线稳定运行，关键词词典系统，记忆冲突检测，分层 RAG 检索基础框架。
+核心对话链路验证，L1 / L2 / L3 主线稳定运行，关键词词典系统，记忆冲突检测，
+分层 RAG 检索基础框架。
 
 ### 阶段二（已完成）
 
-任务路由层，本地嵌入模型接入，L3 画像半自动维护，分层 RAG 检索全线接通，情感元数据（valence / salience）与 Ebbinghaus 衰减融合，BM25 + 向量 + RRF 混合检索。
+任务路由层，本地嵌入模型接入，L3 画像半自动维护，分层 RAG 检索全线接通，
+情感元数据（valence / salience）与 Ebbinghaus 衰减融合，
+BM25 + 向量 + RRF 混合检索。
 
 ### 阶段三（已完成）
 
-知识图谱（三元组提取、实体归一化、NetworkX 图谱检索），WebSocket 通信层（服务端防抖、主动推送调度器、离线消息队列），历史聊天记录导入（QQ Chat Exporter v5 格式），MCP Server（七工具，支持 Claude Desktop 集成）。
+知识图谱（三元组提取、实体归一化、NetworkX 图谱检索），
+WebSocket 通信层（服务端防抖、主动推送调度器、离线消息队列），
+历史聊天记录导入（QQ Chat Exporter v5 格式），
+MCP Server（七工具，支持 Claude Desktop 集成）。
 
-### 阶段四（规划中）
+### 阶段四（已完成）
+
+- 记忆可视化（Memory Viewer）：L1/L2/L3 三层记忆查看与管理页面，
+  实时衰减留存百分比，删除二次确认
+- 启动前健康检查（Health Check）：五项自动验证，失败给出具体修复指引
+- BM25 增量更新：缓冲区 + 定时器机制，单条写入延迟从 200ms 降至 <10ms
+- 知识图谱增量更新：三元组写入后同步更新内存图，无需全量重载
+- 数据库连接复用：BM25 重建路径连接开销优化
+- logger / constants 包迁移：彻底修复 `pip install -e .` 后
+  `ModuleNotFoundError` 问题
+
+### 阶段五（规划中）
 
 - LoRA 微调：基于历史对话数据蒸馏，对本地模型进行角色对齐微调
-- 前端记忆可视化：衰减曲线展示、知识图谱菌丝网络视图
+- 前端记忆可视化扩展：D3.js 菌丝网络图（知识图谱可视化）
 - 多平台接入：Telegram Bot 桥接完善，移动端适配
 - 嵌入模型 CUDA 加速
+- 插件系统
 
 ---
 

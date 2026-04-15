@@ -1,62 +1,107 @@
 # 变更日志
 
-## [0.3.6] - 2026-04-12 
+## [0.4.0] - 2026-04-15
+
+### 新增功能
+
+#### 记忆可视化（Memory Viewer）
+- 新增独立页面 `/static/memory.html`，可通过主界面侧边栏"🧠 记忆查看"入口跳转
+- L1 标签页：分页展示所有单次对话摘要，每条显示实时计算的记忆留存百分比、
+  情感显著性、时间段、氛围、是否已被 L2 吸收，支持删除
+- L2 标签页：分页展示所有聚合摘要，显示覆盖时间段和记忆留存百分比，支持删除
+- L3 标签页：只读展示六大板块用户画像（基础信息、近期状态、兴趣爱好、
+  社交情况、历史事件、近期背景）
+- 删除采用二次点击确认机制（第一次变红提示，3 秒内再次点击执行），防止误删
+- L1 删除时若已被 L2 引用，返回 409 冲突提示，需先删对应 L2
+- L2 删除同时清理 `l2_sources` 关联行（不修改来源 L1 的 absorbed 标记）
+- 删除操作 Chroma 向量索引与 SQLite 记录双向同步删除
+
+#### 启动前健康检查（Health Check）
+- 新增 `scripts/health_check.py`，启动前自动验证五项：
+  venv 完整性（pip check）、.env 必填项、嵌入模型路径、
+  本地推理服务可达性、数据库完整性（PRAGMA integrity_check + 12 张表存在性）
+- 任一检查失败立即退出并输出具体修复步骤，退出码 0 表示全部通过
+- `win/start.py` 集成健康检查，作为子进程调用，失败时终止启动
+- 可单独运行 `python scripts/health_check.py` 进行手动排障
+
+#### 后端记忆查看接口
+- `GET  /api/memory/l1`：L1 分页列表，含实时衰减值 R
+- `GET  /api/memory/l2`：L2 分页列表，含实时衰减值 R
+- `GET  /api/memory/profile`：L3 画像六板块
+- `DELETE /api/memory/l1/{id}`：删除单条 L1
+- `DELETE /api/memory/l2/{id}`：删除单条 L2
+
+---
+
+### 性能优化
+
+#### BM25 增量更新
+- 新增 `BM25_INCREMENTAL_THRESHOLD`（默认 10）和
+  `BM25_REBUILD_INTERVAL`（默认 300 秒）两个配置项
+- `BM25Index` 新增 `_pending` 缓冲区，写入时先追加缓冲，
+  不再每次触发全量重建
+- 缓冲区达到阈值或定时器触发时合并重建；重建期间旧索引继续服务，
+  完成后原子替换（`threading.RLock` 保护）
+- 新增后台定时重建线程 `BM25TimerRebuilder`，
+  由 `main.py` lifespan 管理启停
+- 单条写入延迟从约 200ms 降至 <10ms
+
+#### 知识图谱增量更新
+- 新增 `_add_edge_to_graph()` 函数，三元组写入数据库后同步增量更新
+  NetworkX 内存图，无需全量重载
+- 节点已存在时只更新 `use_count`，边已存在时追加 `l1_ids`
+- `_nx_graph` 所有读写操作统一用 `_nx_graph_lock`（`threading.RLock`）保护
+- `reload_graph()` 保留用于服务启动和手动触发，不再在每次三元组写入后调用
+
+#### 数据库连接复用
+- `get_all_l1()` 和 `get_all_l2()` 新增可选 `conn` 参数，
+  允许调用方传入外部连接复用，减少 BM25 重建时的重复开关连接开销
+- 接口向后兼容，不传参数时行为与原版完全一致
+
+---
+
+### 工程改善
+
+#### logger / constants 包迁移
+- 将根目录 `logger.py` 迁移至 `src/ramaria/logger.py`
+- 将根目录 `constants.py` 迁移至 `src/ramaria/constants.py`
+- 全项目统一使用 `from ramaria.logger import get_logger` 和
+  `from ramaria.constants import ...` 导入
+- 清理 `pyproject.toml` 中 v0.3.6-hotfix 的补丁配置，
+  恢复标准 `where = ["src"]` 简洁写法
+- `pip install -e .` 后无需额外操作，`ModuleNotFoundError: No module named 'logger'`
+  问题彻底修复
+
+---
+
+## [0.3.6] - 2026-04-12
 
 ### 核心特性
 
 #### 分层记忆系统
-
-- **L0 原始消息层**：完整保留每一轮对话，支持滑动窗口语义索引
-- **L1 单次摘要层**：对话空闲自动生成结构化摘要，包含关键词标签、情感元数据
-- **L2 聚合摘要层**：多条 L1 智能合并为时间段总结，支持溯源回滚
-- **L3 用户画像层**：六大维度长期画像自动维护，冲突检测确保一致性
+- L0 原始消息层：完整保留每一轮对话，支持滑动窗口语义索引
+- L1 单次摘要层：对话空闲自动生成结构化摘要，包含关键词标签、情感元数据
+- L2 聚合摘要层：多条 L1 智能合并为时间段总结，支持溯源回滚
+- L3 用户画像层：六大维度长期画像自动维护，冲突检测确保一致性
 
 #### 关键词词典系统
-
 通过复用已有词条引导模型生成收敛的关键词体系，避免同义词发散，确保长期检索精度。
 
 #### 混合检索架构
-
-三通道融合检索：
-- 向量通道：ChromaDB 语义相似度匹配
-- BM25 通道：jieba 分词关键词精确检索
-- 图谱通道：NetworkX 知识图谱 BFS 遍历
-
-三路结果通过 RRF 算法加权合并，叠加 Ebbinghaus 遗忘曲线衰减权重。
+三通道融合检索：向量通道（ChromaDB）、BM25 通道（jieba 分词）、
+图谱通道（NetworkX），三路结果通过 RRF 算法加权合并，
+叠加 Ebbinghaus 遗忘曲线衰减权重。
 
 #### 知识图谱
-
-- 从 L1 摘要自动提取三元组（主语→关系→宾语）
-- 实体归一化：向量相似度三档策略处理别名
-- NetworkX 图对象内存加载，图谱检索零数据库开销
+从 L1 摘要自动提取三元组，实体归一化三档策略，NetworkX 图对象内存加载。
 
 #### 通信层
-
-- WebSocket 实时双向通信
-- 服务端防抖机制：快速连续消息自动合并处理
-- 主动推送调度：离线消息暂存，上线后按序补发
+WebSocket 实时双向通信，服务端防抖机制，主动推送调度器，离线消息暂存补发。
 
 #### MCP Server
-
-提供标准 MCP Server 接口，支持 Claude Desktop 等 MCP 客户端直接访问记忆系统。
+标准 MCP Server 接口，七个工具，支持 Claude Desktop 集成。
 
 #### 外部集成
-
-- Telegram Bot 支持
-- QQ 聊天记录导入（Chat Exporter v5 格式）
-- Docker 部署支持
-
-### 技术栈
-
-| 组件 | 选型 |
-|------|------|
-| 后端框架 | FastAPI + Uvicorn |
-| 本地模型 | 兼容 OpenAI API 的推理服务 |
-| 嵌入模型 | sentence-transformers（本地加载） |
-| 向量数据库 | ChromaDB |
-| 关系图谱 | NetworkX |
-| 结构化存储 | SQLite |
-| 前端 | 原生 HTML/CSS/JS（无框架依赖） |
+Telegram Bot、QQ 聊天记录导入（Chat Exporter v5）、Docker 部署。
 
 ---
-

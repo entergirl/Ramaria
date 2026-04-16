@@ -25,9 +25,14 @@ from pathlib import Path
 # 禁止 HuggingFace 在启动时联网检查模型更新，避免离线环境启动卡顿
 os.environ["HF_HUB_OFFLINE"] = "1"
 
-# 直接执行 app/main.py 时，将 src/ 加入 Python 模块搜索路径
+# 直接执行 app/main.py 时，将项目根目录和 src/ 加入 Python 模块搜索路径
 _ROOT_DIR = Path(__file__).resolve().parent.parent
-_SRC_DIR = _ROOT_DIR / "src"
+_SRC_DIR  = _ROOT_DIR / "src"
+
+# 将项目根目录加入 sys.path，以便能通过 `from app.xxx` 导入 app 目录下的模块
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
+
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 

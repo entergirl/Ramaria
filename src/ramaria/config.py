@@ -45,7 +45,7 @@ PERSONA_PATH = CONFIG_DIR / "persona.toml"
 # =============================================================================
 
 # 嵌入模型路径（本地文件），切换模型后需重建全部索引
-EMBEDDING_MODEL = r"F:\9700\model\Qwen3-Embedding-0.6B"
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "")
 
 # L0 滑动窗口大小：以最相关消息为中心，前后各取几条作为上下文
 L0_WINDOW_SIZE = 3
@@ -135,11 +135,11 @@ L2_TRIGGER_DAYS: int = 7
 # 本地模型（LM Studio / Ollama，兼容 OpenAI API 格式）
 # =============================================================================
 
-LOCAL_API_URL:             str   = "http://localhost:1234/v1/chat/completions"
-LOCAL_MODEL_NAME:          str   = "qwen/qwen3.5-9b"
-LOCAL_TEMPERATURE:         float = 0.3
-LOCAL_MAX_TOKENS_SUMMARY:  int   = 512   # 摘要类任务：L1/L2 生成、冲突检测、画像提取
-LOCAL_MAX_TOKENS_CHAT:     int   = 1024  # 对话类任务：日常聊天
+LOCAL_API_URL:             str   = os.environ.get("LOCAL_API_URL", "http://localhost:1234/v1/chat/completions")
+LOCAL_MODEL_NAME:          str   = os.environ.get("LOCAL_MODEL_NAME", "qwen/qwen3.5-9b")
+LOCAL_TEMPERATURE:         float = float(os.environ.get("LOCAL_TEMPERATURE", "0.3"))
+LOCAL_MAX_TOKENS_SUMMARY:  int   = int(os.environ.get("LOCAL_MAX_TOKENS_SUMMARY", "512"))
+LOCAL_MAX_TOKENS_CHAT:     int   = int(os.environ.get("LOCAL_MAX_TOKENS_CHAT", "1024"))
 
 
 # =============================================================================
@@ -160,9 +160,9 @@ CLAUDE_TEMPERATURE: float = 0.7
 # Web 服务
 # =============================================================================
 
-SERVER_HOST: str  = "0.0.0.0"
-SERVER_PORT: int  = 8000
-DEBUG:       bool = True
+SERVER_HOST: str  = os.environ.get("SERVER_HOST", "0.0.0.0")
+SERVER_PORT: int  = int(os.environ.get("SERVER_PORT", "8000"))
+DEBUG:       bool = os.environ.get("APP_DEBUG", "true").lower() == "true"
 
 
 # =============================================================================

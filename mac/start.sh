@@ -184,6 +184,11 @@ start_service() {
         error_exit "未找到 app/main.py，请确认项目文件完整。"
     fi
 
+    # 将 .env 中的配置导出为环境变量，确保子进程可以继承
+    set -a
+    source "$ROOT/.env"
+    set +a
+
     echo ""
     echo "  --------------------------------------------------"
     echo "  本地访问：  http://localhost:8000"

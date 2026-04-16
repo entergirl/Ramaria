@@ -144,6 +144,12 @@ def check_env_file() -> None:
 
     # .env 存在：检查必填项是否有值
     env_vars = load_env_file(env_file)
+
+    # 将 .env 中的配置加载到当前进程的环境变量
+    # 这样后续启动的子进程可以继承这些配置
+    for key, value in env_vars.items():
+        os.environ[key] = value
+
     missing  = [k for k in REQUIRED_ENV_KEYS if not env_vars.get(k, "").strip()]
 
     if missing:

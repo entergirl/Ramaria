@@ -116,6 +116,18 @@ def _detect_conflict_action(text: str) -> str | None:
 # RAG 结果格式化
 # =============================================================================
 
+def _sort_key_l2(hit, weight_l2: float):
+    """L2 排序键：处理 adjusted_distance 可能为 None 的情况。"""
+    dist = hit.get("adjusted_distance") or hit.get("distance") or 1.0
+    return dist * weight_l2
+
+
+def _sort_key_l1(hit, weight_l1: float):
+    """L1 排序键：处理 adjusted_distance 可能为 None 的情况。"""
+    dist = hit.get("adjusted_distance") or hit.get("distance") or 1.0
+    return dist * weight_l1
+
+
 def _format_rag_results(
     rag_result: dict,
     weight_l2: float = RETRIEVAL_WEIGHT_L2,
@@ -152,11 +164,11 @@ def _format_rag_results(
 
         l2_sorted = sorted(
             l2_hits,
-            key=lambda hit: hit.get("adjusted_distance", hit.get("distance", 1.0)) * weight_l2,
+            key=lambda hit: _sort_key_l2(hit, weight_l2),
         )
 
         for hit in l2_sorted:
-            adj_dist    = hit.get("adjusted_distance", hit.get("distance", 1.0))
+            adj_dist    = hit.get("adjusted_distance") or hit.get("distance") or 1.0
             final_score = adj_dist * weight_l2
             doc         = hit.get("document", "").strip()
             meta        = hit.get("metadata", {})
@@ -188,11 +200,11 @@ def _format_rag_results(
 
         l1_sorted = sorted(
             l1_hits,
-            key=lambda hit: hit.get("adjusted_distance", hit.get("distance", 1.0)) * weight_l1,
+            key=lambda hit: _sort_key_l1(hit, weight_l1),
         )
 
         for hit in l1_sorted:
-            adj_dist    = hit.get("adjusted_distance", hit.get("distance", 1.0))
+            adj_dist    = hit.get("adjusted_distance") or hit.get("distance") or 1.0
             final_score = adj_dist * weight_l1
             doc         = hit.get("document", "").strip()
             meta        = hit.get("metadata", {})
@@ -430,7 +442,7 @@ async def chat(req: ChatRequest):
     if conflict_action is not None:
         cr = get_conflict_question()
         if cr is not None:
-            conflict_id, _ = cr
+            conflict_id = cr["conflict_id"]
             reply = handle_conflict_reply(conflict_id, conflict_action)
             save_message(session_id, "assistant", reply)
             return ChatResponse(reply=reply, session_id=session_id, mode="local")
@@ -438,7 +450,7 @@ async def chat(req: ChatRequest):
     # 冲突询问推送
     cr = get_conflict_question()
     if cr is not None:
-        _, question = cr
+        question = cr["conflict_question"]
         save_message(session_id, "assistant", question)
         return ChatResponse(reply=question, session_id=session_id, mode="local")
 
@@ -531,7 +543,7 @@ async def websocket_endpoint(ws: WebSocket):
         if conflict_action is not None:
             cr = get_conflict_question()
             if cr is not None:
-                conflict_id, _ = cr
+                conflict_id = cr["conflict_id"]
                 reply = handle_conflict_reply(conflict_id, conflict_action)
                 save_message(session_id, "assistant", reply)
                 await _ws_send(ws, {
@@ -545,7 +557,7 @@ async def websocket_endpoint(ws: WebSocket):
         # ── 冲突询问推送 ──
         cr = get_conflict_question()
         if cr is not None:
-            _, question = cr
+            question = cr["conflict_question"]
             save_message(session_id, "assistant", question)
             await _ws_send(ws, {
                 "type":       "reply",

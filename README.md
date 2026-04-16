@@ -292,7 +292,7 @@ python scripts/setup_db.py --force-rebuild
 
 ```bash
 # Windows
-win\install.bat
+python install.py
 
 # Linux / macOS
 bash linux/install.sh
@@ -305,7 +305,7 @@ docker-compose up -d
 
 ```bash
 # Windows
-win\start.bat
+python start.py
 
 # Linux / macOS
 source venv/bin/activate && python app/main.py

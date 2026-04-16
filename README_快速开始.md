@@ -100,7 +100,9 @@ LOCAL_API_URL=http://localhost:1234/v1/chat/completions
 
 # 模型名称，必须与推理服务中实际加载的模型名称完全一致
 # 在 LM Studio 的 Local Server 页面可以查看当前加载的模型名称
-LOCAL_MODEL_NAME=qwen/qwen3.5-9b
+LOCAL_MODEL_NAME=qwen/qwen3.5-9b   #(LM studio) 
+# 或者
+LOCAL_MODEL_NAME=qwen3.5:9b        #(Ollama)
 
 # 嵌入模型的本地文件夹路径（第四步会说明如何获取）
 # Windows 示例：F:\models\Qwen3-Embedding-0.6B
@@ -120,7 +122,7 @@ EMBEDDING_MODEL=
 
 ### 下载方法
 
-**方法一：使用脚本下载（推荐）**
+**方法一：使用脚本下载**
 
 激活虚拟环境后运行：
 
@@ -155,7 +157,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 set HF_ENDPOINT=https://hf-mirror.com
 ```
 
-**方法二：手动下载**
+**方法二：手动下载 （推荐）**
 
 访问 https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B ，点击页面上的文件列表，将全部文件下载后放入同一个文件夹（如 `F:\models\Qwen3-Embedding-0.6B`）。
 

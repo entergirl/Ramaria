@@ -45,7 +45,8 @@ PERSONA_PATH = CONFIG_DIR / "persona.toml"
 # =============================================================================
 
 # 嵌入模型路径（本地文件），切换模型后需重建全部索引
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "")
+# 优先从 EMBEDDING_MODEL_PATH 读取（与 .env 保持一致），兼容 EMBEDDING_MODEL
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL") or os.environ.get("EMBEDDING_MODEL_PATH", "")
 
 # L0 滑动窗口大小：以最相关消息为中心，前后各取几条作为上下文
 L0_WINDOW_SIZE = 3

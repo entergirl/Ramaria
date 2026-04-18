@@ -226,6 +226,34 @@ def _format_rag_results(
 # 上下文组装
 # =============================================================================
 
+def _resolve_tools(user_message: str | None) -> dict:
+    """
+    调用 tool_registry，分析用户消息意图，按需执行感知工具。
+
+    职责分离：将工具触发逻辑从 _build_context 中隔离，
+    _build_context 只负责组装上下文，不直接处理 IO。
+
+    参数：
+        user_message — 防抖合并后的用户消息文本，None 时跳过工具触发
+
+    返回：
+        dict — {"hardware": str|None, "fs_scan": str|None}
+               无论工具是否触发，都返回同结构的字典
+    """
+    # 没有消息（如 /save 触发的场景）直接返回空结果
+    if not user_message:
+        return {"hardware": None, "fs_scan": None}
+
+    try:
+        from ramaria.tools.tool_registry import resolve_tool_results
+        return resolve_tool_results(user_message)
+    except Exception as e:
+        # 工具调用整体失败时静默降级，不影响对话主流程
+        from ramaria.logger import get_logger
+        get_logger(__name__).warning(f"_resolve_tools 调用失败，降级为空结果 — {e}")
+        return {"hardware": None, "fs_scan": None}
+
+
 def _build_context(session_id: int, user_message: str | None = None) -> dict:
     """
     组装传给 build_system_prompt() 的 context 字典。
@@ -335,6 +363,8 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
         # user_message=None（/save 等无消息场景），跳过 RAG
         retrieved_l1l2 = "\n".join(time_seq_parts) if time_seq_parts else None
 
+    tool_results = _resolve_tools(user_message)
+
     return {
         "last_session_time": last_session_time,
         "l3_profile":        l3_profile,
@@ -342,6 +372,7 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
         "raw_fragments":     None,
         "session_id":        session_id,
         "session_index":     None,
+        "tool_results":      tool_results,   # v0.5.0 新增
     }
 
 

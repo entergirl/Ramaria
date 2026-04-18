@@ -108,7 +108,10 @@ class PromptBuilder:
 
         blocks = [
             self._blocks.get("A_persona", ""),
-            self._build_time_block(context.get("last_session_time")),
+            self._build_current_state_block(
+                context.get("last_session_time"),
+                context.get("tool_results"),
+            ),
             self._build_memory_block(
                 context.get("l3_profile"),
                 context.get("retrieved_l1l2"),
@@ -172,17 +175,33 @@ class PromptBuilder:
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _build_time_block(last_session_time: datetime | None) -> str:
+    def _build_current_state_block(
+        last_session_time,
+        tool_results=None,
+    ) -> str:
         """
-        生成 Block B：当前时间 + 距上次对话时长 + 跨日标记。
+        生成 Block B：当前状态上下文（v0.5.0 改造版）。
+
+        包含三个子节，按需组装：
+            1. 时间背景    — 必然出现，与原 _build_time_block 逻辑完全一致
+            2. 硬件状态    — 仅当 tool_results["hardware"] 有值时出现
+            3. 文件扫描    — 仅当 tool_results["fs_scan"] 有值时出现
 
         参数：
-            last_session_time — 上次 session 结束的 datetime，无则传 None。
+            last_session_time — 上次 session 结束的 datetime，无则传 None
+            tool_results      — resolve_tool_results() 的返回字典，无则传 None
+                            结构：{"hardware": str|None, "fs_scan": str|None}
         """
         from datetime import timezone as _tz
+        from datetime import datetime
+
+        # 复用原有的星期和跨日逻辑常量
+        WEEKDAY_ZH = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
         now     = datetime.now(_tz.utc).astimezone()
         weekday = WEEKDAY_ZH[now.weekday()]
+
+        # ── 子节1：时间背景（原 _build_time_block 逻辑，完全保留）─────────────
         current_time_str = (
             f"现在是 {now.strftime('%Y年%m月%d日 %H:%M')}，{weekday}。"
         )
@@ -206,7 +225,6 @@ class PromptBuilder:
             else:
                 gap_str = "与上次对话间隔极短（不足1分钟）。"
 
-            # 跨日检测：上次对话日期 != 今天
             if last_session_time.date() < now.date():
                 last_date_str     = last_session_time.strftime("%m月%d日")
                 cross_day_warning = (
@@ -218,64 +236,38 @@ class PromptBuilder:
             else:
                 cross_day_warning = ""
 
-        lines = ["## 时间背景", current_time_str, gap_str]
+        time_lines = ["### 时间背景", current_time_str, gap_str]
         if cross_day_warning:
-            lines.append(cross_day_warning)
+            time_lines.append(cross_day_warning)
 
-        return "\n".join(lines)
+        # ── 子节2：硬件状态（按需，未触发时跳过）────────────────────────────
+        hardware_lines = []
+        if tool_results and tool_results.get("hardware"):
+            hardware_lines = [
+                "### 硬件状态",
+                tool_results["hardware"],
+            ]
 
-    # -------------------------------------------------------------------------
-    # 私有方法：Block C — 记忆上下文
-    # -------------------------------------------------------------------------
+        # ── 子节3：文件扫描（按需，手动触发时附加）──────────────────────────
+        fs_lines = []
+        if tool_results and tool_results.get("fs_scan"):
+            fs_lines = [
+                "### 文件目录",
+                tool_results["fs_scan"],
+            ]
 
-    @staticmethod
-    def _build_memory_block(
-        l3_profile: str | None,
-        retrieved_l1l2: str | None,
-        raw_fragments: str | None,
-    ) -> str:
-        """
-        生成 Block C：三层记忆内容。
+        # ── 拼装 Block B ──────────────────────────────────────────────────────
+        # 将非空子节用空行分隔组合
+        sections = []
+        sections.append("\n".join(time_lines))
+        if hardware_lines:
+            sections.append("\n".join(hardware_lines))
+        if fs_lines:
+            sections.append("\n".join(fs_lines))
 
-        任意层级为 None 时自动跳过，全部为 None 时返回空字符串。
+        header = "## 当前状态"
+        return header + "\n\n" + "\n\n".join(sections)
 
-        参数：
-            l3_profile     — L3 用户长期画像的文本内容。
-            retrieved_l1l2 — RAG 检索到的 L1/L2 摘要文本（已含时间序内容）。
-            raw_fragments  — 从 L0 穿透召回的原始对话片段（预留，当前为 None）。
-        """
-        parts = []
-
-        if l3_profile:
-            parts.append(
-                "### 用户长期画像（L3）\n"
-                "以下是关于烧酒的长期稳定特征，优先级最高：\n"
-                f"{l3_profile}"
-            )
-
-        if retrieved_l1l2:
-            parts.append(
-                "### 相关历史摘要（L1/L2）\n"
-                "以下是与当前对话语义相关的历史摘要及近期动态：\n"
-                f"{retrieved_l1l2}"
-            )
-
-        if raw_fragments:
-            parts.append(
-                "### 原始对话片段（L0）\n"
-                "以下是从历史消息中召回的具体片段，可辅助理解细节：\n"
-                f"{raw_fragments}"
-            )
-
-        if not parts:
-            return ""
-
-        header = (
-            "## 记忆上下文\n"
-            "以下内容来自历史对话记忆，请自然地融入当前对话，"
-            "不要生硬地报出【我记得你说过】，而是像老朋友一样自然提及。"
-        )
-        return header + "\n\n" + "\n\n".join(parts)
 
     # -------------------------------------------------------------------------
     # 私有方法：Block D — 当前 Session 信息

@@ -256,12 +256,21 @@ class PromptBuilder:
                 tool_results["fs_scan"],
             ]
 
-        # ── 拼装 Block B ──────────────────────────────────────────────────────
-        # 将非空子节用空行分隔组合
+        # ── 子节4：天气（按需，未触发时跳过）────────────────────────────────
+        weather_lines = []
+        if tool_results and tool_results.get("weather"):
+            weather_lines = [
+                "### 天气",
+                tool_results["weather"],
+            ]
+
+        # ── 拼装 Block B ──（将原有拼装代码中加入 weather_lines）──────────
         sections = []
         sections.append("\n".join(time_lines))
         if hardware_lines:
             sections.append("\n".join(hardware_lines))
+        if weather_lines:
+            sections.append("\n".join(weather_lines))
         if fs_lines:
             sections.append("\n".join(fs_lines))
 

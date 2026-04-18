@@ -14,6 +14,9 @@ tests/test_tools.py — v0.5.0 感知工具链路端到端验证脚本
     阶段四：路径提取（extract_path_from_message）
     阶段五：意图检测（tool_registry，语义相似度）
     阶段六：resolve_tool_results 端到端
+    阶段七：天气查询（weather.py）
+    阶段八：天气意图检测
+
 """
 
 import os
@@ -318,6 +321,106 @@ def test_resolve_tool_results():
     return all_pass
 
 
+# ============================================================
+# 阶段七：天气查询(weather.py)
+# ============================================================
+
+def test_weather():
+    print_section("阶段七：天气查询")
+    all_pass = True
+
+    try:
+        from ramaria.tools.weather import _get_city, get_weather
+
+        # 测试城市定位
+        city = _get_city()
+        ok1 = print_result(
+            "城市定位返回字符串或 None（不抛异常）",
+            city is None or isinstance(city, str),
+            f"定位城市：{city}",
+        )
+        all_pass = all_pass and ok1
+
+        if city:
+            # 有城市才测试天气查询
+            weather = get_weather()
+            ok2 = print_result(
+                "get_weather 返回字符串（不抛异常）",
+                isinstance(weather, str),
+                f"天气预览：{weather[:60]}…" if len(weather) > 60 else weather,
+            )
+            all_pass = all_pass and ok2
+
+            # 测试缓存：再次调用应该更快（使用缓存）
+            import time
+            t0 = time.time()
+            weather2 = get_weather()
+            elapsed = time.time() - t0
+            ok3 = print_result(
+                "第二次调用使用缓存（< 0.1 秒）",
+                elapsed < 0.1 and weather2 == weather,
+                f"耗时：{elapsed*1000:.1f}ms",
+            )
+            all_pass = all_pass and ok3
+        else:
+            print("  ℹ️  城市定位失败（可能无网络），跳过天气查询测试")
+
+    except Exception as e:
+        import traceback
+        print_result("天气查询测试", False, str(e))
+        traceback.print_exc()
+        all_pass = False
+
+    return all_pass
+
+
+# ============================================================
+# 阶段八：天气意图检测
+# ============================================================
+def test_weather_intent():
+    print_section("阶段八：天气意图检测")
+    all_pass = True
+
+    try:
+        from ramaria.tools.tool_registry import (
+            _build_intent_vectors,
+            _should_trigger_weather,
+        )
+
+        _build_intent_vectors()
+
+        # 应该触发的用例
+        positives = [
+            "今天天气怎么样",
+            "外面冷不冷",
+            "要下雨吗",
+        ]
+        for msg in positives:
+            result = _should_trigger_weather(msg)
+            ok = print_result(
+                f"天气意图（正例）：{msg}",
+                result is True,
+                f"触发：{result}",
+            )
+            all_pass = all_pass and ok
+
+        # 不应触发的用例
+        negative = "今天心情不太好"
+        result = _should_trigger_weather(negative)
+        ok = print_result(
+            f"天气意图（负例）：{negative}",
+            result is False,
+            f"触发：{result}",
+        )
+        all_pass = all_pass and ok
+
+    except Exception as e:
+        print_result("天气意图检测测试", False, str(e))
+        all_pass = False
+
+    return all_pass
+
+
 # =============================================================================
 # 主入口
 # =============================================================================
@@ -335,6 +438,8 @@ def main():
     results["路径提取"]               = test_path_extraction()
     results["意图检测"]               = test_intent_detection()
     results["resolve_tool_results"]   = test_resolve_tool_results()
+    results["天气查询"]               = test_weather()
+    results["天气意图检测"]           = test_weather_intent()
 
     print_section("测试汇总")
     all_pass = True

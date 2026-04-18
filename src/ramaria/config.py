@@ -187,3 +187,8 @@ DEFAULT_MODEL: str = "local"
 # L1 time_period 合法值，summarizer 和 database 共同依赖
 # 放在 config 而非 constants 是因为这是业务参数，未来可能扩展
 TIME_PERIOD_OPTIONS: list[str] = ["清晨", "上午", "下午", "傍晚", "夜间", "深夜"]
+
+# 天气查询城市（可选）
+# 留空时自动通过 IP 定位；填写后优先使用此值（推荐使用英文城市名）
+# 示例：WEATHER_CITY=Shanghai  或  WEATHER_CITY=Beijing
+WEATHER_CITY: str = os.environ.get("WEATHER_CITY", "")

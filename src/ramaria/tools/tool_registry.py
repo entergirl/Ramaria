@@ -46,8 +46,8 @@ logger = get_logger(__name__)
 # =============================================================================
 
 # 语义相似度触发阈值（余弦相似度，越高越严格）
-# 0.55 在实践中对中文意图句表现较好，可根据实际效果在 config.py 中调整
-INTENT_THRESHOLD = 0.55
+# 0.60 在实践中对中文意图句表现较好，可根据实际效果在 config.py 中调整
+INTENT_THRESHOLD = 0.60
 
 # 硬件感知防抖间隔（秒）
 HARDWARE_DEBOUNCE_SECONDS = 60
@@ -87,6 +87,28 @@ _FS_SCAN_INTENT_EXAMPLES: list[str] = [
     "列出文件树",
 ]
 
+# ── 天气查询意图示例句 ──────────────────────────────────────────────────────
+# 覆盖多种表达方式：温度询问、天气状况、降水预测、穿着建议
+# 避免歧义：移除了与情绪相关的表达，确保都是明确的天气查询
+_WEATHER_INTENT_EXAMPLES: list[str] = [
+    "今天天气怎么样",
+    "现在外面多少度",
+    "今天气温是多少",
+    "明天会下雨吗",
+    "今天会下雪吗",
+    "今晚会不会下雨",
+    "现在外面是晴天还是阴天",
+    "今天风大吗",
+    "今天有雾霾吗",
+    "空气质量怎么样",
+    "湿度是多少",
+    "会打雷吗",
+    "今天适合跑步吗",
+    "出门要不要带伞",
+    "现在需要穿外套吗",
+    "今天太阳大吗",
+]
+
 
 # =============================================================================
 # 嵌入向量缓存
@@ -97,6 +119,7 @@ _FS_SCAN_INTENT_EXAMPLES: list[str] = [
 _intent_vectors: dict[str, Optional[np.ndarray]] = {
     "hardware": None,
     "fs_scan":  None,
+    "weather":  None,
 }
 
 # 是否已完成初始化（避免重复计算）
@@ -151,6 +174,7 @@ def _build_intent_vectors() -> None:
 
     _intent_vectors["hardware"] = _mean_vector(_HARDWARE_INTENT_EXAMPLES)
     _intent_vectors["fs_scan"]  = _mean_vector(_FS_SCAN_INTENT_EXAMPLES)
+    _intent_vectors["weather"] = _mean_vector(_WEATHER_INTENT_EXAMPLES)
 
     logger.debug("工具意图向量初始化完成")
     _vectors_initialized = True
@@ -172,6 +196,14 @@ _HARDWARE_KEYWORDS: set[str] = {
 
 _FS_SCAN_KEYWORDS: set[str] = {
     "目录", "文件夹", "文件树", "扫描", "列出", "路径", "目录结构",
+}
+
+
+_WEATHER_KEYWORDS: set[str] = {
+    "天气", "气温", "温度", "下雨", "雨伞", "下雪", "雪", "晴天",
+    "阴天", "多云", "雾", "雾霾", "空气质量", "预报", "太阳",
+    "雷暴", "风", "湿度", "体感温度", "冷", "热", "降温", "升温",
+    "暴雨", "户外", "出门", "穿外套", "穿什么",
 }
 
 
@@ -260,6 +292,28 @@ def _should_trigger_fs_scan(message: str) -> bool:
     return _keyword_match(message, _FS_SCAN_KEYWORDS)
 
 
+def _should_trigger_weather(message: str) -> bool:
+    """
+    判断用户消息是否有天气查询意图。
+
+    与硬件、文件扫描不同，天气查询没有防抖限制，
+    因为天气数据本身有 10 分钟缓存，不会频繁请求网络。
+    """
+    intent_vec = _intent_vectors.get("weather")
+
+    if intent_vec is not None:
+        ef = _get_embedding_model()
+        if ef is not None:
+            msg_vec = _encode_text(message, ef)
+            if msg_vec is not None:
+                sim = _cosine_similarity(msg_vec, intent_vec)
+                logger.debug(f"天气意图相似度：{sim:.4f}（阈值 {INTENT_THRESHOLD}）")
+                return sim >= INTENT_THRESHOLD
+
+    # 降级：关键词匹配
+    return _keyword_match(message, _WEATHER_KEYWORDS)
+
+
 # =============================================================================
 # 对外接口
 # =============================================================================
@@ -278,6 +332,7 @@ def resolve_tool_results(user_message: str) -> dict:
         {
             "hardware": str | None,   # 硬件状态文本，未触发时为 None
             "fs_scan":  str | None,   # 文件扫描文本，未触发时为 None
+            "weather":  str | None,   # 天气查询文本，未触发时为 None
         }
 
     设计：
@@ -287,6 +342,7 @@ def resolve_tool_results(user_message: str) -> dict:
     results: dict = {
         "hardware": None,
         "fs_scan":  None,
+        "weather":  None,
     }
 
     if not user_message or not user_message.strip():
@@ -326,4 +382,15 @@ def resolve_tool_results(user_message: str) -> dict:
     except Exception as e:
         logger.warning(f"文件扫描工具调用失败 — {e}")
 
+    # ── 天气查询 ──────────────────────────────────────────────────────────
+    try:
+        if _should_trigger_weather(user_message):
+            from ramaria.tools.weather import get_weather
+            weather_text = get_weather()
+            if weather_text:
+                results["weather"] = weather_text
+                logger.info("天气查询工具已触发")
+    except Exception as e:
+        logger.warning(f"天气查询工具调用失败 — {e}")
+        
     return results

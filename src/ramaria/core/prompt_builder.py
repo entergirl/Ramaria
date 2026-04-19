@@ -93,18 +93,18 @@ class PromptBuilder:
     # -------------------------------------------------------------------------
 
     def build(self, context: dict | None = None) -> str:
-        """
-        构建完整的 system prompt。
-
-        参数：
-            context — 包含动态信息的字典（结构见文件顶部注释）。
-                      传 None 时所有动态块降级为最小化内容。
-
-        返回：
-            拼装好的完整 system prompt 字符串。
-        """
         if context is None:
             context = {}
+
+        # ── Block C：记忆上下文（直接在 build 里组装，无独立方法）──
+        memory_parts = []
+        if context.get("l3_profile"):
+            memory_parts.append("## 用户长期画像\n" + context["l3_profile"])
+        if context.get("retrieved_l1l2"):
+            memory_parts.append("## 相关记忆\n" + context["retrieved_l1l2"])
+        if context.get("raw_fragments"):
+            memory_parts.append("## 原始对话片段\n" + context["raw_fragments"])
+        memory_block = "\n\n".join(memory_parts) if memory_parts else ""
 
         blocks = [
             self._blocks.get("A_persona", ""),
@@ -112,11 +112,7 @@ class PromptBuilder:
                 context.get("last_session_time"),
                 context.get("tool_results"),
             ),
-            self._build_memory_block(
-                context.get("l3_profile"),
-                context.get("retrieved_l1l2"),
-                context.get("raw_fragments"),
-            ),
+            memory_block,
             self._build_session_block(
                 context.get("session_id"),
                 context.get("session_index"),
@@ -262,6 +258,7 @@ class PromptBuilder:
             weather_lines = [
                 "### 天气",
                 tool_results["weather"],
+                "（以上是当前真实天气数据，如对话中涉及天气请直接引用，无需再询问用户所在地）",
             ]
 
         # ── 拼装 Block B ──（将原有拼装代码中加入 weather_lines）──────────

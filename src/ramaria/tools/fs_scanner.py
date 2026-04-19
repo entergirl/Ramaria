@@ -228,12 +228,14 @@ def extract_path_from_message(message: str) -> str | None:
             return candidate
 
     # Windows 绝对路径：盘符开头
-    win_path = re.search(r'[A-Za-z]:[\\\/][^\s，,。.？?！!；;]+', message)
+    # 只匹配路径合法字符：字母、数字、反斜杠、正斜杠、下划线、连字符、点、空格
+    # 遇到中文字符或标点立即停止
+    win_path = re.search(r'[A-Za-z]:[\\\/][\w\s\\/\.\-]*', message)
     if win_path:
         return win_path.group(0).rstrip('，,。.？?！!；;')
 
     # Linux/macOS 绝对路径或波浪号路径
-    unix_path = re.search(r'(?:~|\/)[^\s，,。.？?！!；;]*(?:\/[^\s，,。.？?！!；;]*)+', message)
+    unix_path = re.search(r'(?:~|\/[\w\-\.]+)+(?:\/[\w\-\.]*)*', message)
     if unix_path:
         return unix_path.group(0).rstrip('，,。.？?！!；;')
 

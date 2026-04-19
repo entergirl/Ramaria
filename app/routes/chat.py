@@ -46,6 +46,8 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+_MAX_HISTORY_MESSAGES = 40
+
 
 # =============================================================================
 # 数据模型
@@ -391,7 +393,7 @@ def _call_local(messages: list[dict]) -> str:
     return result
 
 
-def _handle_local(session_id: int, content: str) -> ChatResponse:
+async def _handle_local(session_id: int, content: str) -> ChatResponse:
     """
     统一处理走本地模型的分支。
 
@@ -405,18 +407,20 @@ def _handle_local(session_id: int, content: str) -> ChatResponse:
         session_id — 当前活跃 session 的 id
         content    — 用户消息文本
     """
-    history = get_messages_as_dicts(session_id)
-    context = _build_context(session_id, user_message=content)
-    system  = build_system_prompt(context)
+    history = await asyncio.to_thread(get_messages_as_dicts, session_id)
+    context = await asyncio.to_thread(_build_context, session_id, content)
+    system  = await asyncio.to_thread(build_system_prompt, context)
+    history_without_current = history[:-1]
+    trimmed_history = history_without_current[-_MAX_HISTORY_MESSAGES:]
 
     msgs = [
         {"role": "system", "content": system},
-        *history[:-1],
+        *trimmed_history,
         {"role": "user",   "content": content},
     ]
 
-    reply = _call_local(msgs)
-    save_message(session_id, "assistant", reply)
+    reply = await asyncio.to_thread(_call_local, msgs)
+    await asyncio.to_thread(save_message, session_id, "assistant", reply)
     return ChatResponse(reply=reply, session_id=session_id, mode="local")
 
 
@@ -473,7 +477,7 @@ async def chat(req: ChatRequest):
     if conflict_action is not None:
         cr = get_conflict_question()
         if cr is not None:
-            conflict_id = cr["conflict_id"]
+            conflict_id, _ = cr
             reply = handle_conflict_reply(conflict_id, conflict_action)
             save_message(session_id, "assistant", reply)
             return ChatResponse(reply=reply, session_id=session_id, mode="local")
@@ -481,7 +485,7 @@ async def chat(req: ChatRequest):
     # 冲突询问推送
     cr = get_conflict_question()
     if cr is not None:
-        question = cr["conflict_question"]
+        _, question = cr
         save_message(session_id, "assistant", question)
         return ChatResponse(reply=question, session_id=session_id, mode="local")
 
@@ -495,14 +499,14 @@ async def chat(req: ChatRequest):
         return ChatResponse(reply=txt, session_id=session_id, mode="confirm")
 
     if action in ("online", "confirm_yes"):
-        reply = app_router.call_claude(result["message"])
+        reply = await asyncio.to_thread(app_router.call_claude, result["message"])
         save_message(session_id, "assistant", reply)
         return ChatResponse(reply=reply, session_id=session_id, mode="online")
 
     if action == "confirm_no":
-        return _handle_local(session_id, result["message"])
+        return await _handle_local(session_id, result["message"])
 
-    return _handle_local(session_id, req.content.strip())
+    return await _handle_local(session_id, req.content.strip())
 
 
 # =============================================================================
@@ -574,7 +578,7 @@ async def websocket_endpoint(ws: WebSocket):
         if conflict_action is not None:
             cr = get_conflict_question()
             if cr is not None:
-                conflict_id = cr["conflict_id"]
+                conflict_id, _ = cr
                 reply = handle_conflict_reply(conflict_id, conflict_action)
                 save_message(session_id, "assistant", reply)
                 await _ws_send(ws, {
@@ -588,7 +592,7 @@ async def websocket_endpoint(ws: WebSocket):
         # ── 冲突询问推送 ──
         cr = get_conflict_question()
         if cr is not None:
-            question = cr["conflict_question"]
+            _, question = cr
             save_message(session_id, "assistant", question)
             await _ws_send(ws, {
                 "type":       "reply",
@@ -613,7 +617,7 @@ async def websocket_endpoint(ws: WebSocket):
             })
 
         elif action in ("online", "confirm_yes"):
-            reply = app_router.call_claude(result["message"])
+            reply = await asyncio.to_thread(app_router.call_claude, result["message"])
             save_message(session_id, "assistant", reply)
             await _ws_send(ws, {
                 "type":       "reply",
@@ -623,7 +627,7 @@ async def websocket_endpoint(ws: WebSocket):
             })
 
         elif action == "confirm_no":
-            response = _handle_local(session_id, result["message"])
+            response = await _handle_local(session_id, result["message"])
             await _ws_send(ws, {
                 "type":       "reply",
                 "reply":      response.reply,
@@ -633,7 +637,7 @@ async def websocket_endpoint(ws: WebSocket):
 
         else:
             # 默认本地
-            response = _handle_local(session_id, combined)
+            response = await _handle_local(session_id, combined)
             await _ws_send(ws, {
                 "type":       "reply",
                 "reply":      response.reply,
@@ -686,8 +690,13 @@ async def websocket_endpoint(ws: WebSocket):
 
             # 创建新计时器
             async def _delayed_flush(delay: float):
-                await asyncio.sleep(delay)
-                await _flush()
+                try:
+                    await asyncio.sleep(delay)
+                    await _flush()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("防抖刷新任务执行失败")
 
             _timer[0] = asyncio.create_task(_delayed_flush(debounce_sec))
 

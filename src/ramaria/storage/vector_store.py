@@ -17,6 +17,7 @@ import math
 import os
 import queue
 import threading
+from collections import Counter
 from datetime import datetime, timezone
 
 import chromadb
@@ -51,6 +52,7 @@ from ramaria.config import (
 from ramaria.storage.database import get_messages
 
 from ramaria.logger import get_logger
+from ramaria.memory.decay import calc_decay_r
 logger = get_logger(__name__)
 
 
@@ -334,12 +336,9 @@ class BM25Index:
 
         # ── 步骤 2：取出当前缓冲区（加锁取出后立即清空，缩短持锁时间）──
         with self._rw_lock:
-            if layer == "l1":
-                pending_snapshot = list(self._pending_l1)
-                self._pending_l1.clear()
-            else:
-                pending_snapshot = list(self._pending_l2)
-                self._pending_l2.clear()
+            pending_snapshot = list(
+                self._pending_l1 if layer == "l1" else self._pending_l2
+            )
 
         # ── 步骤 3：在锁外合并全量数据和缓冲区数据，完整重新分词 ──
         # 先用数据库全量数据建立基础
@@ -387,10 +386,25 @@ class BM25Index:
                 self._l1_ids  = ids
                 self._l1_docs = docs
                 self._l1_bm25 = new_bm25
+                current_pending = self._pending_l1
             else:
                 self._l2_ids  = ids
                 self._l2_docs = docs
                 self._l2_bm25 = new_bm25
+                current_pending = self._pending_l2
+
+            pending_counter = Counter(pending_snapshot)
+            remaining_pending = []
+            for item in current_pending:
+                if pending_counter[item] > 0:
+                    pending_counter[item] -= 1
+                else:
+                    remaining_pending.append(item)
+
+            if layer == "l1":
+                self._pending_l1 = remaining_pending
+            else:
+                self._pending_l2 = remaining_pending
 
         logger.debug(
             f"BM25 rebuild({layer}): 完成，"
@@ -603,7 +617,12 @@ def _calc_decay_factor(
         t           = 距记忆生成（created_at）的天数
         S_adjusted  = decay_s × (1 + salience × SALIENCE_DECAY_MULTIPLIER)
     """
-    now = datetime.now(timezone.utc)
+    return calc_decay_r(
+        created_at_str=created_at_str,
+        decay_s=decay_s,
+        last_accessed_at_str=last_accessed_at_str,
+        salience=salience,
+    )
 
     try:
         created_at = datetime.fromisoformat(created_at_str)
@@ -1036,7 +1055,7 @@ def _retrieve(
 
             meta_salience = meta.get("salience", None)
 
-            R                 = _calc_decay_factor(
+            R                 = calc_decay_r(
                 created_at_str,
                 decay_s,
                 last_accessed_at_str,

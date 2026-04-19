@@ -453,13 +453,9 @@ class PushScheduler:
             str — 格式化后的近期记忆文本
         """
         try:
-            from ramaria.storage.database import get_recent_l2
-            # 复用 get_recent_l2 获取最近摘要；
-            # 这里取 L1 层级更细，但 database.py 没有直接暴露
-            # "最近N条L1按时间降序" 的函数，复用 read_tools 里的私有函数
-            from ramaria.adapters.mcp.tools.read_tools import _get_recent_l1_rows
+            from ramaria.storage.database import get_recent_l1
 
-            rows = _get_recent_l1_rows(limit=3)
+            rows = get_recent_l1(limit=3)
             if not rows:
                 return "（暂无近期对话记录）"
 

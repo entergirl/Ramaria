@@ -14,7 +14,7 @@ src/ramaria/importer/qq/importer.py — 历史消息数据库写入层
 """
 
 from ramaria.importer.qq.parser import ParsedMessage
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

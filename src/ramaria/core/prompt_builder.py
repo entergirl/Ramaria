@@ -76,7 +76,7 @@ class PromptBuilder:
     """
 
     def __init__(
-    self,
+        self,
         persona_path: str | Path = DEFAULT_PERSONA_PATH,
     ):
         """
@@ -123,6 +123,10 @@ class PromptBuilder:
         return BLOCK_SEPARATOR.join(
             b.strip() for b in blocks if b and b.strip()
         )
+
+    def get_identity(self) -> dict:
+        """返回 persona.toml 中的 [identity] 配置。"""
+        return dict(self._identity)
 
     # -------------------------------------------------------------------------
     # 私有方法：文件加载
@@ -361,17 +365,3 @@ def build_system_prompt(context: dict | None = None) -> str:
         完整的 system prompt 字符串。
     """
     return get_builder().build(context)
-    
-def get_identity(self) -> dict:
-    """
-    返回 persona.toml 中的 [identity] 配置。
-
-    返回格式：
-        {
-            "assistant_name": str,  # 助手名字
-            "user_name":      str,  # 用户名字
-        }
-
-    调用方：push_scheduler.py 的推送消息生成函数
-    """
-    return dict(self._identity)

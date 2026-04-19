@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 # ── 项目根目录 ────────────────────────────────────────────────────────────────
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 
 # ── venv 内 Python 可执行文件路径 ─────────────────────────────────────────────
 IS_WINDOWS  = platform.system() == "Windows"

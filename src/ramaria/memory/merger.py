@@ -31,6 +31,8 @@ from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 
+_MAX_L1_PER_MERGE = 20
+
 
 # =============================================================================
 # Prompt 模板
@@ -247,7 +249,7 @@ def check_and_merge() -> int | None:
     logger.debug("开始检查 L2 合并触发条件")
 
     # 第一步：读取所有未吸收 L1
-    l1_rows = get_unabsorbed_l1()
+    l1_rows = get_unabsorbed_l1(limit=_MAX_L1_PER_MERGE)
     should_trigger, reason = _should_trigger(l1_rows)
     logger.debug(f"触发判断：{reason}")
 

@@ -304,33 +304,10 @@ def handle_conflict_reply(conflict_id: int, action: str) -> str:
         logger.warning(f"找不到 conflict_id={conflict_id}，可能已处理")
         return "这条记录好像已经处理过了。"
 
-    field_label = _FIELD_LABELS.get(target["field"], target["field"])
-
-    if action == "resolve":
-        update_profile_field(
-            field        = target["field"],
-            new_content  = target["new_content"],
-            source_l1_id = target["source_l1_id"],
-        )
-        resolve_conflict(conflict_id)
-        logger.info(
-            f"冲突 {conflict_id} 已 resolve，画像 {target['field']} 已更新"
-        )
-        return f'好的，我已经把"{field_label}"更新成新的情况了。'
-
-    elif action == "ignore":
-        ignore_conflict(conflict_id)
-        logger.info(f"冲突 {conflict_id} 已 ignore，画像保持不变")
-        return (
-            f'好的，我会继续记住之前的"{field_label}"，'
-            f'这次的变化先不更新。'
-        )
-
-    # alias_confirm 类型：别名确认
     if target.get("conflict_type") == "alias_confirm":
         from ramaria.storage.database import (
-            get_alias_kp_ids_from_conflict,
             confirm_alias,
+            get_alias_kp_ids_from_conflict,
             reject_alias,
         )
 
@@ -372,6 +349,28 @@ def handle_conflict_reply(conflict_id: int, action: str) -> str:
             return (
                 f'好的，"{new_word}"和"{old_word}"我会分开记，不混在一起。'
             )
+
+    field_label = _FIELD_LABELS.get(target["field"], target["field"])
+
+    if action == "resolve":
+        update_profile_field(
+            field        = target["field"],
+            new_content  = target["new_content"],
+            source_l1_id = target["source_l1_id"],
+        )
+        resolve_conflict(conflict_id)
+        logger.info(
+            f"冲突 {conflict_id} 已 resolve，画像 {target['field']} 已更新"
+        )
+        return f'好的，我已经把"{field_label}"更新成新的情况了。'
+
+    if action == "ignore":
+        ignore_conflict(conflict_id)
+        logger.info(f"冲突 {conflict_id} 已 ignore，画像保持不变")
+        return (
+            f'好的，我会继续记住之前的"{field_label}"，'
+            f'这次的变化先不更新。'
+        )
 
     logger.warning(f"未知 action {action!r}，不做任何操作")
     return '没有理解你的选择，可以回复"更新"或"忽略"。'

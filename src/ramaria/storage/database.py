@@ -22,6 +22,11 @@ from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 
+_LAYER_TABLE_MAP = {
+    "l1": "memory_l1",
+    "l2": "memory_l2",
+}
+
 
 # =============================================================================
 # 内部工具函数（模块私有，不对外暴露）
@@ -497,6 +502,23 @@ def get_latest_l1():
         return cursor.fetchone()
 
 
+def get_recent_l1(limit: int = 3) -> list:
+    """取出最近几条 L1 摘要，按生成时间降序排列。"""
+    with _db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, session_id, summary, keywords, time_period, atmosphere,
+                   created_at, last_accessed_at
+            FROM memory_l1
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return cursor.fetchall()
+
+
 def get_l1_by_session(session_id: int):
     """取出某个 session 对应的 L1 摘要（通常只有一条）。"""
     with _db_conn() as conn:
@@ -520,6 +542,48 @@ def get_setting(key: str, default: str | None = None) -> str | None:
         cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
         row = cursor.fetchone()
     return row["value"] if row else default
+
+
+def get_all_sessions_with_stats() -> list[dict]:
+    """获取所有 session 的摘要列表，含消息数和最后一条消息预览。"""
+    with _db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+              s.id, s.started_at, s.ended_at,
+              (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id)
+                  AS message_count,
+              (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id)
+                  AS last_message_at,
+              (SELECT m.content FROM messages m WHERE m.session_id = s.id
+               ORDER BY m.created_at DESC LIMIT 1)
+                  AS last_message_preview
+            FROM sessions s
+            ORDER BY COALESCE(
+              (SELECT MAX(m.created_at) FROM messages m WHERE m.session_id = s.id),
+              s.started_at
+            ) DESC
+            """
+        )
+        rows = cursor.fetchall()
+
+    results = []
+    for row in rows:
+        preview = row["last_message_preview"]
+        if preview and len(preview) > 80:
+            preview = preview[:80] + "..."
+
+        results.append({
+            "id": row["id"],
+            "started_at": row["started_at"],
+            "ended_at": row["ended_at"],
+            "message_count": row["message_count"],
+            "last_message_at": row["last_message_at"],
+            "last_message_preview": preview,
+        })
+
+    return results
 
 
 def set_setting(key: str, value: str) -> None:
@@ -858,19 +922,17 @@ def add_last_accessed_at_columns() -> dict:
     with _db_conn() as conn:
         cursor = conn.cursor()
 
-        try:
+        def _column_exists(table: str, column: str) -> bool:
+            cursor.execute(f"PRAGMA table_info({table})")
+            return any(row["name"] == column for row in cursor.fetchall())
+
+        if not _column_exists("memory_l1", "last_accessed_at"):
             cursor.execute("ALTER TABLE memory_l1 ADD COLUMN last_accessed_at TEXT")
             result["l1"] = True
-        except Exception as e:
-            if "duplicate column name" not in str(e).lower():
-                logger.warning(f"memory_l1 添加 last_accessed_at 列时出现非预期异常 — {e}")
 
-        try:
+        if not _column_exists("memory_l2", "last_accessed_at"):
             cursor.execute("ALTER TABLE memory_l2 ADD COLUMN last_accessed_at TEXT")
             result["l2"] = True
-        except Exception as e:
-            if "duplicate column name" not in str(e).lower():
-                logger.warning(f"memory_l2 添加 last_accessed_at 列时出现非预期异常 — {e}")
 
         conn.commit()
 
@@ -898,11 +960,6 @@ def batch_update_last_accessed(layer: str, id_list: list[int]) -> int:
     """
     if not id_list:
         return 0
-
-    _LAYER_TABLE_MAP = {
-        "l1": "memory_l1",
-        "l2": "memory_l2",
-    }
 
     try:
         table = _LAYER_TABLE_MAP[layer]
@@ -950,11 +1007,6 @@ def get_last_accessed_at(layer: str, record_id: int) -> str | None:
         str  — ISO 8601 时间戳字符串
         None — 字段为 NULL 或记录不存在
     """
-    _LAYER_TABLE_MAP = {
-        "l1": "memory_l1",
-        "l2": "memory_l2",
-    }
-
     try:
         table = _LAYER_TABLE_MAP[layer]
     except KeyError:

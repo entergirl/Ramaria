@@ -33,8 +33,8 @@ from ramaria.storage.database import (
     update_profile_field,
 )
 
-from constants import PROFILE_FIELDS, PROFILE_FIELD_LIST, VALID_FIELD_KEYS
-from logger import get_logger
+from ramaria.constants import PROFILE_FIELDS, PROFILE_FIELD_LIST, VALID_FIELD_KEYS
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

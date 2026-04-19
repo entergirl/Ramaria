@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from logger import get_logger
+from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 

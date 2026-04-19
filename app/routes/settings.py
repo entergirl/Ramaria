@@ -56,36 +56,37 @@ async def api_post_settings(req: SettingsRequest):
         push_daily_limit  — 1~10
     """
     errors = []
+    updates: dict[str, str] = {}
 
     if req.debounce_seconds is not None:
         if not (1 <= req.debounce_seconds <= 10):
             errors.append("debounce_seconds 必须在 1~10 之间")
         else:
-            set_setting("debounce_seconds", str(req.debounce_seconds))
+            updates["debounce_seconds"] = str(req.debounce_seconds)
 
     if req.push_enabled is not None:
         if req.push_enabled not in (0, 1):
             errors.append("push_enabled 必须是 0 或 1")
         else:
-            set_setting("push_enabled", str(req.push_enabled))
+            updates["push_enabled"] = str(req.push_enabled)
 
     if req.push_window_start is not None:
         if not (0 <= req.push_window_start <= 23):
             errors.append("push_window_start 必须在 0~23 之间")
         else:
-            set_setting("push_window_start", str(req.push_window_start))
+            updates["push_window_start"] = str(req.push_window_start)
 
     if req.push_window_end is not None:
         if not (1 <= req.push_window_end <= 24):
             errors.append("push_window_end 必须在 1~24 之间")
         else:
-            set_setting("push_window_end", str(req.push_window_end))
+            updates["push_window_end"] = str(req.push_window_end)
 
     if req.push_daily_limit is not None:
         if not (1 <= req.push_daily_limit <= 10):
             errors.append("push_daily_limit 必须在 1~10 之间")
         else:
-            set_setting("push_daily_limit", str(req.push_daily_limit))
+            updates["push_daily_limit"] = str(req.push_daily_limit)
 
     # 窗口起止时间交叉校验
     if req.push_window_start is not None and req.push_window_end is not None:
@@ -94,5 +95,8 @@ async def api_post_settings(req: SettingsRequest):
 
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    for key, value in updates.items():
+        set_setting(key, value)
 
     return JSONResponse({"status": "ok"})

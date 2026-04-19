@@ -17,21 +17,15 @@ app/routes/memory.py — 记忆可视化接口
       避免索引抖动导致记忆数据无法删除
 """
 
-import math
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from ramaria.config import (
     MEMORY_DECAY_S_L1,
     MEMORY_DECAY_S_L2,
-    MEMORY_DECAY_ENABLE_ACCESS_BOOST,
-    MEMORY_DECAY_RECENT_BOOST_DAYS,
-    MEMORY_DECAY_RECENT_BOOST_FLOOR,
-    SALIENCE_DECAY_MULTIPLIER,
 )
 from ramaria.logger import get_logger
+from ramaria.memory.decay import calc_decay_r
 
 logger = get_logger(__name__)
 
@@ -65,7 +59,12 @@ def _calc_decay_r(
         float，保留 4 位小数，范围 (0, 1]
         解析时间失败时安全返回 1.0
     """
-    now = datetime.now(timezone.utc)
+    return calc_decay_r(
+        created_at_str=created_at_str,
+        decay_s=decay_s,
+        last_accessed_at_str=last_accessed_at_str,
+        salience=salience,
+    )
 
     # 解析 created_at，计算距今天数
     try:
@@ -316,7 +315,7 @@ async def api_get_memory_l1(
 
     # 为每条记录计算实时衰减值
     for row in rows:
-        row["decay_r"] = _calc_decay_r(
+        row["decay_r"] = calc_decay_r(
             created_at_str       = row.get("created_at", ""),
             decay_s              = MEMORY_DECAY_S_L1,
             last_accessed_at_str = row.get("last_accessed_at"),
@@ -372,7 +371,7 @@ async def api_get_memory_l2(
         raise HTTPException(status_code=500, detail=f"数据库查询失败：{e}")
 
     for row in rows:
-        row["decay_r"] = _calc_decay_r(
+        row["decay_r"] = calc_decay_r(
             created_at_str       = row.get("created_at", ""),
             decay_s              = MEMORY_DECAY_S_L2,
             last_accessed_at_str = row.get("last_accessed_at"),
@@ -409,7 +408,7 @@ async def api_get_memory_profile():
         }
     """
     from ramaria.storage.database import get_current_profile
-    from constants import PROFILE_FIELDS
+    from ramaria.constants import PROFILE_FIELDS
 
     try:
         profile = get_current_profile()

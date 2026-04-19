@@ -163,7 +163,7 @@ CLAUDE_TEMPERATURE: float = 0.7
 
 SERVER_HOST: str  = os.environ.get("SERVER_HOST", "0.0.0.0")
 SERVER_PORT: int  = int(os.environ.get("SERVER_PORT", "8000"))
-DEBUG:       bool = os.environ.get("APP_DEBUG", "true").lower() == "true"
+DEBUG:       bool = os.environ.get("APP_DEBUG", "false").lower() == "true"
 
 
 # =============================================================================

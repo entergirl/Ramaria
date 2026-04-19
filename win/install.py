@@ -23,8 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ── 项目根目录（本文件所在目录）──────────────────────────────────────────────
-ROOT = Path(__file__).resolve().parent
+# ── 项目根目录（仓库根目录）──────────────────────────────────────────────
+ROOT = Path(__file__).resolve().parent.parent
 
 # ── 虚拟环境目录 ──────────────────────────────────────────────────────────────
 VENV_DIR = ROOT / "venv"

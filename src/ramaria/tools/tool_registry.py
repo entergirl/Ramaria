@@ -377,8 +377,12 @@ def resolve_tool_results(user_message: str) -> dict:
                 results["fs_scan"] = scan_result
                 logger.info(f"文件扫描工具已触发，路径：{path}")
             else:
-                # 检测到扫描意图但没有路径，不触发，让模型自然回复询问路径
-                logger.debug("文件扫描意图命中但未找到路径，跳过触发")
+                # 检测到扫描意图但没有路径，返回提示信息
+                results["fs_scan"] = (
+                    "[提示] 用户似乎想扫描某个目录，但我没能提取到路径。"
+                    "请回复：你可以把路径用引号括起来告诉我，比如扫描 \"F:\\你的路径\""
+                )
+                logger.debug("文件扫描意图命中但未找到路径，已添加提示信息")
     except Exception as e:
         logger.warning(f"文件扫描工具调用失败 — {e}")
 

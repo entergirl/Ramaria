@@ -219,24 +219,22 @@ def extract_path_from_message(message: str) -> str | None:
     """
     import re
 
-    # 优先匹配引号包裹的路径
-    quoted = re.search(r'["\']([^"\']+)["\']', message)
+    # ── 优先级1：引号包裹的路径（最可靠，支持中文路径）──────────────────
+    # 用户说「扫描一下 "F:\我的项目\珊瑚菌" 目录」
+    quoted = re.search(r'["\'"\'](.*?)["\'"\']', message)
     if quoted:
         candidate = quoted.group(1).strip()
-        # 粗略判断是否像路径（含斜杠或反斜杠）
         if '/' in candidate or '\\' in candidate or candidate.startswith('~'):
             return candidate
 
-    # Windows 绝对路径：盘符开头
-    # 只匹配路径合法字符：字母、数字、反斜杠、正斜杠、下划线、连字符、点、空格
-    # 遇到中文字符或标点立即停止
-    win_path = re.search(r'[A-Za-z]:[\\\/][\w\s\\/\.\-]*', message)
+    # ── 优先级2：无引号时，匹配到第一个空白或句末为止 ──────────────────
+    # 用户说「扫描 F:\Ramaria 目录」（路径和自然语言之间有空格）
+    win_path = re.search(r'[A-Za-z]:[\\\/]\S+', message)
     if win_path:
-        return win_path.group(0).rstrip('，,。.？?！!；;')
+        return win_path.group(0).rstrip('，,。.？?！!；;、')
 
-    # Linux/macOS 绝对路径或波浪号路径
-    unix_path = re.search(r'(?:~|\/[\w\-\.]+)+(?:\/[\w\-\.]*)*', message)
+    unix_path = re.search(r'(?:~|\/\S+)(?:\/\S*)*', message)
     if unix_path:
-        return unix_path.group(0).rstrip('，,。.？?！!；;')
+        return unix_path.group(0).rstrip('，,。.？?！!；;、')
 
     return None

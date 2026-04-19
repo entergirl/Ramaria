@@ -49,14 +49,11 @@ cd Ramaria
 
 ### Windows
 
-  1. 在根目录下文件夹 `win` 中双击 `check_python.bat` 检测python环境，确保python语句可以正常运行
-  2. 将 `install.py` 与 `start.py` 两个文件完整的复制并粘贴到根目录下
-  3. 进入项目根目录，右键窗口空白处选择 `在终端中打开`
-  4. 输入以下命令运行启动文件
+  1. 进入项目根目录，右键窗口空白处选择 `在终端中打开`
+  2. 运行安装脚本：
 
-```python
-#在项目根目录运行
-python install.py
+```bash
+python win/install.py
 ```
 
 
@@ -213,7 +210,7 @@ http://localhost:1234/v1/models
 
  1. 通过启动脚本启动
 ```
-python start.py
+python win/start.py
 ```
 
  2. 跳过配置检测直接启动

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>系统总览</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+
+    <style>
+        body {
+            padding: 0 20px;
+            font-family: var(--font-body);
+        }
+
+        /* ========== 顶部导航  ========== */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--bg);
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header-title {
+            font-family: var(--font-title);
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--coral);
+        }
+
+        /* ========== 返回对话按钮========== */
+        .nav-back {
+            font-size: .75rem;
+            font-family: var(--font-mono);
+            color: var(--text-mid);
+            text-decoration: none;
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: color var(--transition-normal), border-color var(--transition-normal);
+            display: inline-block;
+        }
+        .nav-back:hover {
+            color: var(--coral);
+            border-color: var(--coral-light);
+        }
+
+        /* ========== 页面主体 ========== */
+        .page-body {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 0 40px;
+        }
+
+        /* ========== 标题 + 底部分割线 ========== */
+        .page-title {
+            font-family: var(--font-title);
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--coral);
+            letter-spacing: .04em;
+            margin-bottom: 4px;
+            position: relative;
+            padding-bottom: 8px;
+        }
+        .page-title::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: 1px;
+            background-color: var(--border);
+        }
+        .page-subtitle {
+            font-size: .72rem;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            margin-bottom: 20px;
+        }
+
+        /* ========== 灰色卡片 ========== */
+        .main-card, .persona-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            padding-left: 12px; /* 左边对齐 */
+        }
+
+        .card-section-title {
+            font-size: 1rem;
+            color: var(--text);
+            font-weight: 500;
+            margin: 0 0 18px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        /* ========== 自检条目之间增加分割线 ========== */
+        .check-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            font-size: 0.95rem;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .check-item:last-child {
+            border-bottom: none; /* 最后一条去掉线 */
+        }
+
+        .check-icon { margin-right: 12px; }
+        .status-success { color: #2ecc71; }
+        .status-failed { color: #e74c3c; }
+
+        /* ========== 深色按钮加宽 ========== */
+        .refresh-btn, .save-persona-btn {
+            padding: 6px 16px; /* 加宽 */
+            border-radius: var(--radius-sm);
+            border: none;
+            background: var(--coral);
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            margin-bottom: 20px;
+        }
+
+        .persona-desc {
+            font-size: .88rem;
+            color: var(--text-mid);
+            margin-bottom: 12px;
+        }
+        #persona-toml-editor {
+            width: 100%;
+            min-height: 240px;
+            padding: 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            resize: vertical;
+            margin-bottom: 12px;
+        }
+
+        .tip-text {
+            font-size: 0.82rem;
+            margin-top: 6px;
+        }
+        .tip-success { color: #2ecc71; }
+        .tip-error { color: #e74c3c; }
+    </style>
+</head>
+
+<body>
+    <!-- ========== 顶部：标题 + 返回按钮 ========== -->
+    <header role="banner">
+        <div class="header-title">珊瑚菌 · 系统总览</div>
+        <div id="controls">
+            <a href="/" class="nav-back">← 返回对话</a>
+        </div>
+    </header>
+
+    <div class="page-body">
+        <!-- 标题 + 分割线 -->
+        <div class="page-title">系统状态</div>
+        <div class="page-subtitle">运行环境检查 · 人格配置管理</div>
+
+        <!-- 刷新按钮 -->
+        <button class="refresh-btn" onclick="loadStatus()">🔄 刷新状态</button>
+
+        <!-- 系统自检卡片 -->
+        <div class="main-card">
+            <h3 class="card-section-title">系统环境自检</h3>
+            <div id="check-list"></div>
+        </div>
+
+        <!-- 人格配置 -->
+        <div class="persona-card">
+            <h3 class="card-section-title">配置人格</h3>
+            <p class="persona-desc">输入以编辑，点击保存立即生效</p>
+            <textarea id="persona-toml-editor"></textarea>
+            <button class="save-persona-btn" onclick="savePersonaConfig()">💾 保存人格配置</button>
+            <div id="persona-tip" class="tip-text"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadStatus() {
+            const list = document.getElementById('check-list');
+            list.innerHTML = '加载中...';
+            try {
+                const res = await fetch('/api/health/check');
+                const data = await res.json();
+                list.innerHTML = '';
+                const items = [
+                    { key: 'venv', label: '虚拟环境（venv）' },
+                    { key: 'env', label: '.env 配置文件' },
+                    { key: 'embedding', label: '嵌入模型（Embedding）' },
+                    { key: 'local_model', label: '本地模型服务（127.0.0.1:1234）' },
+                    { key: 'database', label: '数据库（SQLite）' }
+                ];
+                items.forEach(item => {
+                    const ok = data[item.key];
+                    list.innerHTML += `
+                    <div class="check-item">
+                        <span class="check-icon ${ok ? 'status-success' : 'status-failed'}">
+                            ${ok ? '✅' : '❌'}
+                        </span>
+                        <div class="check-text">${item.label}</div>
+                    </div>`;
+                });
+            } catch (e) {
+                list.innerHTML = '<div class="status-failed">获取状态失败</div>';
+            }
+        }
+
+        async function loadPersonaConfig() {
+            const tip = document.getElementById('persona-tip');
+            try {
+                const res = await fetch('/api/persona/get');
+                if (!res.ok) throw new Error('load failed');
+                const txt = await res.text();
+                document.getElementById('persona-toml-editor').value = txt;
+                tip.textContent = '';
+            } catch (e) {
+                tip.textContent = '❌ 人格配置加载失败';
+                tip.className = 'tip-text tip-error';
+            }
+        }
+
+        async function savePersonaConfig() {
+            const c = document.getElementById('persona-toml-editor').value;
+            const t = document.getElementById('persona-tip');
+            t.textContent = '保存中...';
+            try {
+                const r = await fetch('/api/persona/save', {
+                    method: 'POST', headers:{'Content-Type':'text/plain'}, body:c
+                });
+                t.textContent = r.ok ? '✅ 保存成功' : '❌ 保存失败';
+                t.className = 'tip-text ' + (r.ok ? 'tip-success' : 'tip-error');
+            } catch(e) {
+                t.textContent = '❌ 保存失败';
+                t.className = 'tip-text tip-error';
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStatus();
+            loadPersonaConfig();
+        });
+    </script>
+</body>
+</html>

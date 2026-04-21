@@ -87,6 +87,7 @@ function connectWebSocket() {
           // 推送消息不进入 loading 状态，直接渲染
           // created_at 由服务端传来，显示消息真实生成时间
           UI.appendBubble(data.content, 'assistant', false, false, data.created_at);
+          showDesktopNotify("珊瑚菌来找你聊天啦！");
           break;
 
         // 错误通知
@@ -148,7 +149,7 @@ async function sendMessage() {
   if (AppState.isLoading) return;
 
   const textarea = document.getElementById('user-input');
-  const content  = textarea.value.trim();
+  const content = textarea.value.trim();
   if (!content) return;
 
   // 清空输入框
@@ -156,7 +157,8 @@ async function sendMessage() {
   textarea.style.height = 'auto';
 
   // 立即渲染用户气泡（即时反馈）
-  UI.appendBubble(content, 'user', false, false, new Date().toISOString());
+    UI.appendBubble(content, 'user', false, false, new Date().toISOString());
+
 
   // WebSocket 未连接时降级到 HTTP（兜底，避免完全无法发消息）
   if (!_ws || _ws.readyState !== WebSocket.OPEN) {
@@ -169,7 +171,6 @@ async function sendMessage() {
   // 进入 loading 状态，显示打字动画
   AppState.setLoading(true);
   UI.showTyping();
-
   // 通过 WebSocket 发送
   const sent = API.wsSendChat(_ws, content);
   if (!sent) {

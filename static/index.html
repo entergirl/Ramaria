@@ -120,6 +120,7 @@
     <button id="save-btn"      class="sidebar-action">💾 保存对话</button>
     <a href="/static/import.html" class="sidebar-action">📥 导入对话</a>
     <a href="/static/memory.html" class="sidebar-action">🧠 记忆查看</a>
+    <a href="/dashboard" class="sidebar-action">📊 系统总览</a>
     <button id="settings-btn"  class="sidebar-action">⚙️ 设置</button>
   </div>
 </aside>
@@ -130,14 +131,26 @@
      role="log"：告知屏幕阅读器这是一个实时更新的日志区域。
      aria-live="polite"：新消息插入时，屏幕阅读器在用户闲置时读出。
      ============================================================ -->
+
 <main
   id="messages"
   role="log"
   aria-live="polite"
   aria-label="对话内容"
   aria-relevant="additions"
-></main>
-
+>
+ <div class="empty-state">
+    <div class="empty-icon">
+          <span></span>
+          <span></span>
+     </div>
+     <div class="empty-title">我是珊瑚菌</div>
+     <div class="empty-desc">
+          记录你的点滴日常，留存专属记忆<br>
+          每一次交谈，都在构筑独属于你的世界<br>
+      </div>
+  </div>
+</main>
 
 <!-- ============================================================
      底部输入区
@@ -154,7 +167,7 @@
 
   <textarea
     id="user-input"
-    placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+    placeholder=""
     rows="1"
     aria-label="消息输入框"
     aria-describedby="input-hint"
@@ -296,6 +309,101 @@
     <button id="settings-save" class="settings-save-btn">保存</button>
   </div>
 </div>
+
+<script>
+// 珊瑚菌随机 placeholder 文案
+const placeholderList = [
+  "和珊瑚菌说点什么吧，我也会主动找你~",
+  "今天过得怎么样？和我聊聊吧^^",
+  "随时聊天，我会认真听你说话><",
+  "把今天的心情说给珊瑚菌听吧？",
+  "想聊什么都可以，我一直都在",
+  "今天一切都还顺利吗？"
+];
+
+// 随机选一句
+const randomMsg = placeholderList[Math.floor(Math.random() * placeholderList.length)];
+
+// 设置到输入框
+document.getElementById("user-input").placeholder = randomMsg;
+</script>
+
+<script>
+// 自动隐藏空白页（终极版，永远生效）
+const emptyState = document.querySelector('.empty-state');
+
+function checkEmpty() {
+  const msgCount = document.querySelectorAll('.msg-bubble').length;
+  emptyState.style.display = msgCount > 0 ? 'none' : 'flex';
+}
+
+// 页面加载检查
+window.addEventListener('DOMContentLoaded', checkEmpty);
+
+// 监听消息区域变化 → 只要有新消息 → 立刻隐藏空白页
+const msgWrap = document.getElementById('messages');
+const observer = new MutationObserver(checkEmpty);
+observer.observe(msgWrap, { childList: true, subtree: true });
+</script>
+
+<script>
+// ========== 空白初始页 消息检测自动隐藏 ==========
+const emptyState = document.querySelector('.empty-state');
+const messagesWrap = document.getElementById('messages');
+
+function checkEmptyPage() {
+  const messageCount = messagesWrap.querySelectorAll('.msg-bubble').length;
+  emptyState.style.display = messageCount > 0 ? 'none' : 'flex';
+}
+
+window.addEventListener('DOMContentLoaded', checkEmptyPage);
+
+const observer = new MutationObserver(() => {
+  checkEmptyPage();
+});
+observer.observe(messagesWrap, {
+  childList: true,
+  subtree: true
+});
+</script>
+
+<script>
+// ==============================================
+// 珊瑚菌 电脑桌面系统级消息通知（后台网页也弹窗）
+// ==============================================
+
+// 1. 页面打开时，自动请求桌面通知权限（仅首次授权一次）
+window.addEventListener('DOMContentLoaded', async () => {
+  // 检测浏览器是否支持桌面通知
+  if (window.Notification) {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      console.log('桌面通知权限已开启');
+    }
+  }
+});
+
+// 2. 核心函数：弹出电脑桌面系统通知
+function showDesktopNotify(messageText) {
+  // 权限未开启直接不执行
+  if (!window.Notification || Notification.permission !== 'granted') return;
+
+  // 系统桌面弹窗配置（头像、标题、内容全部自定义）
+  const notify = new Notification('珊瑚菌', {
+    body: messageText,
+    icon: '/static/avatar/normal.png', // 你的珊瑚菌虚拟形象作为通知图标
+    tag: 'coral-notify', // 消息分组，同来源消息不重复狂跳
+    renotify: false
+  });
+
+  // 点击桌面弹窗：自动切回网页窗口 + 滚动到最新消息
+  notify.onclick = () => {
+    window.focus(); // 浏览器窗口前置弹出
+    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    notify.close();
+  };
+}
+</script>
 
 </body>
 </html>

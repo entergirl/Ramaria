@@ -46,25 +46,63 @@ body {
   transition: background-color var(--transition-slow), color var(--transition-slow);
 }
 
+/* ========== 空白初始页 无消息引导界面 ========== */
+/* 外层容器 全局居中 */
+.empty-state {
+    width: 100%;
+    height: 65vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+}
+
+.empty-state[style*="display: none"] {
+        position: absolute;
+        visibility: hidden;
+        pointer-events: none;
+}
+
+
+
+/* 主标题：珊瑚菌 */
+.empty-title {
+    font-family: var(--font-title);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--coral);
+    letter-spacing: 1px;
+}
+
+/* 下方引导描述文案 */
+.empty-desc {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    color: var(--text-mid);
+    text-align: center;
+    line-height: 1.8;
+}
 
 /* ── 顶部导航栏 ── */
 header {
-  width: 100%;
-  max-width: 740px;
-  padding: 16px 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--border);
-  /*
-   * sticky：在滚动时始终固定在视口顶部。
-   * z-index: 10 确保浮在消息气泡上方，不被遮挡。
-   */
-  position: sticky;
-  top: 0;
-  background-color: var(--bg);
-  z-index: 10;
-  transition: background-color var(--transition-slow), border-color var(--transition-slow);
+    width: 100%;
+    max-width: 740px;
+    padding: 16px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-light);
+    position: sticky;
+    top: 0;
+    background-color: var(--bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 10;
+    transition: all var(--transition-slow);
+}
+:root[data-theme="dark"] header {
+    background-color: #1c1917;
 }
 
 

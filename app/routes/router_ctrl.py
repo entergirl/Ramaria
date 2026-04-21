@@ -4,14 +4,22 @@ app/routes/router_ctrl.py — 路由控制接口
 包含接口：
     GET  /router/status — 查询当前路由状态
     POST /router/toggle — 切换线上/本地模式
+    GET  /api/health/check — 系统健康检查
+    GET  /api/persona/get — 获取人格配置
+    POST /api/persona/save — 保存人格配置
 """
 
-from fastapi import APIRouter,Request
+from pathlib import Path
+
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-
 router = APIRouter()
+
+# 固定真实路径：Ramaria-main/config/persona.toml
+ROOT = Path(__file__).resolve().parent.parent.parent
+PERSONA_PATH = ROOT / "config" / "persona.toml"
 
 
 class ToggleRequest(BaseModel):
@@ -38,16 +46,11 @@ async def toggle_router(req: ToggleRequest):
         app_router.disable_online()
         return JSONResponse({"ok": True, "mode": "local", "message": None})
 
-# =============================================================================
-# 健康检查 + 人格配置接口（已修复路径，绝对能读）
-# =============================================================================
-import os
-from pathlib import Path
-from fastapi import Response, Request
 
-# 固定真实路径：Ramaria-main/config/persona.toml
-ROOT = Path(__file__).resolve().parent.parent.parent
-PERSONA_PATH = ROOT / "config" / "persona.toml"
+# =============================================================================
+# 健康检查 + 人格配置接口
+# =============================================================================
+
 
 @router.get("/api/health/check")
 async def health_check():
@@ -59,12 +62,14 @@ async def health_check():
         "database": True
     }
 
+
 @router.get("/api/persona/get")
 async def get_persona():
     if not PERSONA_PATH.exists():
         return Response(status_code=404, content="文件不存在")
     with open(PERSONA_PATH, "r", encoding="utf-8") as f:
         return Response(content=f.read(), media_type="text/plain")
+
 
 @router.post("/api/persona/save")
 async def save_persona(request: Request):

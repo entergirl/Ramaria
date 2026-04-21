@@ -346,26 +346,7 @@ const observer = new MutationObserver(checkEmpty);
 observer.observe(msgWrap, { childList: true, subtree: true });
 </script>
 
-<script>
-// ========== 空白初始页 消息检测自动隐藏 ==========
-const emptyState = document.querySelector('.empty-state');
-const messagesWrap = document.getElementById('messages');
 
-function checkEmptyPage() {
-  const messageCount = messagesWrap.querySelectorAll('.msg-bubble').length;
-  emptyState.style.display = messageCount > 0 ? 'none' : 'flex';
-}
-
-window.addEventListener('DOMContentLoaded', checkEmptyPage);
-
-const observer = new MutationObserver(() => {
-  checkEmptyPage();
-});
-observer.observe(messagesWrap, {
-  childList: true,
-  subtree: true
-});
-</script>
 
 <script>
 // ==============================================

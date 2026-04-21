@@ -157,8 +157,7 @@ async function sendMessage() {
   textarea.style.height = 'auto';
 
   // 立即渲染用户气泡（即时反馈）
-    UI.appendBubble(content, 'user', false, false, new Date().toISOString());
-
+  UI.appendBubble(content, 'user', false, false, new Date().toISOString());
 
   // WebSocket 未连接时降级到 HTTP（兜底，避免完全无法发消息）
   if (!_ws || _ws.readyState !== WebSocket.OPEN) {

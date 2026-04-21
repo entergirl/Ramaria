@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>珊瑚菌 · 配置向导</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ══════════════════════════════════════════════════════════
+       setup.html — 配置向导专属样式
+       延续项目视觉语言：暖米白 · 珊瑚橙 · 宋体气质
+       ══════════════════════════════════════════════════════════ */
+
+    :root {
+      --bg:           #f7f4ef;
+      --surface:      #ffffff;
+      --surface-alt:  #fdf8f3;
+      --coral:        #c97c5a;
+      --coral-light:  #e8c4b0;
+      --coral-dim:    #d4956f;
+      --text:         #2d2720;
+      --text-mid:     #7a6e63;
+      --text-dim:     #b0a89e;
+      --border:       #e8e0d4;
+      --border-light: #ede7dd;
+      --success:      #4f8f4f;
+      --error:        #c0534a;
+      --font-body:    'Noto Serif SC', Georgia, serif;
+      --font-mono:    'SFMono-Regular', 'Consolas', monospace;
+      --radius:       12px;
+      --radius-sm:    8px;
+      --shadow:       0 2px 12px rgba(0,0,0,.06);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      color: var(--text);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 60px;
+    }
+
+    /* ── 顶部 Logo ── */
+    .top-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 32px;
+      animation: fadeIn .5s ease both;
+    }
+
+    .top-brand .icon { font-size: 24px; }
+
+    .top-brand .name {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--coral);
+      letter-spacing: .06em;
+    }
+
+    /* ── 步骤指示器 ── */
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 32px;
+      animation: fadeIn .5s ease both .1s;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+
+    .step-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--bg);
+      color: var(--text-dim);
+      font-size: .72rem;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .3s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-circle.active {
+      border-color: var(--coral);
+      background: var(--coral);
+      color: #fff;
+    }
+
+    .step-circle.done {
+      border-color: var(--success);
+      background: var(--success);
+      color: #fff;
+    }
+
+    .step-line {
+      width: 48px;
+      height: 2px;
+      background: var(--border);
+      transition: background .3s ease;
+    }
+
+    .step-line.done { background: var(--success); }
+
+    .step-label {
+      position: absolute;
+      top: 34px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: .62rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* ── 主卡片 ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 36px;
+      width: 500px;
+      max-width: 94vw;
+      box-shadow: var(--shadow);
+      animation: slideUp .4s ease both .15s;
+    }
+
+    /* ── 步骤面板 ── */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: .02em;
+      margin-bottom: 6px;
+    }
+
+    .panel-desc {
+      font-size: .78rem;
+      color: var(--text-mid);
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+
+    /* ── 表单字段 ── */
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-label {
+      font-size: .78rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .field-label .required {
+      color: var(--coral);
+      font-size: .7rem;
+    }
+
+    .field-label .optional {
+      color: var(--text-dim);
+      font-size: .65rem;
+      margin-left: 2px;
+    }
+
+    .field-input {
+      padding: 10px 14px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: .82rem;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .field-input:focus {
+      border-color: var(--coral-light);
+      box-shadow: 0 0 0 3px rgba(201,124,90,.08);
+    }
+
+    .field-input::placeholder { color: var(--text-dim); }
+
+    .field-hint {
+      font-size: .68rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      line-height: 1.6;
+    }
+
+    /* 验证状态 */
+    .field-input.valid   { border-color: #7cad7c; }
+    .field-input.invalid { border-color: var(--error); }
+
+    .field-status {
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      min-height: 1.2em;
+      transition: color .2s ease;
+    }
+
+    .field-status.ok   { color: var(--success); }
+    .field-status.fail { color: var(--error); }
+    .field-status.checking { color: var(--text-dim); }
+
+    /* ── 路径选择行 ── */
+    .path-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .path-row .field-input { flex: 1; }
+
+    .btn-pick {
+      padding: 0 14px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-mid);
+      font-size: .72rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all .2s ease;
+    }
+
+    .btn-pick:hover { border-color: var(--coral-light); color: var(--coral); }
+
+    /* ── 测试按钮 ── */
+    .test-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: none;
+      color: var(--text-mid);
+      font-size: .7rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all .2s ease;
+      margin-top: 4px;
+    }
+
+    .test-btn:hover { border-color: var(--coral-light); color: var(--coral); }
+
+    .test-btn .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: background .2s;
+    }
+
+    .test-btn.testing .dot { background: var(--coral-light); animation: pulse 1s infinite; }
+    .test-btn.ok      .dot { background: var(--success); }
+    .test-btn.fail    .dot { background: var(--error); }
+
+    /* ── 完成页 ── */
+    .finish-icon {
+      text-align: center;
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .finish-title {
+      text-align: center;
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .finish-desc {
+      text-align: center;
+      font-size: .8rem;
+      color: var(--text-mid);
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+
+    /* ── 初始化进度 ── */
+    .init-status {
+      background: var(--surface-alt);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      color: var(--text-mid);
+      line-height: 1.9;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .init-status.visible { display: block; }
+
+    .init-line { display: flex; gap: 8px; align-items: center; }
+    .init-line .mark-ok   { color: var(--success); }
+    .init-line .mark-fail { color: var(--error); }
+    .init-line .mark-wait { color: var(--text-dim); animation: pulse 1s infinite; }
+
+    /* ── 底部操作区 ── */
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 28px;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: .8rem;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-prev {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+    }
+
+    .btn-prev:hover:not(:disabled) { border-color: var(--coral-light); color: var(--coral); }
+
+    .btn-next {
+      background: var(--coral);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(201,124,90,.3);
+    }
+
+    .btn-next:hover:not(:disabled) { background: var(--coral-dim); }
+
+    .step-indicator {
+      font-size: .68rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+      font-size: .74rem;
+      font-family: var(--font-mono);
+      padding: 8px 18px;
+      border-radius: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.1);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s ease, transform .25s ease;
+      z-index: 100;
+    }
+
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.error   { border-color: #d4756b; color: #c0534a; }
+    #toast.success { border-color: #7cad7c; color: #4f8f4f; }
+
+    /* ── 动画 ── */
+    @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse   { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+    @keyframes spin    { to { transform: rotate(360deg); } }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--coral);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 顶部 Logo -->
+<div class="top-brand">
+  <span class="icon">🍄</span>
+  <span class="name">珊瑚菌 · 配置向导</span>
+</div>
+
+<!-- 步骤指示器 -->
+<div class="stepper" id="stepper">
+  <!-- 由 JS 动态渲染 -->
+</div>
+
+<!-- 主卡片 -->
+<div class="card">
+
+  <!-- ══ 步骤 1：推理服务 ══ -->
+  <div class="panel active" id="panel-1">
+    <div class="panel-title">推理服务配置</div>
+    <div class="panel-desc">
+      珊瑚菌使用本地语言模型处理日常对话。请填写推理服务的地址和模型名称。<br>
+      <strong>LM Studio</strong> 默认地址：<code style="font-size:.7rem;background:var(--surface-alt);padding:1px 5px;border-radius:3px;">http://localhost:1234/v1/chat/completions</code>
+    </div>
+
+    <div class="field-group">
+      <div class="field">
+        <div class="field-label">
+          推理服务地址 <span class="required">*</span>
+        </div>
+        <input class="field-input" id="LOCAL_API_URL" type="text"
+               placeholder="http://localhost:1234/v1/chat/completions"
+               oninput="clearFieldStatus('api-status')">
+        <div class="field-hint">兼容 OpenAI API 格式的推理服务地址，含路径 /v1/chat/completions</div>
+        <button class="test-btn" id="test-api-btn" onclick="testApiConnection()">
+          <span class="dot"></span> 测试连接
+        </button>
+        <div class="field-status" id="api-status"></div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          模型名称 <span class="required">*</span>
+        </div>
+        <input class="field-input" id="LOCAL_MODEL_NAME" type="text"
+               placeholder="qwen/qwen3.5-9b">
+        <div class="field-hint">必须与推理服务中实际加载的模型名称完全一致（区分大小写）</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 2：嵌入模型 ══ -->
+  <div class="panel" id="panel-2">
+    <div class="panel-title">嵌入模型配置</div>
+    <div class="panel-desc">
+      嵌入模型将文本转换为语义向量，是记忆检索功能的基础。请填写已下载的模型文件夹的<strong>完整绝对路径</strong>。<br>
+      推荐模型：<code style="font-size:.7rem;background:var(--surface-alt);padding:1px 5px;border-radius:3px;">Qwen/Qwen3-Embedding-0.6B</code>（约 600MB）
+    </div>
+
+    <div class="field-group">
+      <div class="field">
+        <div class="field-label">
+          嵌入模型文件夹路径 <span class="required">*</span>
+        </div>
+        <div class="path-row">
+          <input class="field-input" id="EMBEDDING_MODEL" type="text"
+                 placeholder="C:\models\Qwen3-Embedding-0.6B"
+                 oninput="validateModelPath()">
+        </div>
+        <div class="field-hint">
+          填写包含 config.json 的模型文件夹路径，不是具体文件路径。<br>
+          下载方法：在项目文档中查看「第四步：准备嵌入模型」。
+        </div>
+        <div class="field-status" id="model-status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 3：可选配置 ══ -->
+  <div class="panel" id="panel-3">
+    <div class="panel-title">可选配置</div>
+    <div class="panel-desc">
+      以下配置项均有合理默认值，可以直接跳过。需要使用 Claude API 或天气功能时再填写。
+    </div>
+
+    <div class="field-group">
+      <div class="field">
+        <div class="field-label">
+          Claude API Key <span class="optional">（可选）</span>
+        </div>
+        <input class="field-input" id="ANTHROPIC_API_KEY" type="password"
+               placeholder="sk-ant-xxxxxx">
+        <div class="field-hint">用于调用 Claude 云端模型处理复杂推理任务。留空则只使用本地模型。</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          天气查询城市 <span class="optional">（可选）</span>
+        </div>
+        <input class="field-input" id="WEATHER_CITY" type="text"
+               placeholder="Shanghai">
+        <div class="field-hint">英文城市名，用于天气感知功能。留空时通过 IP 自动定位。</div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          服务端口 <span class="optional">（可选）</span>
+        </div>
+        <input class="field-input" id="SERVER_PORT" type="number"
+               placeholder="8000" min="1024" max="65535">
+        <div class="field-hint">珊瑚菌服务监听的端口号，默认 8000。端口被占用时需修改。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 4：完成 ══ -->
+  <div class="panel" id="panel-4">
+    <div class="finish-icon">🎉</div>
+    <div class="finish-title">配置完成</div>
+    <div class="finish-desc">
+      所有必要配置已填写完毕。<br>
+      点击「完成并启动」将保存配置并初始化数据库，随后进入聊天界面。
+    </div>
+
+    <!-- 配置摘要 -->
+    <div style="background:var(--surface-alt);border:1px solid var(--border-light);
+                border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:20px;
+                font-family:var(--font-mono);font-size:.72rem;color:var(--text-mid);
+                line-height:1.9;">
+      <div id="summary-content">
+        <!-- 由 JS 填充 -->
+      </div>
+    </div>
+
+    <!-- 初始化进度 -->
+    <div class="init-status" id="init-status">
+      <div class="init-line" id="init-save">
+        <span class="mark-wait">⏳</span> 保存配置中…
+      </div>
+      <div class="init-line" id="init-db" style="display:none">
+        <span class="mark-wait">⏳</span> 初始化数据库…
+      </div>
+      <div class="init-line" id="init-done" style="display:none">
+        <span class="mark-ok">✓</span> 完成，正在进入聊天界面…
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 底部操作区 ── -->
+  <div class="card-footer">
+    <button class="btn btn-prev" id="btn-prev" onclick="goPrev()" style="visibility:hidden">
+      ← 上一步
+    </button>
+    <span class="step-indicator" id="step-indicator">1 / 4</span>
+    <button class="btn btn-next" id="btn-next" onclick="goNext()">
+      下一步 →
+    </button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+
+<script>
+// ════════════════════════════════════════════════════════════
+// setup.html 配置向导逻辑
+//
+// 4 步向导：
+//   Step 1 → 推理服务（LOCAL_API_URL + LOCAL_MODEL_NAME）
+//   Step 2 → 嵌入模型（EMBEDDING_MODEL）
+//   Step 3 → 可选配置（ANTHROPIC_API_KEY + WEATHER_CITY + SERVER_PORT）
+//   Step 4 → 完成确认（保存 .env + init_db）
+// ════════════════════════════════════════════════════════════
+
+const STEP_LABELS = ['推理服务', '嵌入模型', '可选配置', '完成'];
+const TOTAL_STEPS = 4;
+
+let currentStep = 1;
+
+// ── 步骤指示器渲染 ──────────────────────────────────────────
+function renderStepper() {
+  const container = document.getElementById('stepper');
+  container.innerHTML = '';
+
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    // 圆圈
+    const circleWrap = document.createElement('div');
+    circleWrap.style.cssText = 'position:relative;';
+
+    const circle = document.createElement('div');
+    circle.className = 'step-circle' +
+      (i < currentStep ? ' done' : i === currentStep ? ' active' : '');
+    circle.textContent = i < currentStep ? '✓' : i;
+
+    const label = document.createElement('span');
+    label.className = 'step-label';
+    label.textContent = STEP_LABELS[i - 1];
+    label.style.color = i === currentStep ? 'var(--coral)' : 'var(--text-dim)';
+
+    circleWrap.appendChild(circle);
+    circleWrap.appendChild(label);
+    container.appendChild(circleWrap);
+
+    // 连接线（最后一步后面不加）
+    if (i < TOTAL_STEPS) {
+      const line = document.createElement('div');
+      line.className = 'step-line' + (i < currentStep ? ' done' : '');
+      container.appendChild(line);
+    }
+  }
+}
+
+// ── 面板切换 ────────────────────────────────────────────────
+function showStep(step) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${step}`).classList.add('active');
+
+  // 上一步按钮
+  const btnPrev = document.getElementById('btn-prev');
+  btnPrev.style.visibility = step > 1 ? 'visible' : 'hidden';
+
+  // 下一步按钮文字
+  const btnNext = document.getElementById('btn-next');
+  if (step === 4) {
+    btnNext.textContent = '完成并启动';
+  } else {
+    btnNext.textContent = '下一步 →';
+  }
+
+  document.getElementById('step-indicator').textContent = `${step} / ${TOTAL_STEPS}`;
+  renderStepper();
+
+  // 进入第 4 步时填充摘要
+  if (step === 4) renderSummary();
+}
+
+// ── 导航 ────────────────────────────────────────────────────
+function goPrev() {
+  if (currentStep > 1) {
+    currentStep--;
+    showStep(currentStep);
+  }
+}
+
+async function goNext() {
+  if (currentStep < TOTAL_STEPS) {
+    // 校验当前步骤
+    const valid = await validateCurrentStep();
+    if (!valid) return;
+    currentStep++;
+    showStep(currentStep);
+  } else {
+    // 最后一步：保存并启动
+    await finishSetup();
+  }
+}
+
+// ── 步骤校验 ────────────────────────────────────────────────
+async function validateCurrentStep() {
+  if (currentStep === 1) {
+    const url   = document.getElementById('LOCAL_API_URL').value.trim();
+    const model = document.getElementById('LOCAL_MODEL_NAME').value.trim();
+    if (!url || !model) {
+      showToast('请填写推理服务地址和模型名称', 'error');
+      return false;
+    }
+    if (!url.startsWith('http')) {
+      showToast('服务地址格式不正确，应以 http:// 开头', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  if (currentStep === 2) {
+    const path = document.getElementById('EMBEDDING_MODEL').value.trim();
+    if (!path) {
+      showToast('请填写嵌入模型文件夹路径', 'error');
+      return false;
+    }
+    // 后端校验路径有效性
+    const ok = await checkModelPath(path);
+    if (!ok) return false;
+    return true;
+  }
+
+  // 步骤 3 全部可选，直接通过
+  return true;
+}
+
+// ── 连接测试 ────────────────────────────────────────────────
+async function testApiConnection() {
+  const btn    = document.getElementById('test-api-btn');
+  const status = document.getElementById('api-status');
+  const urlEl  = document.getElementById('LOCAL_API_URL');
+  const url    = urlEl.value.trim();
+
+  if (!url) { showToast('请先填写服务地址', 'error'); return; }
+
+  btn.className  = 'test-btn testing';
+  btn.innerHTML  = '<span class="dot"></span> 测试中…';
+  status.textContent = '';
+  status.className   = 'field-status checking';
+
+  try {
+    // 保存当前值，让后端用这个 URL 测试
+    await saveField('LOCAL_API_URL', url);
+
+    const resp = await fetch('/api/admin/status');
+    const data = await resp.json();
+    const svc  = data.checks?.inference_service;
+
+    if (svc?.ok) {
+      btn.className  = 'test-btn ok';
+      btn.innerHTML  = '<span class="dot"></span> 连接成功';
+      status.textContent = '✓ ' + (svc.message || '推理服务运行中');
+      status.className   = 'field-status ok';
+      urlEl.className    = 'field-input valid';
+    } else {
+      btn.className  = 'test-btn fail';
+      btn.innerHTML  = '<span class="dot"></span> 连接失败';
+      status.textContent = '✗ ' + (svc?.message || '无法连接');
+      status.className   = 'field-status fail';
+      urlEl.className    = 'field-input invalid';
+    }
+  } catch (e) {
+    btn.className  = 'test-btn fail';
+    btn.innerHTML  = '<span class="dot"></span> 测试失败';
+    status.textContent = '✗ 网络错误：' + e.message;
+    status.className   = 'field-status fail';
+  }
+}
+
+// ── 模型路径校验 ────────────────────────────────────────────
+async function validateModelPath() {
+  const path   = document.getElementById('EMBEDDING_MODEL').value.trim();
+  const status = document.getElementById('model-status');
+  if (!path) { status.textContent = ''; return; }
+
+  status.textContent = '检测中…';
+  status.className   = 'field-status checking';
+
+  await checkModelPath(path);
+}
+
+async function checkModelPath(path) {
+  const status = document.getElementById('model-status');
+  const input  = document.getElementById('EMBEDDING_MODEL');
+
+  try {
+    await saveField('EMBEDDING_MODEL', path);
+    const resp = await fetch('/api/admin/status');
+    const data = await resp.json();
+    const em   = data.checks?.embedding_model;
+
+    if (em?.ok) {
+      status.textContent = '✓ 路径有效，模型文件完整';
+      status.className   = 'field-status ok';
+      input.className    = 'field-input valid';
+      return true;
+    } else {
+      status.textContent = '✗ ' + (em?.message || '路径无效');
+      status.className   = 'field-status fail';
+      input.className    = 'field-input invalid';
+      showToast(em?.message || '嵌入模型路径无效', 'error');
+      return false;
+    }
+  } catch (e) {
+    status.textContent = '检测失败：' + e.message;
+    status.className   = 'field-status fail';
+    return false;
+  }
+}
+
+function clearFieldStatus(id) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = ''; el.className = 'field-status'; }
+}
+
+// ── 单字段保存（用于实时写入 .env 做后端校验）──────────────
+async function saveField(key, value) {
+  await fetch('/api/admin/config', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ values: { [key]: value } }),
+  });
+}
+
+// ── 摘要渲染 ────────────────────────────────────────────────
+function renderSummary() {
+  const items = [
+    ['LOCAL_API_URL',    '推理服务地址'],
+    ['LOCAL_MODEL_NAME', '模型名称'],
+    ['EMBEDDING_MODEL',  '嵌入模型路径'],
+    ['ANTHROPIC_API_KEY','Claude API Key'],
+    ['WEATHER_CITY',     '天气城市'],
+    ['SERVER_PORT',      '服务端口'],
+  ];
+
+  const lines = items.map(([id, label]) => {
+    const val = document.getElementById(id)?.value?.trim() || '';
+    if (!val) return '';
+    // API Key 遮罩显示
+    const display = id === 'ANTHROPIC_API_KEY' && val.length > 8
+      ? val.slice(0, 8) + '…'
+      : val;
+    return `<div><span style="color:var(--text-dim)">${label}：</span>${display}</div>`;
+  }).filter(Boolean).join('');
+
+  document.getElementById('summary-content').innerHTML = lines || '<div>（无填写内容）</div>';
+}
+
+// ── 完成并启动 ──────────────────────────────────────────────
+async function finishSetup() {
+  const btn = document.getElementById('btn-next');
+  btn.disabled = true;
+
+  // 收集全部字段值
+  const fields = [
+    'LOCAL_API_URL', 'LOCAL_MODEL_NAME', 'EMBEDDING_MODEL',
+    'ANTHROPIC_API_KEY', 'WEATHER_CITY', 'SERVER_PORT',
+  ];
+
+  const values = {};
+  for (const id of fields) {
+    const val = document.getElementById(id)?.value?.trim() || '';
+    if (val) values[id] = val;
+  }
+
+  // 显示初始化进度
+  document.getElementById('init-status').classList.add('visible');
+
+  // Step A：保存配置
+  updateInitLine('init-save', 'wait', '保存配置中…');
+  try {
+    const resp = await fetch('/api/admin/config', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ values }),
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.message);
+    updateInitLine('init-save', 'ok', '配置已保存');
+  } catch (e) {
+    updateInitLine('init-save', 'fail', '保存失败：' + e.message);
+    btn.disabled = false;
+    return;
+  }
+
+  // Step B：初始化数据库
+  document.getElementById('init-db').style.display = 'flex';
+  updateInitLine('init-db', 'wait', '初始化数据库…');
+  try {
+    const resp = await fetch('/api/admin/init_db', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.message);
+    updateInitLine('init-db', 'ok', '数据库就绪');
+  } catch (e) {
+    updateInitLine('init-db', 'fail', '数据库初始化失败：' + e.message);
+    showToast('数据库初始化失败，请查看日志', 'error');
+    btn.disabled = false;
+    return;
+  }
+
+  // Step C：完成，跳转
+  document.getElementById('init-done').style.display = 'flex';
+  updateInitLine('init-done', 'ok', '完成，正在进入聊天界面…');
+  setTimeout(() => { window.location.href = '/'; }, 1200);
+}
+
+function updateInitLine(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const markClass = state === 'ok' ? 'mark-ok' : state === 'fail' ? 'mark-fail' : 'mark-wait';
+  const icon      = state === 'ok' ? '✓' : state === 'fail' ? '✗' : '⏳';
+  el.innerHTML = `<span class="${markClass}">${icon}</span> ${text}`;
+  el.style.display = 'flex';
+}
+
+// ── Toast ────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, type = 'default', duration = 3000) {
+  const el = document.getElementById('toast');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  el.className = type !== 'default' ? type : '';
+  el.textContent = msg;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── 初始化：读取已有配置回显 ──────────────────────────────────
+async function init() {
+  renderStepper();
+  showStep(1);
+
+  try {
+    const resp = await fetch('/api/admin/config');
+    const data = await resp.json();
+    const vals = data.values || {};
+
+    // 将已有值填入表单
+    const fields = [
+      'LOCAL_API_URL', 'LOCAL_MODEL_NAME', 'EMBEDDING_MODEL',
+      'ANTHROPIC_API_KEY', 'WEATHER_CITY', 'SERVER_PORT',
+    ];
+    for (const id of fields) {
+      const el = document.getElementById(id);
+      if (el && vals[id]) el.value = vals[id];
+    }
+  } catch (e) {
+    // 读取失败时静默，不影响填写
+    console.error('读取已有配置失败', e);
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>

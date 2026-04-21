@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>珊瑚菌 · 启动中</title>
+  <style>
+    /* ══════════════════════════════════════════════════════
+       launcher.html 专属样式
+       复用项目设计语言：暖米白底 + 珊瑚橙品牌色
+       ══════════════════════════════════════════════════════ */
+
+    :root {
+      --bg:          #f7f4ef;
+      --surface:     #ffffff;
+      --coral:       #c97c5a;
+      --coral-light: #e8c4b0;
+      --coral-dim:   #d4956f;
+      --text:        #2d2720;
+      --text-mid:    #7a6e63;
+      --text-dim:    #b0a89e;
+      --border:      #e8e0d4;
+      --font-title:  'Noto Serif SC', Georgia, serif;
+      --font-mono:   'SFMono-Regular', 'Consolas', monospace;
+      --radius:      12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-title);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 0;
+      /* 纸张纹理 */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    }
+
+    /* ── 品牌区 ── */
+    .brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 48px;
+      animation: fadeIn 0.6s ease both;
+    }
+
+    .brand-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--coral);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      box-shadow: 0 4px 20px rgba(201,124,90,.3);
+    }
+
+    .brand-name {
+      font-size: 1.6rem;
+      font-weight: 500;
+      color: var(--coral);
+      letter-spacing: .06em;
+    }
+
+    .brand-sub {
+      font-size: .78rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      letter-spacing: .08em;
+    }
+
+    /* ── 状态卡片 ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 36px;
+      width: 420px;
+      max-width: 90vw;
+      animation: slideUp 0.5s ease both 0.2s;
+    }
+
+    .status-title {
+      font-size: .82rem;
+      font-family: var(--font-mono);
+      color: var(--text-mid);
+      letter-spacing: .06em;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+
+    /* ── 检测项列表 ── */
+    .check-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .check-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: .82rem;
+      color: var(--text-mid);
+      transition: color .3s ease;
+    }
+
+    .check-item.ok   { color: #5a8f5a; }
+    .check-item.fail { color: #c0534a; }
+    .check-item.wait { color: var(--text-dim); }
+
+    .check-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+      transition: background .3s ease;
+    }
+
+    .check-item.ok   .check-dot { background: #7cad7c; }
+    .check-item.fail .check-dot { background: #c0534a; }
+    .check-item.wait .check-dot {
+      background: var(--coral-light);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    /* ── 进度条 ── */
+    .progress-track {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--coral);
+      border-radius: 2px;
+      width: 0%;
+      transition: width .4s ease;
+    }
+
+    /* ── 按钮 ── */
+    .btn {
+      width: 100%;
+      padding: 11px;
+      border-radius: 8px;
+      border: none;
+      font-family: var(--font-mono);
+      font-size: .8rem;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .btn-primary {
+      background: var(--coral);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(201,124,90,.35);
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--coral-dim); }
+    .btn-primary:active:not(:disabled) { transform: scale(.98); }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+      margin-top: 8px;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--coral-light);
+      color: var(--coral);
+    }
+
+    /* ── 提示文字 ── */
+    .hint {
+      font-size: .72rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      text-align: center;
+      margin-top: 16px;
+      line-height: 1.6;
+      min-height: 2.4em;
+    }
+
+    .hint.error { color: #c0534a; }
+
+    /* ── 动画 ── */
+    @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse   { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+    @keyframes spin    { to { transform: rotate(360deg); } }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--coral);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 品牌区 -->
+<div class="brand">
+  <div class="brand-icon">🍄</div>
+  <div class="brand-name">珊瑚菌</div>
+  <div class="brand-sub">RAMARIA · PERSONAL AI COMPANION</div>
+</div>
+
+<!-- 状态卡片 -->
+<div class="card">
+  <div class="status-title">环境检测</div>
+
+  <div class="check-list" id="check-list">
+    <div class="check-item wait" id="ci-env_file">
+      <span class="check-dot"></span><span>配置文件</span>
+    </div>
+    <div class="check-item wait" id="ci-embedding_model">
+      <span class="check-dot"></span><span>嵌入模型</span>
+    </div>
+    <div class="check-item wait" id="ci-inference_service">
+      <span class="check-dot"></span><span>推理服务</span>
+    </div>
+    <div class="check-item wait" id="ci-database">
+      <span class="check-dot"></span><span>数据库</span>
+    </div>
+    <div class="check-item wait" id="ci-port">
+      <span class="check-dot"></span><span>端口可用</span>
+    </div>
+  </div>
+
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-action" disabled>
+    <span class="spinner"></span>检测中…
+  </button>
+  <button class="btn btn-secondary" id="btn-setup" style="display:none"
+          onclick="goToSetup()">配置向导</button>
+
+  <div class="hint" id="hint-text">正在检测运行环境，请稍候…</div>
+</div>
+
+
+<script>
+// ============================================================
+// launcher.html 逻辑
+//
+// 页面加载后立即轮询 /api/admin/status，
+// 根据检测结果更新各检测项状态，
+// 全部通过时自动跳转到聊天界面，
+// 有未通过项时显示"配置向导"按钮。
+// ============================================================
+
+const CHECK_LABELS = {
+  env_file:          '配置文件',
+  embedding_model:   '嵌入模型',
+  inference_service: '推理服务',
+  database:          '数据库',
+  port:              '端口可用',
+};
+
+// 关键检测项（这些失败时需要显示配置向导）
+const BLOCKING_CHECKS = ['env_file', 'embedding_model'];
+
+let pollTimer  = null;
+let pollCount  = 0;
+const MAX_POLL = 40;   // 最多轮询 40 次（约 20s）
+
+// 初始检测项渲染（按 CHECK_LABELS 顺序）
+function renderCheckItems() {
+  const list = document.getElementById('check-list');
+  list.innerHTML = '';
+  for (const [key, label] of Object.entries(CHECK_LABELS)) {
+    const div = document.createElement('div');
+    div.className = 'check-item wait';
+    div.id = `ci-${key}`;
+    div.innerHTML = `<span class="check-dot"></span><span>${label}</span>`;
+    list.appendChild(div);
+  }
+}
+
+function updateCheckItem(key, ok, message) {
+  const el = document.getElementById(`ci-${key}`);
+  if (!el) return;
+  el.className = `check-item ${ok ? 'ok' : 'fail'}`;
+  el.querySelector('span:last-child').textContent =
+    `${CHECK_LABELS[key] || key}${message ? '  — ' + message : ''}`;
+}
+
+function setProgress(pct) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+async function pollStatus() {
+  pollCount++;
+  if (pollCount > MAX_POLL) {
+    stopPoll();
+    setHint('检测超时，请手动点击配置向导', true);
+    showSetupButton();
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/admin/status');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    const checks = data.checks || {};
+    const keys   = Object.keys(CHECK_LABELS);
+
+    let okCount = 0;
+    for (const key of keys) {
+      const item = checks[key];
+      if (!item) continue;
+      updateCheckItem(key, item.ok, item.ok ? '' : item.message);
+      if (item.ok) okCount++;
+    }
+
+    setProgress(Math.round(okCount / keys.length * 100));
+
+    if (data.can_start) {
+      // 全部通过，跳转到聊天界面
+      stopPoll();
+      setHint('环境检测通过，正在启动…');
+      setProgress(100);
+      setActionButton(false, '正在启动…');
+      setTimeout(() => { window.location.href = '/'; }, 800);
+    } else {
+      // 有未通过项
+      const hasBlocker = BLOCKING_CHECKS.some(k => checks[k] && !checks[k].ok);
+      if (hasBlocker) {
+        stopPoll();
+        setHint('配置不完整，请先完成配置向导。');
+        setActionButton(true, '前往配置向导', goToSetup);
+        document.getElementById('btn-setup').style.display = 'none';
+      } else {
+        // 只有推理服务等"可选"项失败，继续轮询
+        setHint('部分检测未通过，继续等待…');
+        setActionButton(true, '进入聊天界面', goToChat);
+        showSetupButton();
+      }
+    }
+  } catch (e) {
+    setHint('服务启动中，请稍候…');
+  }
+}
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function setHint(text, isError = false) {
+  const el = document.getElementById('hint-text');
+  el.textContent   = text;
+  el.className     = 'hint' + (isError ? ' error' : '');
+}
+
+function setActionButton(enabled, text, onClick = null) {
+  const btn = document.getElementById('btn-action');
+  btn.disabled  = !enabled;
+  btn.innerHTML = enabled ? text : `<span class="spinner"></span>${text}`;
+  if (onClick) btn.onclick = onClick;
+}
+
+function showSetupButton() {
+  document.getElementById('btn-setup').style.display = 'block';
+}
+
+function goToSetup() {
+  stopPoll();
+  window.location.href = '/api/admin/setup/page';
+}
+
+function goToChat() {
+  stopPoll();
+  window.location.href = '/';
+}
+
+// 启动
+renderCheckItems();
+pollTimer = setInterval(pollStatus, 500);
+pollStatus();   // 立即执行一次
+</script>
+
+</body>
+</html>

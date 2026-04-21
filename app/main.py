@@ -75,6 +75,10 @@ async def lifespan(app: FastAPI):
     """
     logger.info("应用启动中…")
 
+    # 步骤 0：确保数据库已初始化（PyInstaller exe 首次运行时自动初始化）
+    from app.core.db_initializer import ensure_db_ready
+    ensure_db_ready()
+
     # 步骤1：数据库迁移
     from ramaria.storage.database import add_last_accessed_at_columns
     add_last_accessed_at_columns()
@@ -167,6 +171,7 @@ async def index():
 # 注册路由模块
 # =============================================================================
 
+from app.routes.admin       import router as admin_router
 from app.routes.chat        import router as chat_router
 from app.routes.router_ctrl import router as router_ctrl_router
 from app.routes.import_ctrl import router as import_ctrl_router
@@ -175,6 +180,7 @@ from app.routes.settings    import router as settings_router
 from app.routes.graph_ctrl  import router as graph_ctrl_router
 from app.routes.memory      import router as memory_router
 
+app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(router_ctrl_router)
 app.include_router(import_ctrl_router)

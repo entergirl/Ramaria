@@ -61,6 +61,15 @@ all      = [
     "pytest-asyncio>=0.21",
 ]
 
+bundle = [
+    "pywebview>=4.0",
+    "pystray>=0.19",
+    "Pillow>=9.0",
+    "psutil>=5.9",
+    "pyinstaller>=6.0",
+    "pywin32>=300; sys_platform == 'win32'",
+]
+
 [project.urls]
 Homepage      = "https://github.com/entergirl/Ramaria"
 Repository    = "https://github.com/entergirl/Ramaria"

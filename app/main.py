@@ -167,6 +167,19 @@ async def index():
     return HTMLResponse(content=_HTML_FILE.read_text(encoding="utf-8"))
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    """返回系统总览页面（static/dashboard.html）。"""
+    from fastapi import HTTPException
+    dashboard_file = _STATIC_DIR / "dashboard.html"
+    if not dashboard_file.exists():
+        raise HTTPException(
+            status_code = 503,
+            detail      = f"页面未找到：{dashboard_file}",
+        )
+    return HTMLResponse(content=dashboard_file.read_text(encoding="utf-8"))
+
+
 # =============================================================================
 # 注册路由模块
 # =============================================================================

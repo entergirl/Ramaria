@@ -20,6 +20,12 @@ import threading
 from collections import Counter
 from datetime import datetime, timezone
 
+# 打包环境下 chromadb 默认嵌入函数依赖 onnxruntime，
+# 但我们使用 SentenceTransformerEmbeddingFunction，不需要它。
+# 在 import chromadb 之前设置这个环境变量可以跳过默认嵌入函数的初始化。
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_SERVER_NOFILE"] = "1"
+
 import chromadb
 import jieba
 import jieba.analyse
@@ -28,6 +34,16 @@ from chromadb.utils.embedding_functions import (
     SentenceTransformerEmbeddingFunction,
 )
 from rank_bm25 import BM25Okapi
+
+# 显式导入 SentenceTransformer 及相关库（规避 PyInstaller 动态加载漏洞）
+# 这确保打包后能正确加载嵌入模型
+try:
+    from sentence_transformers import SentenceTransformer
+    from sentence_transformers.models import Transformer
+except ImportError as e:
+    logger_temp = __import__('logging').getLogger(__name__)
+    logger_temp.warning(f"SentenceTransformer 导入失败，动态加载可能失效：{e}")
+    SentenceTransformer = None
 
 from ramaria.config import (
     BM25_INCREMENTAL_THRESHOLD,
@@ -552,40 +568,242 @@ def _bm25_timer_loop() -> None:
 
 
 # =============================================================================
-# 内部：Chroma 客户端与 Collection 管理（与原版完全一致）
+# 内部：Chroma 客户端与 Collection 管理（支持热重载）
 # =============================================================================
 
 _client      = None
 _client_lock = threading.Lock()
 
+# 模型状态跟踪：记录当前加载的模型路径和错误状态
+_current_model_path = None
+_model_load_error = None  # 如果模型加载失败，存储错误信息
+_model_state_lock = threading.Lock()  # 保护模型状态变量
+
+
+def _validate_model_path(model_path: str) -> tuple[bool, str]:
+    """
+    验证模型路径是否有效。
+    
+    检查内容：
+        1. 路径不为空
+        2. 路径存在
+        3. 包含必要的模型文件（onnx 或 config.json）
+    
+    返回：
+        (is_valid, message)
+        is_valid - bool: 路径是否有效
+        message - str: 验证结果说明
+    """
+    from pathlib import Path
+    
+    if not model_path or not str(model_path).strip():
+        return False, "模型路径为空"
+    
+    path = Path(model_path)
+    if not path.exists():
+        return False, f"模型路径不存在：{model_path}"
+    
+    if not path.is_dir():
+        return False, f"模型路径不是目录：{model_path}"
+    
+    # 检查必要的模型文件
+    has_onnx = any(path.glob("**/*.onnx"))
+    has_config = (path / "config.json").exists()
+    has_model = (path / "pytorch_model.bin").exists()
+    
+    if not (has_config and (has_onnx or has_model)):
+        return False, f"模型目录结构不完整，缺少必要的模型文件（config.json 或 .onnx/.bin）：{model_path}"
+    
+    return True, "模型路径有效"
+
 
 def _get_client():
-    """获取（或初始化）全局 Chroma 客户端。双重检查锁保证线程安全。"""
-    global _client
-    if _client is None:
-        with _client_lock:
-            if _client is None:
-                os.makedirs(CHROMA_DIR, exist_ok=True)
-                _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-                logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}")
+    """
+    获取（或初始化）全局 Chroma 客户端。
+    
+    支持热重载：如果当前模型路径无效，检查是否已更新 .env 文件中的新路径。
+    如果模型路径始终无效，返回 None（降级处理）。
+    
+    线程安全：双重检查锁保证线程安全。
+    """
+    global _client, _model_load_error, _current_model_path
+    
+    with _model_state_lock:
+        # 检查当前模型状态
+        if _model_load_error:
+            logger.debug(f"模型加载失败，当前错误：{_model_load_error}")
+            # 验证是否已修复（重新读取 EMBEDDING_MODEL）
+            from ramaria.config import EMBEDDING_MODEL as current_model
+            if current_model != _current_model_path:
+                logger.info(f"检测到模型路径变更，从 {_current_model_path} 到 {current_model}，尝试重新初始化")
+                _model_load_error = None
+                _client = None
+                _current_model_path = current_model
+            else:
+                # 模型路径未变，保持错误状态
+                return None
+    
+    if _client is not None:
+        return _client
+    
+    with _client_lock:
+        if _client is not None:
+            return _client
+        
+        try:
+            # 验证模型路径
+            is_valid, msg = _validate_model_path(EMBEDDING_MODEL)
+            if not is_valid:
+                with _model_state_lock:
+                    _model_load_error = msg
+                    _current_model_path = EMBEDDING_MODEL
+                logger.error(f"模型验证失败：{msg}")
+                return None
+            
+            os.makedirs(CHROMA_DIR, exist_ok=True)
+            _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+            
+            with _model_state_lock:
+                _model_load_error = None
+                _current_model_path = EMBEDDING_MODEL
+            
+            logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}，模型路径：{EMBEDDING_MODEL}")
+        except Exception as e:
+            with _model_state_lock:
+                _model_load_error = str(e)
+                _current_model_path = EMBEDDING_MODEL
+            logger.error(f"Chroma 客户端初始化失败：{e}")
+            return None
+    
     return _client
 
 
 def _get_embedding_function():
-    """根据 config.EMBEDDING_MODEL 返回对应的嵌入函数。"""
-    if EMBEDDING_MODEL == "default":
-        return DefaultEmbeddingFunction()
-    return SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+    """
+    根据 config.EMBEDDING_MODEL 返回对应的嵌入函数。
+    
+    支持三种模式：
+        1. "default" - 使用 chromadb 内置默认嵌入（需要 onnxruntime）
+        2. 本地模型路径 - 使用 SentenceTransformerEmbeddingFunction 加载
+        3. 模型路径无效 - 返回 None（优雅降级）
+    
+    返回：
+        嵌入函数对象或 None（如果模型加载失败）
+    """
+    try:
+        if not EMBEDDING_MODEL or not str(EMBEDDING_MODEL).strip():
+            logger.error("嵌入模型路径未配置")
+            return None
+        
+        if EMBEDDING_MODEL == "default":
+            logger.debug("使用默认嵌入函数（onnxruntime）")
+            return DefaultEmbeddingFunction()
+        
+        # 验证模型路径
+        is_valid, msg = _validate_model_path(EMBEDDING_MODEL)
+        if not is_valid:
+            logger.error(f"模型路径无效：{msg}")
+            return None
+        
+        logger.debug(f"使用 SentenceTransformerEmbeddingFunction，模型路径：{EMBEDDING_MODEL}")
+        return SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+    
+    except Exception as e:
+        logger.error(f"嵌入函数初始化失败：{e}")
+        return None
 
 
 def _get_collection(name: str):
-    """获取（或创建）指定名称的 Chroma Collection，幂等操作。"""
+    """
+    获取（或创建）指定名称的 Chroma Collection，幂等操作。
+    
+    支持优雅降级：如果 client 或嵌入函数初始化失败，返回 None。
+    """
     client = _get_client()
-    ef     = _get_embedding_function()
+    if client is None:
+        logger.debug(f"Chroma 客户端不可用，无法获取 Collection: {name}")
+        return None
+    
+    ef = _get_embedding_function()
+    if ef is None:
+        logger.debug(f"嵌入函数不可用，无法获取 Collection: {name}")
+        return None
+    
     return client.get_or_create_collection(
         name               = name,
         embedding_function = ef,
     )
+
+
+def reload_model(new_model_path: str) -> tuple[bool, str]:
+    """
+    热重载向量模型。用于运行时修改模型路径时调用。
+    
+    流程：
+        1. 验证新模型路径
+        2. 销毁旧的 Chroma 客户端
+        3. 创建新的客户端（使用新模型路径）
+    
+    参数：
+        new_model_path - str: 新的模型路径
+    
+    返回：
+        (success, message) - 是否成功重载
+    """
+    global _client, _model_load_error, _current_model_path
+    
+    # 验证新路径
+    is_valid, msg = _validate_model_path(new_model_path)
+    if not is_valid:
+        return False, f"新模型路径无效：{msg}"
+    
+    with _client_lock:
+        try:
+            # 关闭旧客户端
+            if _client is not None:
+                _client.close()
+                _client = None
+                logger.info("旧 Chroma 客户端已关闭")
+            
+            # 更新环境变量（供后续 _get_client 使用）
+            os.environ["EMBEDDING_MODEL"] = new_model_path
+            
+            with _model_state_lock:
+                _model_load_error = None
+                _current_model_path = new_model_path
+            
+            # 创建新客户端（使用新路径）
+            os.makedirs(CHROMA_DIR, exist_ok=True)
+            _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+            
+            logger.info(f"向量模型已成功重载，新路径：{new_model_path}")
+            return True, "模型重载成功"
+        
+        except Exception as e:
+            with _model_state_lock:
+                _model_load_error = str(e)
+                _current_model_path = new_model_path
+            logger.error(f"模型重载失败：{e}")
+            return False, f"模型重载失败：{e}"
+
+
+def get_model_status() -> dict:
+    """
+    获取当前模型加载状态。
+    
+    返回：
+        {
+            "current_path": str 或 None,  # 当前模型路径
+            "is_loaded": bool,            # 是否成功加载
+            "error": str 或 None,         # 加载错误信息
+        }
+    """
+    with _model_state_lock:
+        return {
+            "current_path": _current_model_path,
+            "is_loaded": _model_load_error is None and _client is not None,
+            "error": _model_load_error,
+        }
 
 
 # Collection 名称常量

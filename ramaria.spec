@@ -22,9 +22,16 @@ ramaria.spec — PyInstaller 打包配置
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
 
 # 项目根目录（spec 文件所在位置）
 ROOT = Path(sys.argv[0]).parent.resolve()
+
+# =============================================================================
+# 自动收集第三方库依赖
+# =============================================================================
+# 自动收集 chromadb 的所有必要资源（数据、二进制文件、隐式模块）
+chromadb_datas, chromadb_binaries, chromadb_hiddenimports = collect_all('chromadb')
 
 # =============================================================================
 # 数据文件：打包时需要随 exe 一起携带的非 Python 文件
@@ -38,7 +45,7 @@ datas = [
     (str(ROOT / "scripts"),         "scripts"),
     # .env.example 模板（首次启动时复制生成 .env）
     (str(ROOT / ".env.example"),    "."),
-]
+] + chromadb_datas
 
 # =============================================================================
 # 隐式导入：PyInstaller 分析不到、但运行时需要的模块
@@ -100,16 +107,20 @@ hiddenimports = [
     "webview",
     # 数据库和向量
     "chromadb",
+    "chromadb.utils.embedding_functions",
+    "chromadb.api.models.Collection",
+    "chromadb.api.models.CollectionCommon",
     "sentence_transformers",
     "rank_bm25",
     "jieba",
     "networkx",
+    "onnxruntime",
     # 其他
     "tomllib" if sys.version_info >= (3, 11) else "tomli",
     "psutil",
     "requests",
     "winreg",        # Windows 注册表（仅 Windows 可用）
-]
+] + chromadb_hiddenimports
 
 # =============================================================================
 # 排除模块：明确不需要的包，减小体积
@@ -149,7 +160,7 @@ excludes = [
 a = Analysis(
     scripts    = [str(ROOT / "app" / "bundle.py")],
     pathex     = [str(ROOT), str(ROOT / "src")],
-    binaries   = [],
+    binaries   = chromadb_binaries,
     datas      = datas,
     hiddenimports = hiddenimports,
     hookspath  = [],

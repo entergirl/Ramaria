@@ -299,7 +299,7 @@ async function recoverCurrentSession() {
         // 渲染所有消息（不是历史，直接用 appendBubble）
         // 注意：这里不能使用 loadHistorySession，因为那是显示历史块
         messages.forEach(msg => {
-          const isOnlineMsg = false; // TODO: 需要从消息中判断是否为在线消息
+          const isOnlineMsg = msg.source === 'online';
           UI.appendBubble(msg.content, msg.role, isOnlineMsg, false, msg.created_at);
         });
         

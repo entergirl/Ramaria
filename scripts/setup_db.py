@@ -591,6 +591,13 @@ _COLUMN_MIGRATIONS = [
         "ALTER TABLE conflict_queue ADD COLUMN conflict_type TEXT NOT NULL DEFAULT 'profile'",
         "冲突来源类型：profile=画像矛盾，alias_confirm=实体别名待确认",
     ),
+    # messages 表：补充消息来源列
+    (
+        "messages",
+        "source",
+        "ALTER TABLE messages ADD COLUMN source TEXT NOT NULL DEFAULT 'local'",
+        "消息来源：local=本地模型，online=云端API，import=历史导入",
+    ),
 ]
 
 

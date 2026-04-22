@@ -142,7 +142,12 @@ def get_active_sessions() -> list:
 # Messages 表操作
 # =============================================================================
 
-def save_message(session_id: int, role: str, content: str) -> int:
+def save_message(
+    session_id: int,
+    role: str,
+    content: str,
+    source: str = "local",
+) -> int:
     """
     保存一条消息到 messages 表（L0 原始记录）。
 
@@ -150,18 +155,21 @@ def save_message(session_id: int, role: str, content: str) -> int:
         session_id — 当前 session 的 id
         role       — 发言方，只能是 "user" 或 "assistant"
         content    — 消息正文文本
+        source     — 消息来源：local(默认)=本地模型，online=云端API
 
     返回：
         int — 新插入消息的 id
     """
     if role not in ("user", "assistant"):
         raise ValueError(f"role 只能是 'user' 或 'assistant'，收到：{role!r}")
+    if source not in ("local", "online"):
+        source = "local"
 
     with _db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, _now())
+            "INSERT INTO messages (session_id, role, content, created_at, source) VALUES (?, ?, ?, ?, ?)",
+            (session_id, role, content, _now(), source)
         )
         conn.commit()
         return cursor.lastrowid
@@ -192,11 +200,18 @@ def get_messages_as_dicts(session_id: int) -> list[dict]:
     返回格式示例：
         [
             {"role": "user",      "content": "你好"},
-            {"role": "assistant", "content": "你好！"}
+            {"role": "assistant", "content": "你好！", "source": "local"}
         ]
     """
     rows = get_messages(session_id)
-    return [{"role": row["role"], "content": row["content"]} for row in rows]
+    return [
+        {
+            "role": row["role"],
+            "content": row["content"],
+            "source": row["source"] if "source" in row.keys() else "local",
+        }
+        for row in rows
+    ]
 
 
 def get_last_message_time(session_id: int) -> str | None:

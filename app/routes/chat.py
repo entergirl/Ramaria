@@ -499,7 +499,7 @@ async def chat(req: ChatRequest):
 
     if action in ("online", "confirm_yes"):
         reply = await asyncio.to_thread(app_router.call_claude, result["message"])
-        save_message(session_id, "assistant", reply)
+        save_message(session_id, "assistant", reply, source="online")
         return ChatResponse(reply=reply, session_id=session_id, mode="online")
 
     if action == "confirm_no":
@@ -617,7 +617,7 @@ async def websocket_endpoint(ws: WebSocket):
 
         elif action in ("online", "confirm_yes"):
             reply = await asyncio.to_thread(app_router.call_claude, result["message"])
-            save_message(session_id, "assistant", reply)
+            save_message(session_id, "assistant", reply, source="online")
             await _ws_send(ws, {
                 "type":       "reply",
                 "reply":      reply,

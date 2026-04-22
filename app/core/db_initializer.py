@@ -56,23 +56,38 @@ def ensure_db_ready() -> None:
     # ─────────────────────────────────────────────────────────────────────────
     
     db_file_exists = DB_PATH.exists()
-    table_exists = _check_table_exists()
-    
-    # 如果数据库和表都存在，已初始化完成，直接返回
-    if db_file_exists and table_exists:
-        logger.debug("数据库已初始化，跳过初始化步骤")
-        return
     
     # ─────────────────────────────────────────────────────────────────────────
-    # 第二阶段：需要初始化，调用 setup_db 进行
+    # 阶段1：数据库不存在时，创建新库
     # ─────────────────────────────────────────────────────────────────────────
     
-    logger.info(
-        f"检测到数据库需要初始化（文件存在: {db_file_exists}, 表存在: {table_exists}）"
-    )
+    if not db_file_exists:
+        logger.info("数据库文件不存在，创建新数据库...")
+        try:
+            _call_setup_db(is_new_db=True)
+            logger.info("✅ 新数据库初始化完成")
+            return
+        except Exception as e:
+            _log_error_generic(str(e))
+            raise RuntimeError(f"数据库创建失败：{e}") from e
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # 阶段2：数据库存在，执行幂等迁移（检查并补齐缺失的列/表/索引）
+    # ─────────────────────────────────────────────────────────────────────────
+    
+    logger.info("数据库已存在，执行迁移检查（补齐新增列/表/索引）...")
     
     try:
-        _call_setup_db(db_file_exists)
+        _call_setup_db(is_new_db=False)
+        logger.info("✅ 数据库迁移检查完成")
+    
+    except FileNotFoundError as e:
+        _log_error_scripts_not_found(str(e))
+        raise RuntimeError("数据库迁移失败：setup_db.py 不存在") from e
+    
+    except Exception as e:
+        _log_error_generic(str(e))
+        raise RuntimeError(f"数据库迁移失败：{e}") from e
         logger.info("✅ 数据库初始化完成")
     
     except FileNotFoundError as e:

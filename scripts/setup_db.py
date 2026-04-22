@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role               TEXT    NOT NULL,
     content            TEXT    NOT NULL,
     created_at         TEXT    NOT NULL,
+    source             TEXT    DEFAULT 'local',
     import_fingerprint TEXT,
 
     FOREIGN KEY (session_id) REFERENCES sessions(id)

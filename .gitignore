@@ -71,3 +71,5 @@ importer/export.json
 # ============================================================
 *.log
 logs/
+README_DISTRIBUTION.md
+.gitignore

@@ -47,6 +47,10 @@ datas = [
     (str(ROOT / ".env.example"),    "."),
 ] + chromadb_datas
 
+# 如果存在 .env 文件，也打包进去（作为默认配置）
+if (ROOT / ".env").exists():
+    datas.append((str(ROOT / ".env"), "."))
+
 # =============================================================================
 # 隐式导入：PyInstaller 分析不到、但运行时需要的模块
 # =============================================================================
@@ -146,7 +150,7 @@ excludes = [
     # 不需要的科学计算
     "matplotlib",
     "pandas",
-    "sklearn",
+    # "sklearn",  # 需要用于向量检索/BM25，不能排除
     "scipy",
     # Telegram 适配（打包版不需要）
     "telegram",

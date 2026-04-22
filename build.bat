@@ -1,92 +1,92 @@
 @echo off
-chcp 65001 >nul 2>&1
-REM ============================================================
-REM build.bat — Ramaria Windows 打包脚本
-REM
-REM 用法：
-REM     双击运行 build.bat
-REM     或在项目根目录命令行：build.bat
-REM
-REM 前置条件：
-REM     1. 已激活虚拟环境（venv\Scripts\activate）
-REM        或直接使用 venv 内的 Python 运行
-REM     2. 已安装打包依赖：pip install -e .[bundle]
-REM     3. icon.ico 已放置在项目根目录（可选，无则使用系统默认图标）
-REM
-REM 输出：
-REM     dist\Ramaria\        打包产物目录（含 Ramaria.exe 和依赖）
-REM     dist\Ramaria.zip     打包压缩包（方便分发）
-REM ============================================================
+cd /d "%~dp0"
 
-setlocal enabledelayedexpansion
-
-echo.
-echo ================================================
-echo   珊瑚菌 Ramaria 打包脚本
-echo ================================================
-echo.
-
-REM 检测虚拟环境
+REM Find Python (venv first, then system)
+set PYTHON=
 if exist "venv\Scripts\python.exe" (
     set PYTHON=venv\Scripts\python.exe
-    echo [信息] 使用虚拟环境：venv\Scripts\python.exe
+    echo [Info] Using venv Python
 ) else (
     set PYTHON=python
-    echo [警告] 未找到 venv，使用系统 Python
+    echo [Info] Using system Python
 )
 
-REM 检测 PyInstaller
-%PYTHON% -m PyInstaller --version >nul 2>&1
-if errorlevel 1 (
-    echo [错误] 未安装 PyInstaller，请先运行：
-    echo         pip install -e .[bundle]
-    pause
-    exit /b 1
-)
+echo ================================================
+echo   Ramaria Build Script
+echo ================================================
+echo.
+echo [Step 1] Check Python...
+%PYTHON% --version
+if errorlevel 1 goto error_python
 
-REM 清理旧的打包产物
-echo [步骤 1/3] 清理旧产物…
-if exist "dist\Ramaria" (
-    rmdir /s /q "dist\Ramaria"
-    echo   已删除 dist\Ramaria
-)
-if exist "build\Ramaria" (
-    rmdir /s /q "build\Ramaria"
-    echo   已删除 build\Ramaria
-)
+echo.
+echo [Step 2] Check PyInstaller...
+%PYTHON% -m PyInstaller --version
+if errorlevel 1 goto error_pyinstaller
 
-REM 打包
-echo [步骤 2/3] 正在打包（约需 2-5 分钟）…
+echo.
+echo [Step 3] Clean old builds...
+if exist "dist\Ramaria" rmdir /s /q "dist\Ramaria"
+if exist "build\Ramaria" rmdir /s /q "build\Ramaria"
+
+echo.
+echo [Step 4] Building... (This may take 2-5 minutes)
 %PYTHON% -m PyInstaller ramaria.spec --noconfirm
-if errorlevel 1 (
-    echo.
-    echo [错误] 打包失败，请查看上方错误信息。
-    pause
-    exit /b 1
+if errorlevel 1 goto error_build
+
+echo.
+echo [Step 5] Copy config files...
+if exist "dist\Ramaria" (
+    if not exist "dist\Ramaria\config" mkdir "dist\Ramaria\config"
+    xcopy /Y /E "config\*" "dist\Ramaria\config\" >nul 2>&1
+    echo [OK] Config files copied
 )
 
-REM 打包成 zip（可选，需要系统自带 PowerShell）
-echo [步骤 3/3] 创建压缩包…
+echo.
+echo [Step 5b] Copy .env file...
 if exist "dist\Ramaria" (
-    powershell -command "Compress-Archive -Path 'dist\Ramaria' -DestinationPath 'dist\Ramaria.zip' -Force" 2>nul
-    if exist "dist\Ramaria.zip" (
-        echo   已生成 dist\Ramaria.zip
+    if exist ".env" (
+        copy /Y ".env" "dist\Ramaria\.env" >nul 2>&1
+        echo [OK] .env file copied
+    ) else (
+        echo [Warning] .env not found, copying .env.example instead
+        copy /Y ".env.example" "dist\Ramaria\.env" >nul 2>&1
     )
 )
 
 echo.
-echo ================================================
-echo   打包完成！
-echo   产物目录：dist\Ramaria\
-echo   启动文件：dist\Ramaria\Ramaria.exe
-echo ================================================
-echo.
-
-REM 询问是否立即测试
-set /p TEST_NOW="是否立即运行测试？(y/N): "
-if /i "!TEST_NOW!"=="y" (
-    echo 正在启动…
-    start "" "dist\Ramaria\Ramaria.exe"
+echo [Step 6] Generate readme...
+if exist "dist\Ramaria" (
+    echo Ramaria Distribution Package > "dist\Ramaria\README.txt"
+    echo. >> "dist\Ramaria\README.txt"
+    echo See README_QuickStart_Distribution.md for usage instructions. >> "dist\Ramaria\README.txt"
 )
 
+echo.
+echo ================================================
+echo   Build Complete!
+echo ================================================
+echo.
+echo Output: dist\Ramaria\
+echo.
 pause
+exit
+
+:error_python
+echo.
+echo [Error] Python not found. Please install Python 3.10+
+pause
+exit /b 1
+
+:error_pyinstaller
+echo.
+echo [Error] PyInstaller not found. Please run:
+echo %PYTHON% -m pip install pyinstaller
+pause
+exit /b 1
+
+:error_build
+echo.
+echo [Error] Build failed.
+pause
+exit /b 1

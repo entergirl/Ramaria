@@ -140,7 +140,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title       = "珊瑚菌 · 个人 AI 陪伴助手",
     description = "本地运行，支持分层记忆与任务路由",
-    version     = "0.3.6",
     lifespan    = lifespan,
 )
 

@@ -64,11 +64,49 @@ def _load_dotenv() -> None:
     简单解析 .env 文件，将 KEY=VALUE 写入 os.environ。
     不依赖 python-dotenv，使用纯标准库。
     已有同名环境变量时不覆盖（允许系统环境变量优先）。
+
+    加载顺序（打包模式）：
+    1. exe 同级目录的 .env（用户自定义，优先）
+    2. 资源目录中的 .env（打包时的模板，如果不存在则自动从模板生成）
     """
-    env_file = ROOT / ".env"
-    if not env_file.exists():
+    env_file = None
+    exe_dir  = None
+
+    # 优先从 exe 同级目录加载用户自定义 .env
+    if getattr(sys, "frozen", False):
+        exe_dir  = Path(sys.executable).parent
+        user_env = exe_dir / ".env"
+        if user_env.exists():
+            env_file = user_env
+            print(f"[bundle] 加载用户 .env: {env_file}")
+        else:
+            # 回退到资源目录中的模板 .env
+            bundled_env = ROOT / ".env"
+            if bundled_env.exists():
+                env_file = bundled_env
+                print(f"[bundle] 加载 bundled .env: {env_file}")
+    else:
+        # 开发模式：使用项目根目录的 .env
+        env_file = ROOT / ".env"
+        print(f"[bundle] 加载开发 .env: {env_file}")
+
+    if not env_file or not env_file.exists():
+        print(f"[bundle] 警告: 未找到 .env 文件")
         return
 
+    # ── 打包模式下：首次运行自动从模板生成用户 .env ──────────────────────
+    # 如果用的是资源目录中的模板，需要复制一份到 exe 同级目录供用户编辑
+    if getattr(sys, "frozen", False) and exe_dir:
+        user_env = exe_dir / ".env"
+        if not user_env.exists():
+            import shutil
+            try:
+                shutil.copy(env_file, user_env)
+                print(f"[bundle] 已复制 .env 到: {user_env}")
+            except Exception as e:
+                print(f"[bundle] 复制 .env 失败: {e}")
+
+    loaded_keys = []
     with open(env_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -76,9 +114,17 @@ def _load_dotenv() -> None:
                 continue
             k, _, v = line.partition("=")
             k = k.strip()
-            v = v.split("#")[0].strip().strip("'\"")
-            if k and k not in os.environ:
-                os.environ[k] = v
+            # 修复：只在行尾有 # 时才截断（简单判断：# 前面有空格）
+            if " #" in v:
+                v = v.split(" #")[0].strip()
+            v = v.strip().strip("'\"")
+            if k:
+                if k not in os.environ:
+                    os.environ[k] = v
+                    loaded_keys.append(k)
+                else:
+                    loaded_keys.append(f"{k}(skipped)")
+    print(f"[bundle] 加载的环境变量: {loaded_keys}")
 
 
 _load_dotenv()
@@ -107,6 +153,8 @@ def _patch_config_paths() -> None:
 
     打包后这些模块的 ROOT_DIR 计算错误（指向打包内部路径），
     此函数在导入其他模块之前调用，用正确路径覆盖。
+
+    注意：数据目录必须放在 exe 同级目录下（可写），不能放在 _internal（只读）。
     """
     if not getattr(sys, "frozen", False):
         return  # 仅打包模式需要
@@ -114,22 +162,36 @@ def _patch_config_paths() -> None:
     import ramaria.config as config
     import ramaria.logger as logger_module
 
-    # 修复 config 路径
-    config.ROOT_DIR = ROOT
-    config.DATA_DIR = ROOT / "data"
-    config.CONFIG_DIR = ROOT / "config"
-    config.LOG_DIR = ROOT / "logs"
+    # exe 所在目录（可写），用于存放用户数据
+    # sys.executable 指向 dist/Ramaria/Ramaria.exe
+    # sys._MEIPASS 指向 dist/Ramaria/_internal/（只读）
+    exe_dir = Path(sys.executable).parent
+
+    # 修复 config 路径（用户数据放在 exe 同级目录）
+    config.ROOT_DIR = ROOT                       # 资源目录（只读）
+    config.DATA_DIR = exe_dir / "data"           # 数据目录（可写）
+    config.CONFIG_DIR = exe_dir / "config"       # 配置目录（可写）
+    config.LOG_DIR = exe_dir / "logs"            # 日志目录（可写）
     config.DB_PATH = config.DATA_DIR / "assistant.db"
     config.CHROMA_DIR = config.DATA_DIR / "chroma_db"
     config.PERSONA_PATH = config.CONFIG_DIR / "persona.toml"
 
+    # ── 首次运行：从打包资源复制 config 文件到用户目录 ────────────────────
+    bundled_config = ROOT / "config"
+    if bundled_config.exists() and not config.CONFIG_DIR.exists():
+        import shutil
+        try:
+            shutil.copytree(bundled_config, config.CONFIG_DIR)
+        except Exception:
+            pass  # 复制失败则后续会报错提示用户
+
     # 修复 logger 路径
-    logger_module._ROOT_DIR = ROOT
-    logger_module.LOG_DIR = ROOT / "logs"
+    logger_module._ROOT_DIR = exe_dir
+    logger_module.LOG_DIR = exe_dir / "logs"
     logger_module.LOG_FILE = logger_module.LOG_DIR / "coral.log"
 
     # 确保目录存在
-    for d in [config.DATA_DIR, config.LOG_DIR]:
+    for d in [config.DATA_DIR, config.CONFIG_DIR, config.LOG_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 

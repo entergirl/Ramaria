@@ -120,6 +120,9 @@ IDLE_CHECK_INTERVAL_SECONDS: int = 60
 # L2 定时检查线程轮询间隔（秒），每天执行一次
 L2_CHECK_INTERVAL_SECONDS: int = 86400
 
+# 对话历史最大保留消息数（用于构建 system prompt）
+MAX_HISTORY_MESSAGES: int = 40
+
 
 # =============================================================================
 # 记忆层触发阈值

@@ -2,41 +2,97 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>系统总览</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>珊瑚菌 · 系统总览</title>
+
+    <!--
+        字体加载：Noto Serif SC（300/400/500 三个字重）
+        · preconnect：提前与 Google Fonts 建立连接，减少 DNS + TCP 延迟
+        · 如需离线使用，将字体文件下载到 static/fonts/ 并在 variables.css 中改为本地引用
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <!--
+        CSS 加载顺序（有依赖关系，顺序不可调换）：
+        1. variables.css  — CSS 变量定义，其余文件通过 var() 引用
+        2. layout.css     — 页面整体结构（依赖变量）
+        3. components.css  — 各 UI 组件（依赖变量）
+        4. animations.css  — 动画帧定义（依赖组件类名）
+    -->
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/animations.css">
 
     <style>
-        body {
-            padding: 0 20px;
-            font-family: var(--font-body);
+        /* ═══════════════════════════════════════════════════════════════════════
+           dashboard.html 页面专属样式
+
+           设计原则：
+           · 完全复用项目 CSS 变量和组件样式，保持珊瑚菌产品线视觉统一
+           · 暗色模式通过 CSS 变量自动适配（[data-theme="dark"]）
+           · 响应式布局适配桌面端与移动端
+           ═══════════════════════════════════════════════════════════════════════ */
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           页面主体容器
+           ───────────────────────────────────────────────────────────────────── */
+
+        .page-container {
+            width: 100%;
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 0 40px;
         }
 
-        /* ========== 顶部导航  ========== */
-        header {
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background: var(--bg);
-            padding: 20px 0;
-            border-bottom: 1px solid var(--border-light);
+
+        /* ─────────────────────────────────────────────────────────────────────
+           顶部导航栏
+           复用 components.css 中的 header 样式，仅做局部微调
+           ───────────────────────────────────────────────────────────────────── */
+
+        .dash-header {
+            width: 100%;
+            padding: 16px 0 12px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-        }
-        .header-title {
-            font-family: var(--font-title);
-            font-size: 1.1rem;
-            font-weight: 500;
-            color: var(--coral);
+            gap: 10px;
+            border-bottom: 1px solid var(--border-light);
+            position: sticky;
+            top: 0;
+            background-color: var(--bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 10;
+            transition: all var(--transition-slow);
         }
 
-        /* ========== 返回对话按钮========== */
-        .nav-back {
-            font-size: .75rem;
+        /* 暗色主题适配 */
+        :root[data-theme="dark"] .dash-header {
+            background-color: #1c1917;
+        }
+
+        /* 项目图标 */
+        .dash-icon {
+            font-size: 1.2rem;
+            margin-right: 4px;
+        }
+
+        /* 页面标题 */
+        .dash-title {
+            font-family: var(--font-title);
+            font-size: 1.05rem;
+            font-weight: 500;
+            color: var(--coral);
+            letter-spacing: .04em;
+            flex: 1;
+        }
+
+        /* 返回对话按钮 */
+        .dash-back-btn {
+            font-size: .72rem;
             font-family: var(--font-mono);
             color: var(--text-mid);
             text-decoration: none;
@@ -44,220 +100,1302 @@
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
             transition: color var(--transition-normal), border-color var(--transition-normal);
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
-        .nav-back:hover {
+
+        .dash-back-btn:hover {
             color: var(--coral);
             border-color: var(--coral-light);
         }
 
-        /* ========== 页面主体 ========== */
-        .page-body {
-            width: 100%;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 24px 0 40px;
+
+        /* ─────────────────────────────────────────────────────────────────────
+           页面内容区
+           ───────────────────────────────────────────────────────────────────── */
+
+        .dash-content {
+            padding-top: 28px;
         }
 
-        /* ========== 标题 + 底部分割线 ========== */
-        .page-title {
+
+        /* ─────────────────────────────────────────────────────────────────────
+           内容区块标题
+           ───────────────────────────────────────────────────────────────────── */
+
+        .section-title {
             font-family: var(--font-title);
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 500;
-            color: var(--coral);
-            letter-spacing: .04em;
+            color: var(--text);
+            letter-spacing: .02em;
             margin-bottom: 4px;
-            position: relative;
-            padding-bottom: 8px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .page-title::after {
-            content: '';
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 100%;
-            height: 1px;
-            background-color: var(--border);
+
+        .section-title-icon {
+            font-size: .9rem;
         }
-        .page-subtitle {
+
+        .section-subtitle {
             font-size: .72rem;
             color: var(--text-dim);
             font-family: var(--font-mono);
-            margin-bottom: 20px;
+            margin-bottom: 16px;
+            margin-top: -8px;
         }
 
-        /* ========== 灰色卡片 ========== */
-        .main-card, .persona-card {
+
+        /* ─────────────────────────────────────────────────────────────────────
+           卡片容器
+           复用 components.css 中的 .card 类样式，同时保留局部微调能力
+           ───────────────────────────────────────────────────────────────────── */
+
+        .dash-card {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            padding: 14px 18px;
+            padding: 18px 20px;
             margin-bottom: 20px;
-            padding-left: 12px; /* 左边对齐 */
+            transition:
+                background var(--transition-slow),
+                border-color var(--transition-slow);
         }
 
-        .card-section-title {
-            font-size: 1rem;
-            color: var(--text);
-            font-weight: 500;
-            margin: 0 0 18px 0;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-light);
+        /* 卡片内部区块（不含标题的紧凑卡片） */
+        .dash-card--compact {
+            padding: 14px 18px;
         }
 
-        /* ========== 自检条目之间增加分割线 ========== */
-        .check-item {
+        /* 卡片悬停效果 */
+        .dash-card:hover {
+            border-color: var(--coral-light);
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           状态概览网格
+           ───────────────────────────────────────────────────────────────────── */
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .status-item {
             display: flex;
             align-items: center;
-            padding: 12px 0;
-            font-size: 0.95rem;
-            border-bottom: 1px solid var(--border-light);
-        }
-        .check-item:last-child {
-            border-bottom: none; /* 最后一条去掉线 */
-        }
-
-        .check-icon { margin-right: 12px; }
-        .status-success { color: var(--dot-local); }
-        .status-failed { color: var(--coral); }
-
-        /* ========== 深色按钮加宽 ========== */
-        .refresh-btn, .save-persona-btn {
-            padding: 6px 16px; /* 加宽 */
+            gap: 10px;
+            padding: 10px 12px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border-light);
             border-radius: var(--radius-sm);
-            border: none;
-            background: var(--coral);
-            color: #fff;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-family: var(--font-mono);
-            margin-bottom: 20px;
+            transition:
+                background var(--transition-slow),
+                border-color var(--transition-normal);
         }
 
-        .persona-desc {
-            font-size: .88rem;
+        .status-item:hover {
+            border-color: var(--coral-light);
+        }
+
+        /* 状态指示点 */
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            transition: background var(--transition-normal);
+        }
+
+        .status-dot--ok {
+            background: var(--dot-local);
+            box-shadow: 0 0 0 3px rgba(124, 173, 124, 0.15);
+        }
+
+        .status-dot--fail {
+            background: var(--coral);
+            box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.15);
+        }
+
+        .status-dot--loading {
+            background: var(--text-dim);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .status-label {
+            font-size: .75rem;
             color: var(--text-mid);
+            font-family: var(--font-mono);
+            line-height: 1.3;
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           表单字段
+           复用 setup.html 中的表单设计风格
+           ───────────────────────────────────────────────────────────────────── */
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
+        /* 单列全宽字段 */
+        .form-grid--full {
+            grid-template-columns: 1fr;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-label {
+            font-size: .72rem;
+            font-family: var(--font-mono);
+            color: var(--text-mid);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .form-label .required {
+            color: var(--coral);
+            font-size: .7rem;
+        }
+
+        .form-label .optional {
+            color: var(--text-dim);
+            font-size: .65rem;
+            margin-left: 2px;
+        }
+
+        .form-input {
+            padding: 10px 14px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            outline: none;
+            transition:
+                border-color var(--transition-normal),
+                box-shadow var(--transition-normal);
+        }
+
+        .form-input:focus {
+            border-color: var(--coral-light);
+            box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .form-input--valid {
+            border-color: #7cad7c;
+        }
+
+        .form-input--invalid {
+            border-color: var(--coral);
+        }
+
+        .form-hint {
+            font-size: .68rem;
+            color: var(--text-dim);
+            font-family: var(--font-mono);
+            line-height: 1.5;
+        }
+
+        /* 路径输入行（带浏览按钮） */
+        .form-path-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .form-path-row .form-input {
+            flex: 1;
+        }
+
+        .form-path-btn {
+            padding: 0 14px;
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-mid);
+            font-size: .72rem;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: all var(--transition-normal);
+        }
+
+        .form-path-btn:hover {
+            border-color: var(--coral-light);
+            color: var(--coral);
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           滑块控件组
+           复用 components.css 中的设置面板滑块样式
+           ───────────────────────────────────────────────────────────────────── */
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 36px;
             margin-bottom: 12px;
         }
-        #persona-toml-editor {
+
+        .slider-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .slider-label {
+            font-size: .75rem;
+            color: var(--text-mid);
+            font-family: var(--font-mono);
+            flex-shrink: 0;
+            min-width: 80px;
+        }
+
+        .slider-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .slider-control input[type="range"] {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: var(--border-light);
+            outline: none;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .slider-control input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--coral);
+            cursor: pointer;
+            border: 2px solid var(--surface);
+            box-shadow: 0 0 0 2px var(--coral-light);
+            transition: transform var(--transition-fast);
+        }
+
+        .slider-control input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        .slider-value {
+            font-size: .72rem;
+            font-family: var(--font-mono);
+            color: var(--coral);
+            min-width: 36px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           Toggle 开关
+           复用 components.css 中的 toggle 样式
+           ───────────────────────────────────────────────────────────────────── */
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 40px;
+            margin-bottom: 16px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .toggle-row:last-child {
+            margin-bottom: 0;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .toggle-label {
+            font-size: .75rem;
+            color: var(--text-mid);
+            font-family: var(--font-mono);
+        }
+
+        .toggle-label-desc {
+            display: block;
+            font-size: .65rem;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* Toggle 嵌套区域（如时间窗口） */
+        .toggle-detail {
+            margin-top: 12px;
+            padding-left: 16px;
+            border-left: 2px solid var(--border-light);
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           TOML 编辑器
+           ───────────────────────────────────────────────────────────────────── */
+
+        .toml-editor {
             width: 100%;
-            min-height: 240px;
+            min-height: 200px;
             padding: 12px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border);
-            background: var(--surface);
+            background: var(--surface-alt);
             color: var(--text);
             font-family: var(--font-mono);
-            font-size: 0.8rem;
+            font-size: .78rem;
+            line-height: 1.6;
             resize: vertical;
-            margin-bottom: 12px;
+            outline: none;
+            transition:
+                border-color var(--transition-normal),
+                box-shadow var(--transition-normal);
         }
 
-        .tip-text {
-            font-size: 0.82rem;
-            margin-top: 6px;
+        .toml-editor:focus {
+            border-color: var(--coral-light);
+            box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08);
         }
-        .tip-success { color: #2ecc71; }
-        .tip-error { color: #e74c3c; }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           操作按钮
+           复用 components.css 中的按钮样式
+           ───────────────────────────────────────────────────────────────────── */
+
+        .btn-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .btn {
+            padding: 9px 20px;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-family: var(--font-mono);
+            font-size: .78rem;
+            cursor: pointer;
+            transition: all var(--transition-normal);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:active:not(:disabled) {
+            transform: scale(0.97);
+        }
+
+        .btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+        }
+
+        /* 主要按钮（珊瑚色） */
+        .btn--primary {
+            background: var(--coral);
+            color: #fff;
+            box-shadow: var(--shadow-btn);
+        }
+
+        .btn--primary:hover:not(:disabled) {
+            background: var(--coral-dim);
+            box-shadow: var(--shadow-btn-hover);
+        }
+
+        /* 次要按钮（边框） */
+        .btn--secondary {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-mid);
+        }
+
+        .btn--secondary:hover:not(:disabled) {
+            border-color: var(--coral-light);
+            color: var(--coral);
+        }
+
+        /* 刷新按钮 */
+        .btn--icon {
+            padding: 8px 12px;
+            font-size: .72rem;
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           提示文本
+           ───────────────────────────────────────────────────────────────────── */
+
+        .tip-text {
+            font-size: .72rem;
+            font-family: var(--font-mono);
+            margin-top: 8px;
+            min-height: 1.2em;
+        }
+
+        .tip-text--success {
+            color: #4f8f4f;
+        }
+
+        .tip-text--error {
+            color: var(--coral);
+        }
+
+        .tip-text--loading {
+            color: var(--text-dim);
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           分割线
+           ───────────────────────────────────────────────────────────────────── */
+
+        .divider {
+            height: 1px;
+            background: var(--border-light);
+            margin: 16px 0;
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           响应式布局
+           ───────────────────────────────────────────────────────────────────── */
+
+        @media (max-width: 600px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .status-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .dash-card {
+                padding: 14px 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+
+        /* ─────────────────────────────────────────────────────────────────────
+           动画定义
+           ───────────────────────────────────────────────────────────────────── */
+
+        @keyframes pulse {
+            0%, 100% { opacity: .4; }
+            50% { opacity: 1; }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--coral);
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
     </style>
 </head>
 
 <body>
-    <!-- ========== 顶部：标题 + 返回按钮 ========== -->
-    <header role="banner">
-        <div class="header-title">珊瑚菌 · 系统总览</div>
-        <div id="controls">
-            <a href="/" class="nav-back">← 返回对话</a>
-        </div>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         顶部导航栏
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <header class="dash-header">
+        <span class="dash-icon">🍄</span>
+        <div class="dash-title">系统总览</div>
+        <a href="/" class="dash-back-btn">← 返回对话</a>
     </header>
 
-    <div class="page-body">
-        <!-- 标题 + 分割线 -->
-        <div class="page-title">系统状态</div>
-        <div class="page-subtitle">运行环境检查 · 人格配置管理</div>
 
-        <!-- 刷新按钮 -->
-        <button class="refresh-btn" onclick="loadStatus()">🔄 刷新状态</button>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         页面主体
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div class="page-container">
 
-        <!-- 系统自检卡片 -->
-        <div class="main-card">
-            <h3 class="card-section-title">系统环境自检</h3>
-            <div id="check-list"></div>
-        </div>
+        <!-- ───────────────────────────────────────────────────────────────
+             卡片 1：运行状态概览
+             ─────────────────────────────────────────────────────────────── -->
+        <section class="dash-content">
+            <h2 class="section-title">
+                <span class="section-title-icon">📊</span>
+                运行状态
+            </h2>
+            <p class="section-subtitle">点击「刷新状态」获取最新检测结果</p>
 
-        <!-- 人格配置 -->
-        <div class="persona-card">
-            <h3 class="card-section-title">配置人格</h3>
-            <p class="persona-desc">输入以编辑，点击保存立即生效</p>
-            <textarea id="persona-toml-editor"></textarea>
-            <button class="save-persona-btn" onclick="savePersonaConfig()">💾 保存人格配置</button>
-            <div id="persona-tip" class="tip-text"></div>
-        </div>
-    </div>
+            <div class="dash-card--compact dash-card">
+                <!-- 状态网格 -->
+                <div class="status-grid" id="status-grid">
+                    <!-- 由 JS 动态填充 -->
+                    <div class="status-item">
+                        <div class="status-dot status-dot--loading"></div>
+                        <div class="status-label">加载中…</div>
+                    </div>
+                </div>
 
+                <!-- 刷新按钮 -->
+                <div class="btn-row" style="margin-top: 16px;">
+                    <button class="btn btn--secondary btn--icon" id="btn-refresh-status" onclick="loadStatus()">
+                        🔄 刷新状态
+                    </button>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ───────────────────────────────────────────────────────────────
+             卡片 2：基础参数配置
+             ─────────────────────────────────────────────────────────────── -->
+        <section class="dash-content">
+            <h2 class="section-title">
+                <span class="section-title-icon">⚙️</span>
+                基础参数
+            </h2>
+            <p class="section-subtitle">修改后点击「保存配置」立即生效</p>
+
+            <div class="dash-card">
+                <div class="form-grid">
+                    <!-- 推理服务地址 -->
+                    <div class="form-field">
+                        <label class="form-label">
+                            推理服务地址 <span class="required">*</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            id="cfg-LOCAL_API_URL"
+                            type="text"
+                            placeholder="http://localhost:1234/v1/chat/completions"
+                        >
+                        <div class="form-hint">兼容 OpenAI API 格式</div>
+                    </div>
+
+                    <!-- 模型名称 -->
+                    <div class="form-field">
+                        <label class="form-label">
+                            模型名称 <span class="required">*</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            id="cfg-LOCAL_MODEL_NAME"
+                            type="text"
+                            placeholder="qwen/qwen3.5-9b"
+                        >
+                        <div class="form-hint">与推理服务中加载的模型名称一致</div>
+                    </div>
+
+                    <!-- 嵌入模型路径 -->
+                    <div class="form-field" style="grid-column: span 2;">
+                        <label class="form-label">
+                            嵌入模型路径 <span class="required">*</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            id="cfg-EMBEDDING_MODEL"
+                            type="text"
+                            placeholder="C:\models\Qwen3-Embedding-0.6B"
+                        >
+                        <div class="form-hint">填写包含 config.json 的模型文件夹路径</div>
+                    </div>
+
+                    <!-- Claude API Key -->
+                    <div class="form-field">
+                        <label class="form-label">
+                            Claude API Key <span class="optional">（可选）</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            id="cfg-ANTHROPIC_API_KEY"
+                            type="password"
+                            placeholder="sk-ant-xxxxxx"
+                        >
+                        <div class="form-hint">用于调用 Claude 云端模型</div>
+                    </div>
+
+                    <!-- 天气城市 -->
+                    <div class="form-field">
+                        <label class="form-label">
+                            天气查询城市 <span class="optional">（可选）</span>
+                        </label>
+                        <input
+                            class="form-input"
+                            id="cfg-WEATHER_CITY"
+                            type="text"
+                            placeholder="Shanghai"
+                        >
+                        <div class="form-hint">英文城市名，留空自动定位</div>
+                    </div>
+                </div>
+
+                <!-- 提示信息 -->
+                <div class="tip-text" id="cfg-tip"></div>
+
+                <!-- 保存按钮 -->
+                <div class="btn-row">
+                    <button class="btn btn--secondary" id="btn-test-connection" onclick="testConnection()">
+                        🔗 测试连接
+                    </button>
+                    <button class="btn btn--primary" id="btn-save-config" onclick="saveConfig()">
+                        💾 保存配置
+                    </button>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ───────────────────────────────────────────────────────────────
+             卡片 3：运行时设置
+             ─────────────────────────────────────────────────────────────── -->
+        <section class="dash-content">
+            <h2 class="section-title">
+                <span class="section-title-icon">🎛️</span>
+                运行时设置
+            </h2>
+            <p class="section-subtitle">即时生效，无需重启服务</p>
+
+            <div class="dash-card">
+                <!-- 防抖等待时长 -->
+                <div class="slider-row">
+                    <span class="slider-label">防抖等待时长</span>
+                    <div class="slider-control">
+                        <input
+                            type="range"
+                            id="set-debounce"
+                            min="1"
+                            max="10"
+                            step="0.5"
+                            oninput="updateSliderValue('set-debounce', 'set-debounce-value', '秒')"
+                        >
+                        <span class="slider-value" id="set-debounce-value">3秒</span>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- 主动消息开关 -->
+                <div class="toggle-row">
+                    <div>
+                        <span class="toggle-label">主动消息</span>
+                        <span class="toggle-label-desc">开启后珊瑚菌会在设定时间段内主动发消息</span>
+                    </div>
+                    <label class="toggle-wrap">
+                        <input
+                            type="checkbox"
+                            id="set-push-enabled"
+                            class="toggle-input"
+                            onchange="togglePushDetail()"
+                        >
+                        <div class="toggle-track"></div>
+                    </label>
+                </div>
+
+                <!-- 主动消息详细设置（默认隐藏） -->
+                <div class="toggle-detail" id="push-detail" style="display: none;">
+                    <!-- 开始时间 -->
+                    <div class="slider-row">
+                        <span class="slider-label">开始时间</span>
+                        <div class="slider-control">
+                            <input
+                                type="range"
+                                id="set-push-start"
+                                min="0"
+                                max="23"
+                                step="1"
+                                oninput="updateSliderValue('set-push-start', 'set-push-start-value', ':00')"
+                            >
+                            <span class="slider-value" id="set-push-start-value">8:00</span>
+                        </div>
+                    </div>
+
+                    <!-- 结束时间 -->
+                    <div class="slider-row">
+                        <span class="slider-label">结束时间</span>
+                        <div class="slider-control">
+                            <input
+                                type="range"
+                                id="set-push-end"
+                                min="1"
+                                max="24"
+                                step="1"
+                                oninput="updateSliderValue('set-push-end', 'set-push-end-value', ':00')"
+                            >
+                            <span class="slider-value" id="set-push-end-value">24:00</span>
+                        </div>
+                    </div>
+
+                    <!-- 每日上限 -->
+                    <div class="slider-row">
+                        <span class="slider-label">每日上限</span>
+                        <div class="slider-control">
+                            <input
+                                type="range"
+                                id="set-push-limit"
+                                min="1"
+                                max="10"
+                                step="1"
+                                oninput="updateSliderValue('set-push-limit', 'set-push-limit-value', '条')"
+                            >
+                            <span class="slider-value" id="set-push-limit-value">4条</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 提示信息 -->
+                <div class="tip-text" id="set-tip"></div>
+
+                <!-- 保存按钮 -->
+                <div class="btn-row">
+                    <button class="btn btn--primary" id="btn-save-settings" onclick="saveSettings()">
+                        💾 保存设置
+                    </button>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ───────────────────────────────────────────────────────────────
+             卡片 4：人格配置
+             ─────────────────────────────────────────────────────────────── -->
+        <section class="dash-content">
+            <h2 class="section-title">
+                <span class="section-title-icon">🎭</span>
+                人格配置
+            </h2>
+            <p class="section-subtitle">以 TOML 格式编辑人格设定</p>
+
+            <div class="dash-card">
+                <textarea
+                    class="toml-editor"
+                    id="persona-editor"
+                    placeholder="# 正在加载人格配置…"
+                ></textarea>
+
+                <!-- 提示信息 -->
+                <div class="tip-text" id="persona-tip"></div>
+
+                <!-- 保存按钮 -->
+                <div class="btn-row">
+                    <button class="btn btn--secondary" onclick="loadPersona()">
+                        🔄 重新加载
+                    </button>
+                    <button class="btn btn--primary" onclick="savePersona()">
+                        💾 保存人格
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </div><!-- /.page-container -->
+
+
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         JavaScript 逻辑
+         ═══════════════════════════════════════════════════════════════════════ -->
     <script>
+        /**
+         * ================================================================
+         * dashboard.html — 系统总览页面逻辑
+         * ================================================================
+         *
+         * 功能模块：
+         *   1. 运行状态加载与刷新
+         *   2. 基础参数配置读取与保存（.env 配置）
+         *   3. 运行时设置读取与保存（数据库设置）
+         *   4. 人格配置读取与保存（persona.toml）
+         *
+         * API 依赖：
+         *   GET  /api/health/check        — 健康检查（状态概览）
+         *   GET  /api/admin/config        — 读取 .env 配置
+         *   POST /api/admin/config       — 保存 .env 配置
+         *   GET  /api/settings            — 读取运行时设置
+         *   POST /api/settings            — 保存运行时设置
+         *   GET  /api/persona/get        — 读取人格配置
+         *   POST /api/persona/save       — 保存人格配置
+         * ================================================================
+         */
+
+
+        // =========================================================================
+        // 状态：运行状态概览
+        // =========================================================================
+
+        /**
+         * 状态检测项定义
+         * key   — API 返回的字段名
+         * label — 界面显示的标签文字
+         */
+        const STATUS_ITEMS = [
+            { key: 'venv',          label: '虚拟环境' },
+            { key: 'env',           label: '.env 配置' },
+            { key: 'embedding',     label: '嵌入模型' },
+            { key: 'local_model',   label: '本地模型服务' },
+            { key: 'database',      label: '数据库' }
+        ];
+
+        /**
+         * 加载并显示系统运行状态
+         *
+         * 调用流程：
+         *   1. 显示加载状态（动画圆点）
+         *   2. 请求 /api/health/check 接口
+         *   3. 遍历 STATUS_ITEMS 渲染状态卡片
+         */
         async function loadStatus() {
-            const list = document.getElementById('check-list');
-            list.innerHTML = '加载中...';
+            const grid = document.getElementById('status-grid');
+            const btn  = document.getElementById('btn-refresh-status');
+
+            // 禁用按钮，显示加载状态
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>检测中…';
+
+            // 渲染加载中的占位符
+            grid.innerHTML = STATUS_ITEMS.map(item => `
+                <div class="status-item">
+                    <div class="status-dot status-dot--loading"></div>
+                    <div class="status-label">${item.label}…</div>
+                </div>
+            `).join('');
+
             try {
-                const res = await fetch('/api/health/check');
+                // 请求健康检查接口
+                const res  = await fetch('/api/health/check');
                 const data = await res.json();
-                list.innerHTML = '';
-                const items = [
-                    { key: 'venv', label: '虚拟环境（venv）' },
-                    { key: 'env', label: '.env 配置文件' },
-                    { key: 'embedding', label: '嵌入模型（Embedding）' },
-                    { key: 'local_model', label: '本地模型服务（127.0.0.1:1234）' },
-                    { key: 'database', label: '数据库（SQLite）' }
-                ];
-                items.forEach(item => {
-                    const ok = data[item.key];
-                    list.innerHTML += `
-                    <div class="check-item">
-                        <span class="check-icon ${ok ? 'status-success' : 'status-failed'}">
-                            ${ok ? '✅' : '❌'}
-                        </span>
-                        <div class="check-text">${item.label}</div>
-                    </div>`;
-                });
+
+                // 渲染状态列表
+                grid.innerHTML = STATUS_ITEMS.map(item => {
+                    const ok    = data[item.key];
+                    const dotClass = ok ? 'status-dot--ok' : 'status-dot--fail';
+                    const icon  = ok ? '✓' : '✗';
+                    return `
+                        <div class="status-item">
+                            <div class="status-dot ${dotClass}"></div>
+                            <div class="status-label">${item.label} ${icon}</div>
+                        </div>
+                    `;
+                }).join('');
+
             } catch (e) {
-                list.innerHTML = '<div class="status-failed">获取状态失败</div>';
+                // 网络错误时显示失败状态
+                grid.innerHTML = `
+                    <div class="status-item" style="grid-column: span 2;">
+                        <div class="status-dot status-dot--fail"></div>
+                        <div class="status-label">获取状态失败，请检查服务连接</div>
+                    </div>
+                `;
+            } finally {
+                // 恢复按钮状态
+                btn.disabled = false;
+                btn.innerHTML = '🔄 刷新状态';
             }
         }
 
-        async function loadPersonaConfig() {
+
+        // =========================================================================
+        // 状态：基础参数配置
+        // =========================================================================
+
+        /**
+         * 页面初始化时加载 .env 配置
+         *
+         * 调用流程：
+         *   1. 请求 /api/admin/config 接口
+         *   2. 将返回的配置值填充到对应的表单字段
+         */
+        async function loadConfig() {
+            try {
+                const res  = await fetch('/api/admin/config');
+                const data = await res.json();
+                const vals = data.values || {};
+
+                // 填充表单字段
+                Object.keys(vals).forEach(key => {
+                    const el = document.getElementById(`cfg-${key}`);
+                    if (el) el.value = vals[key];
+                });
+
+            } catch (e) {
+                showTip('cfg-tip', '❌ 配置加载失败', 'error');
+            }
+        }
+
+        /**
+         * 保存基础参数配置
+         *
+         * 调用流程：
+         *   1. 收集所有配置字段的值
+         *   2. 发送 POST /api/admin/config 请求
+         *   3. 根据返回结果显示成功/失败提示
+         */
+        async function saveConfig() {
+            const tip = document.getElementById('cfg-tip');
+            const btn = document.getElementById('btn-save-config');
+
+            // 收集配置值
+            const values = {};
+            const keys = [
+                'LOCAL_API_URL', 'LOCAL_MODEL_NAME', 'EMBEDDING_MODEL',
+                'ANTHROPIC_API_KEY', 'WEATHER_CITY'
+            ];
+
+            keys.forEach(key => {
+                const el = document.getElementById(`cfg-${key}`);
+                if (el && el.value.trim()) {
+                    values[key] = el.value.trim();
+                }
+            });
+
+            if (Object.keys(values).length === 0) {
+                showTip('cfg-tip', '⚠️ 请至少填写一项配置', 'error');
+                return;
+            }
+
+            // 禁用按钮，显示保存中
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>保存中…';
+            showTip('cfg-tip', '保存中…', 'loading');
+
+            try {
+                const res  = await fetch('/api/admin/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ values })
+                });
+                const data = await res.json();
+
+                if (data.ok) {
+                    showTip('cfg-tip', '✅ 配置保存成功', 'success');
+                    // 重新加载状态
+                    loadStatus();
+                } else {
+                    showTip('cfg-tip', '❌ 保存失败：' + (data.message || '未知错误'), 'error');
+                }
+
+            } catch (e) {
+                showTip('cfg-tip', '❌ 保存失败：' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '💾 保存配置';
+            }
+        }
+
+        /**
+         * 测试推理服务连接
+         *
+         * 流程：
+         *   1. 先保存当前配置
+         *   2. 请求 /api/admin/status 获取最新状态
+         *   3. 根据 inference_service 项判断连接是否成功
+         */
+        async function testConnection() {
+            const tip = document.getElementById('cfg-tip');
+            const btn = document.getElementById('btn-test-connection');
+
+            // 先保存当前配置
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>测试中…';
+            showTip('cfg-tip', '正在测试连接…', 'loading');
+
+            try {
+                // 收集配置值并保存
+                const values = {};
+                const keys = ['LOCAL_API_URL', 'LOCAL_MODEL_NAME'];
+
+                keys.forEach(key => {
+                    const el = document.getElementById(`cfg-${key}`);
+                    if (el && el.value.trim()) {
+                        values[key] = el.value.trim();
+                    }
+                });
+
+                if (Object.keys(values).length < 2) {
+                    showTip('cfg-tip', '⚠️ 请先填写服务地址和模型名称', 'error');
+                    return;
+                }
+
+                await fetch('/api/admin/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ values })
+                });
+
+                // 请求状态检查
+                const res  = await fetch('/api/admin/status');
+                const data = await res.json();
+
+                const svc = data.checks?.inference_service;
+                if (svc?.ok) {
+                    showTip('cfg-tip', '✅ ' + (svc.message || '推理服务连接成功'), 'success');
+                    // 标记输入框为有效
+                    document.getElementById('cfg-LOCAL_API_URL').classList.add('form-input--valid');
+                } else {
+                    showTip('cfg-tip', '❌ ' + (svc?.message || '连接失败'), 'error');
+                    document.getElementById('cfg-LOCAL_API_URL').classList.add('form-input--invalid');
+                }
+
+            } catch (e) {
+                showTip('cfg-tip', '❌ 测试失败：' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🔗 测试连接';
+            }
+        }
+
+
+        // =========================================================================
+        // 状态：运行时设置
+        // =========================================================================
+
+        /**
+         * 页面初始化时加载运行时设置
+         *
+         * 调用流程：
+         *   1. 请求 /api/settings 接口
+         *   2. 将返回的设置值填充到对应的控件
+         */
+        async function loadSettings() {
+            try {
+                const res  = await fetch('/api/settings');
+                const data = await res.json();
+
+                // 填充表单控件
+                // 防抖等待时长
+                const debounce = data.debounce_seconds || 3;
+                document.getElementById('set-debounce').value = debounce;
+                updateSliderValue('set-debounce', 'set-debounce-value', '秒', debounce);
+
+                // 主动消息开关
+                const pushEnabled = data.push_enabled === 1;
+                document.getElementById('set-push-enabled').checked = pushEnabled;
+
+                // 根据开关状态显示/隐藏详细设置
+                togglePushDetail();
+
+                // 时间窗口
+                const pushStart = data.push_window_start || 8;
+                document.getElementById('set-push-start').value = pushStart;
+                updateSliderValue('set-push-start', 'set-push-start-value', ':00', pushStart);
+
+                const pushEnd = data.push_window_end || 24;
+                document.getElementById('set-push-end').value = pushEnd;
+                updateSliderValue('set-push-end', 'set-push-end-value', ':00', pushEnd);
+
+                // 每日上限
+                const pushLimit = data.push_daily_limit || 4;
+                document.getElementById('set-push-limit').value = pushLimit;
+                updateSliderValue('set-push-limit', 'set-push-limit-value', '条', pushLimit);
+
+            } catch (e) {
+                showTip('set-tip', '❌ 运行时设置加载失败', 'error');
+            }
+        }
+
+        /**
+         * 切换主动消息详细设置的显示/隐藏
+         */
+        function togglePushDetail() {
+            const enabled = document.getElementById('set-push-enabled').checked;
+            const detail  = document.getElementById('push-detail');
+            detail.style.display = enabled ? 'block' : 'none';
+        }
+
+        /**
+         * 保存运行时设置
+         *
+         * 调用流程：
+         *   1. 收集所有设置控件的值
+         *   2. 发送 POST /api/settings 请求
+         *   3. 根据返回结果显示成功/失败提示
+         */
+        async function saveSettings() {
+            const tip = document.getElementById('set-tip');
+            const btn = document.getElementById('btn-save-settings');
+
+            // 禁用按钮，显示保存中
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>保存中…';
+            showTip('set-tip', '保存中…', 'loading');
+
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        debounce_seconds:  parseFloat(document.getElementById('set-debounce').value),
+                        push_enabled:      document.getElementById('set-push-enabled').checked ? 1 : 0,
+                        push_window_start: parseInt(document.getElementById('set-push-start').value),
+                        push_window_end:   parseInt(document.getElementById('set-push-end').value),
+                        push_daily_limit:   parseInt(document.getElementById('set-push-limit').value)
+                    })
+                });
+
+                if (res.ok) {
+                    showTip('set-tip', '✅ 设置保存成功', 'success');
+                } else {
+                    const data = await res.json();
+                    showTip('set-tip', '❌ 保存失败：' + (data.detail || '未知错误'), 'error');
+                }
+
+            } catch (e) {
+                showTip('set-tip', '❌ 保存失败：' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '💾 保存设置';
+            }
+        }
+
+
+        // =========================================================================
+        // 状态：人格配置
+        // =========================================================================
+
+        /**
+         * 加载人格配置文件（persona.toml）
+         */
+        async function loadPersona() {
             const tip = document.getElementById('persona-tip');
+            showTip('persona-tip', '加载中…', 'loading');
+
             try {
                 const res = await fetch('/api/persona/get');
-                if (!res.ok) throw new Error('load failed');
+                if (!res.ok) throw new Error('文件不存在');
                 const txt = await res.text();
-                document.getElementById('persona-toml-editor').value = txt;
-                tip.textContent = '';
+                document.getElementById('persona-editor').value = txt;
+                showTip('persona-tip', '');
             } catch (e) {
-                tip.textContent = '❌ 人格配置加载失败';
-                tip.className = 'tip-text tip-error';
+                document.getElementById('persona-editor').value = '# 人格配置文件加载失败\n# 请检查 config/persona.toml 是否存在';
+                showTip('persona-tip', '⚠️ 配置文件不存在或无法读取', 'error');
             }
         }
 
-        async function savePersonaConfig() {
-            const c = document.getElementById('persona-toml-editor').value;
-            const t = document.getElementById('persona-tip');
-            t.textContent = '保存中...';
+        /**
+         * 保存人格配置文件
+         */
+        async function savePersona() {
+            const tip   = document.getElementById('persona-tip');
+            const btn   = event.target;
+            const content = document.getElementById('persona-editor').value;
+
+            // 禁用按钮
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>保存中…';
+            showTip('persona-tip', '保存中…', 'loading');
+
             try {
-                const r = await fetch('/api/persona/save', {
-                    method: 'POST', headers:{'Content-Type':'text/plain'}, body:c
+                const res = await fetch('/api/persona/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: content
                 });
-                t.textContent = r.ok ? '✅ 保存成功' : '❌ 保存失败';
-                t.className = 'tip-text ' + (r.ok ? 'tip-success' : 'tip-error');
-            } catch(e) {
-                t.textContent = '❌ 保存失败';
-                t.className = 'tip-text tip-error';
+
+                if (res.ok) {
+                    showTip('persona-tip', '✅ 人格配置保存成功', 'success');
+                } else {
+                    showTip('persona-tip', '❌ 保存失败', 'error');
+                }
+
+            } catch (e) {
+                showTip('persona-tip', '❌ 保存失败：' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '💾 保存人格';
             }
         }
 
+
+        // =========================================================================
+        // 工具函数
+        // =========================================================================
+
+        /**
+         * 更新滑块控件的数值显示
+         *
+         * @param {string} inputId  - 滑块 input 元素的 id
+         * @param {string} valueId - 显示数值的 span 元素的 id
+         * @param {string} unit    - 单位后缀（如 '秒'、':00'、'条'）
+         * @param {number} [customValue] - 可选的自定义值，不从 input 读取
+         */
+        function updateSliderValue(inputId, valueId, unit, customValue) {
+            const input = document.getElementById(inputId);
+            const value = customValue !== undefined ? customValue : input.value;
+            document.getElementById(valueId).textContent = value + unit;
+        }
+
+        /**
+         * 显示提示文本
+         *
+         * @param {string} id       - 提示元素的 id
+         * @param {string} message   - 提示文字
+         * @param {string} [type]    - 提示类型：success | error | loading
+         */
+        function showTip(id, message, type) {
+            const el = document.getElementById(id);
+            el.textContent = message;
+            el.className = 'tip-text';
+            if (type) {
+                el.classList.add('tip-text--' + type);
+            }
+        }
+
+
+        // =========================================================================
+        // 页面初始化
+        // =========================================================================
+
+        /**
+         * DOM 加载完成后执行初始化
+         *
+         * 加载顺序：
+         *   1. 运行状态
+         *   2. 基础参数配置
+         *   3. 运行时设置
+         *   4. 人格配置
+         */
         window.addEventListener('DOMContentLoaded', () => {
             loadStatus();
-            loadPersonaConfig();
+            loadConfig();
+            loadSettings();
+            loadPersona();
         });
     </script>
 </body>

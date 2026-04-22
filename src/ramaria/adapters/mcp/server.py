@@ -284,7 +284,6 @@ _HANDLER_MAP: dict[str, callable] = {
 
 server = Server(
     name    = "ramaria-memory",
-    version = "0.3.6",
 )
 
 

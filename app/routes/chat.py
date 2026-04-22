@@ -23,7 +23,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ramaria.config import RETRIEVAL_WEIGHT_L1, RETRIEVAL_WEIGHT_L2
+from ramaria.config import (
+    MAX_HISTORY_MESSAGES,
+    RETRIEVAL_WEIGHT_L1,
+    RETRIEVAL_WEIGHT_L2,
+)
 from ramaria.core.llm_client import call_local_chat
 from ramaria.core.prompt_builder import build_system_prompt
 from ramaria.memory.conflict_checker import get_conflict_question, handle_conflict_reply
@@ -39,14 +43,17 @@ from ramaria.storage.database import (
     save_message,
 )
 
-from ramaria.constants import PROFILE_FIELD_LIST
+from ramaria.constants import (
+    CONFLICT_REPLY_MAX_LEN,
+    IGNORE_KEYWORDS,
+    PROFILE_FIELD_LIST,
+    RESOLVE_KEYWORDS,
+)
 from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-_MAX_HISTORY_MESSAGES = 40
 
 
 # =============================================================================
@@ -80,15 +87,7 @@ class ToggleRequest(BaseModel):
 # =============================================================================
 # 冲突回复检测
 # =============================================================================
-
-# 用户确认"更新画像"的关键词（包含匹配）
-_RESOLVE_KEYWORDS = {"更新", "接受", "对", "是的", "没错", "update", "是", "确认", "合并"}
-
-# 用户选择"忽略冲突"的关键词（包含匹配）
-_IGNORE_KEYWORDS  = {"忽略", "不用", "不", "算了", "保持", "ignore", "不是", "分开"}
-
-# 超过此长度且未命中关键词 → 视为正常对话
-_CONFLICT_REPLY_MAX_LEN = 20
+# 关键词定义移至 src/ramaria/constants.py
 
 
 def _detect_conflict_action(text: str) -> str | None:
@@ -102,13 +101,13 @@ def _detect_conflict_action(text: str) -> str | None:
     """
     t = text.lower().strip()
 
-    if any(kw in t for kw in _RESOLVE_KEYWORDS):
+    if any(kw in t for kw in RESOLVE_KEYWORDS):
         return "resolve"
-    if any(kw in t for kw in _IGNORE_KEYWORDS):
+    if any(kw in t for kw in IGNORE_KEYWORDS):
         return "ignore"
 
     # 超长消息视为正常对话，不拦截
-    if len(text) > _CONFLICT_REPLY_MAX_LEN:
+    if len(text) > CONFLICT_REPLY_MAX_LEN:
         return None
 
     return None
@@ -411,7 +410,7 @@ async def _handle_local(session_id: int, content: str) -> ChatResponse:
     context = await asyncio.to_thread(_build_context, session_id, content)
     system  = await asyncio.to_thread(build_system_prompt, context)
     history_without_current = history[:-1]
-    trimmed_history = history_without_current[-_MAX_HISTORY_MESSAGES:]
+    trimmed_history = history_without_current[-MAX_HISTORY_MESSAGES:]
 
     msgs = [
         {"role": "system", "content": system},

@@ -117,16 +117,15 @@ def _detect_conflict_action(text: str) -> str | None:
 # RAG 结果格式化
 # =============================================================================
 
-def _sort_key_l2(hit, weight_l2: float):
-    """L2 排序键：处理 adjusted_distance 可能为 None 的情况。"""
-    dist = hit.get("adjusted_distance") or hit.get("distance") or 1.0
-    return dist * weight_l2
 
+def _calc_sort_score(hit: dict, weight: float) -> float:
+    """
+    计算检索结果的排序分数。
 
-def _sort_key_l1(hit, weight_l1: float):
-    """L1 排序键：处理 adjusted_distance 可能为 None 的情况。"""
+    处理 adjusted_distance 可能为 None 的情况，fallback 到 distance。
+    """
     dist = hit.get("adjusted_distance") or hit.get("distance") or 1.0
-    return dist * weight_l1
+    return dist * weight
 
 
 def _format_rag_results(
@@ -165,7 +164,7 @@ def _format_rag_results(
 
         l2_sorted = sorted(
             l2_hits,
-            key=lambda hit: _sort_key_l2(hit, weight_l2),
+            key=lambda hit: _calc_sort_score(hit, weight_l2),
         )
 
         for hit in l2_sorted:
@@ -201,7 +200,7 @@ def _format_rag_results(
 
         l1_sorted = sorted(
             l1_hits,
-            key=lambda hit: _sort_key_l1(hit, weight_l1),
+            key=lambda hit: _calc_sort_score(hit, weight_l1),
         )
 
         for hit in l1_sorted:
@@ -469,7 +468,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="消息内容不能为空")
 
     session_id = session_manager.on_message()
-    save_message(session_id, "user", req.content)
+    save_message(session_id, "user", req.content, source="http")
 
     # 冲突回复检测
     conflict_action = _detect_conflict_action(req.content.strip())
@@ -478,14 +477,14 @@ async def chat(req: ChatRequest):
         if cr is not None:
             conflict_id, _ = cr
             reply = handle_conflict_reply(conflict_id, conflict_action)
-            save_message(session_id, "assistant", reply)
+            save_message(session_id, "assistant", reply, source="local")
             return ChatResponse(reply=reply, session_id=session_id, mode="local")
 
     # 冲突询问推送
     cr = get_conflict_question()
     if cr is not None:
         _, question = cr
-        save_message(session_id, "assistant", question)
+        save_message(session_id, "assistant", question, source="local")
         return ChatResponse(reply=question, session_id=session_id, mode="local")
 
     # 路由判断
@@ -494,7 +493,7 @@ async def chat(req: ChatRequest):
 
     if action == "ask_confirm":
         txt = result["text"]
-        save_message(session_id, "assistant", txt)
+        save_message(session_id, "assistant", txt, source="local")
         return ChatResponse(reply=txt, session_id=session_id, mode="confirm")
 
     if action in ("online", "confirm_yes"):
@@ -579,7 +578,7 @@ async def websocket_endpoint(ws: WebSocket):
             if cr is not None:
                 conflict_id, _ = cr
                 reply = handle_conflict_reply(conflict_id, conflict_action)
-                save_message(session_id, "assistant", reply)
+                save_message(session_id, "assistant", reply, source="local")
                 await _ws_send(ws, {
                     "type":       "reply",
                     "reply":      reply,
@@ -592,7 +591,7 @@ async def websocket_endpoint(ws: WebSocket):
         cr = get_conflict_question()
         if cr is not None:
             _, question = cr
-            save_message(session_id, "assistant", question)
+            save_message(session_id, "assistant", question, source="local")
             await _ws_send(ws, {
                 "type":       "reply",
                 "reply":      question,
@@ -607,7 +606,7 @@ async def websocket_endpoint(ws: WebSocket):
 
         if action == "ask_confirm":
             txt = result["text"]
-            save_message(session_id, "assistant", txt)
+            save_message(session_id, "assistant", txt, source="local")
             await _ws_send(ws, {
                 "type":       "reply",
                 "reply":      txt,
@@ -672,7 +671,7 @@ async def websocket_endpoint(ws: WebSocket):
             _ws_connections[ws] = session_id
 
             # 每条消息单独存入 L0（永久保留原始消息）
-            save_message(session_id, "user", content)
+            save_message(session_id, "user", content, source="ws")
 
             # 存入缓冲区
             _buf.append(content)

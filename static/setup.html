@@ -500,17 +500,17 @@
   <div class="panel" id="panel-3">
     <div class="panel-title">可选配置</div>
     <div class="panel-desc">
-      以下配置项均有合理默认值，可以直接跳过。需要使用 Claude API 或天气功能时再填写。
+      以下配置项均有合理默认值，可以直接跳过。需要使用云端 API 或天气功能时再填写。
     </div>
 
     <div class="field-group">
       <div class="field">
         <div class="field-label">
-          Claude API Key <span class="optional">（可选）</span>
+          云端 API Key <span class="optional">（可选）</span>
         </div>
         <input class="field-input" id="ANTHROPIC_API_KEY" type="password"
                placeholder="sk-ant-xxxxxx">
-        <div class="field-hint">用于调用 Claude 云端模型处理复杂推理任务。留空则只使用本地模型。</div>
+        <div class="field-hint">用于调用云端模型处理复杂推理任务。留空则只使用本地模型。</div>
       </div>
 
       <div class="field">
@@ -811,7 +811,7 @@ function renderSummary() {
     ['LOCAL_API_URL',    '推理服务地址'],
     ['LOCAL_MODEL_NAME', '模型名称'],
     ['EMBEDDING_MODEL',  '嵌入模型路径'],
-    ['ANTHROPIC_API_KEY','Claude API Key'],
+    ['ANTHROPIC_API_KEY','云端 API Key'],
     ['WEATHER_CITY',     '天气城市'],
     ['SERVER_PORT',      '服务端口'],
   ];

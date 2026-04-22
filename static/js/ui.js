@@ -61,7 +61,7 @@ const UI = (() => {
    *
    * @param {string} text - 气泡文本内容
    * @param {'user'|'assistant'} role - 发言方
-   * @param {boolean} isOnlineMsg - 是否是线上（Claude API）回复
+   * @param {boolean} isOnlineMsg - 是否是线上回复
    * @param {boolean} isConfirm - 是否是等待确认消息（蓝色虚线边框）
    * @returns {HTMLElement}
    */

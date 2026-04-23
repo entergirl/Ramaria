@@ -9,6 +9,9 @@ app/routes/admin.py — 管理与配置 API 路由
     POST /api/admin/init_db         — 初始化/迁移数据库
     GET  /api/admin/setup/page      — 返回配置向导 HTML 页面
     GET  /api/admin/launcher/page   — 返回启动过渡页 HTML 页面
+    GET  /api/persona/get           — 读取当前 persona.toml
+    POST /api/persona/save          — 保存 persona.toml
+    GET  /api/persona/example       — 读取 persona.toml.example（配置向导用）
 
 设计原则：
     · 所有配置写操作通过 env_checker.write_env() 统一处理
@@ -20,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -41,16 +44,17 @@ _ROOT        = Path(__file__).resolve().parents[2]
 _STATIC_DIR  = _ROOT / "static"
 _SCRIPTS_DIR = _ROOT / "scripts"
 
+# persona 文件路径
+_PERSONA_PATH   = _ROOT / "config" / "persona.toml"
+_PERSONA_EXAMPLE = _ROOT / "config" / "persona.toml.example"
+
 
 # =============================================================================
 # 请求/响应模型
 # =============================================================================
 
 class ConfigPayload(BaseModel):
-    """
-    POST /api/admin/config 的请求体。
-    使用宽松的 dict 结构，允许前端只传需要更新的字段。
-    """
+    """POST /api/admin/config 的请求体。"""
     values: dict[str, str]
 
 
@@ -70,16 +74,14 @@ def _fail(message: str, detail: str = "", data: dict | None = None) -> JSONRespo
 
 
 # =============================================================================
-# 接口实现
+# 环境检测接口
 # =============================================================================
 
 @router.get("/api/admin/status")
 async def admin_status():
     """
     执行全部环境检测，返回每一项的 ok / message / detail。
-    同时返回顶层 can_start 字段，供前端决定是否显示"立即启动"按钮。
-
-    前端每隔 2s 轮询此接口以实时更新状态显示。
+    同时返回顶层 can_start 字段，供前端决定是否显示「立即启动」按钮。
     """
     checks    = run_all_checks()
     can_start, failed_items = can_start_directly()
@@ -92,13 +94,13 @@ async def admin_status():
     })
 
 
+# =============================================================================
+# 配置读写接口
+# =============================================================================
+
 @router.get("/api/admin/config")
 async def admin_get_config():
-    """
-    读取当前 .env 的全部值，供配置向导页面回显已有配置。
-
-    注意：敏感字段（API Key）原样返回，前端自行处理是否遮罩显示。
-    """
+    """读取当前 .env 的全部值，供配置向导页面回显已有配置。"""
     values = get_all_env_values()
     return JSONResponse({"ok": True, "values": values})
 
@@ -107,9 +109,7 @@ async def admin_get_config():
 async def admin_save_config(payload: ConfigPayload):
     """
     接收前端提交的配置表单，写入 .env 文件。
-
     只写入 payload.values 中的字段，不影响其他已有配置项。
-    写入完成后重新检测 env_file 和 embedding_model 项，返回最新状态。
     """
     if not payload.values:
         return _fail("请求体为空，未写入任何配置")
@@ -121,7 +121,6 @@ async def admin_save_config(payload: ConfigPayload):
         logger.error(f"写入 .env 失败 — {e}")
         return _fail("写入配置失败", detail=str(e))
 
-    # 写入后立刻重新检测，把最新结果返回给前端
     from app.core.env_checker import check_embedding_model, check_env_file
     return JSONResponse({
         "ok":      True,
@@ -133,14 +132,23 @@ async def admin_save_config(payload: ConfigPayload):
     })
 
 
+# =============================================================================
+# 数据库初始化接口
+# =============================================================================
+
 @router.post("/api/admin/init_db")
 async def admin_init_db():
     """
     以子进程调用 scripts/setup_db.py 初始化/迁移数据库。
-    子进程隔离，避免 setup_db 的 sys.exit() 影响主进程。
 
-    首次使用或数据库缺失时由前端在向导最后一步调用。
+    同时在数据库初始化前确保 persona.toml 存在：
+      · 如果 persona.toml 已存在 → 不覆盖
+      · 如果不存在但 persona.toml.example 存在 → 从 example 复制
+      · 两者均不存在 → 跳过（不影响数据库初始化）
     """
+    # 确保 persona.toml 存在（不覆盖已有配置）
+    _ensure_persona_exists()
+
     setup_script = _SCRIPTS_DIR / "setup_db.py"
     if not setup_script.exists():
         return _fail("未找到 scripts/setup_db.py", detail="请确认项目文件完整。")
@@ -169,6 +177,37 @@ async def admin_init_db():
         return _fail("数据库初始化异常", detail=str(e))
 
 
+def _ensure_persona_exists() -> None:
+    """
+    确保 persona.toml 存在：
+      · 已存在 → 不做任何操作（不覆盖用户自定义）
+      · 不存在 + example 存在 → 从 example 复制
+      · 两者均不存在 → 静默跳过
+    """
+    if _PERSONA_PATH.exists():
+        logger.debug("persona.toml 已存在，跳过自动创建")
+        return
+
+    _PERSONA_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if _PERSONA_EXAMPLE.exists():
+        import shutil
+        try:
+            shutil.copy(_PERSONA_EXAMPLE, _PERSONA_PATH)
+            logger.info(f"persona.toml 已从 example 复制：{_PERSONA_PATH}")
+        except Exception as e:
+            logger.warning(f"复制 persona.toml.example 失败 — {e}")
+    else:
+        logger.warning(
+            "persona.toml 和 persona.toml.example 均不存在，跳过自动创建。"
+            "服务启动时可能因人格配置缺失而报错。"
+        )
+
+
+# =============================================================================
+# 页面接口
+# =============================================================================
+
 @router.get("/api/admin/setup/page", response_class=HTMLResponse)
 async def admin_setup_page():
     """返回配置向导 HTML 页面（static/setup.html）。"""
@@ -185,3 +224,66 @@ async def admin_launcher_page():
     if not launcher_html.exists():
         return HTMLResponse("<h1>launcher.html 未找到</h1>", status_code=404)
     return HTMLResponse(content=launcher_html.read_text(encoding="utf-8"))
+
+
+# =============================================================================
+# persona.toml 读写接口
+# =============================================================================
+
+@router.get("/api/persona/get")
+async def get_persona():
+    """
+    读取当前 persona.toml 内容。
+    文件不存在时尝试返回 example 内容；均不存在时返回 404。
+    """
+    # 优先读取用户自定义版本
+    if _PERSONA_PATH.exists():
+        return Response(
+            content=_PERSONA_PATH.read_text(encoding="utf-8"),
+            media_type="text/plain",
+        )
+
+    # 降级到 example
+    if _PERSONA_EXAMPLE.exists():
+        return Response(
+            content=_PERSONA_EXAMPLE.read_text(encoding="utf-8"),
+            media_type="text/plain",
+        )
+
+    return Response(status_code=404, content="persona.toml 不存在")
+
+
+@router.post("/api/persona/save")
+async def save_persona(request: Request):
+    """
+    保存 persona.toml 内容。
+    自动创建 config/ 目录（如不存在）。
+    """
+    content = await request.body()
+    text    = content.decode("utf-8").strip()
+
+    if not text:
+        return JSONResponse({"ok": False, "message": "内容不能为空"}, status_code=400)
+
+    try:
+        _PERSONA_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _PERSONA_PATH.write_text(text, encoding="utf-8")
+        logger.info(f"persona.toml 已保存：{_PERSONA_PATH}")
+        return JSONResponse({"ok": True, "message": "保存成功"})
+    except Exception as e:
+        logger.error(f"保存 persona.toml 失败 — {e}")
+        return JSONResponse({"ok": False, "message": str(e)}, status_code=500)
+
+
+@router.get("/api/persona/example")
+async def get_persona_example():
+    """
+    读取 persona.toml.example 内容，供配置向导「恢复默认」使用。
+    文件不存在时返回 404（前端回退到 JS 内置模板）。
+    """
+    if _PERSONA_EXAMPLE.exists():
+        return Response(
+            content=_PERSONA_EXAMPLE.read_text(encoding="utf-8"),
+            media_type="text/plain",
+        )
+    return Response(status_code=404, content="persona.toml.example 不存在")

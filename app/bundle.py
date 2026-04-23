@@ -41,14 +41,12 @@ def _get_root() -> Path:
       · 打包模式：_MEIPASS 就是解压后的根目录
     """
     if getattr(sys, "frozen", False):
-        # PyInstaller 打包后，sys._MEIPASS 是解压目录
         return Path(sys._MEIPASS)  # type: ignore[attr-defined]
     return Path(__file__).resolve().parent.parent
 
 
 ROOT = _get_root()
 
-# 将 src/ 加入模块搜索路径（开发模式需要）
 _src = ROOT / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
@@ -67,12 +65,11 @@ def _load_dotenv() -> None:
 
     加载顺序（打包模式）：
     1. exe 同级目录的 .env（用户自定义，优先）
-    2. 资源目录中的 .env（打包时的模板，如果不存在则自动从模板生成）
+    2. 资源目录中的 .env（打包时的模板，作为兜底）
     """
     env_file = None
     exe_dir  = None
 
-    # 优先从 exe 同级目录加载用户自定义 .env
     if getattr(sys, "frozen", False):
         exe_dir  = Path(sys.executable).parent
         user_env = exe_dir / ".env"
@@ -80,13 +77,11 @@ def _load_dotenv() -> None:
             env_file = user_env
             print(f"[bundle] 加载用户 .env: {env_file}")
         else:
-            # 回退到资源目录中的模板 .env
             bundled_env = ROOT / ".env"
             if bundled_env.exists():
                 env_file = bundled_env
                 print(f"[bundle] 加载 bundled .env: {env_file}")
     else:
-        # 开发模式：使用项目根目录的 .env
         env_file = ROOT / ".env"
         print(f"[bundle] 加载开发 .env: {env_file}")
 
@@ -94,8 +89,7 @@ def _load_dotenv() -> None:
         print(f"[bundle] 警告: 未找到 .env 文件")
         return
 
-    # ── 打包模式下：首次运行自动从模板生成用户 .env ──────────────────────
-    # 如果用的是资源目录中的模板，需要复制一份到 exe 同级目录供用户编辑
+    # 打包模式下首次运行：把模板 .env 复制到 exe 同级目录供用户编辑
     if getattr(sys, "frozen", False) and exe_dir:
         user_env = exe_dir / ".env"
         if not user_env.exists():
@@ -114,7 +108,7 @@ def _load_dotenv() -> None:
                 continue
             k, _, v = line.partition("=")
             k = k.strip()
-            # 修复：只在行尾有 # 时才截断（简单判断：# 前面有空格）
+            # 去除行尾注释（# 前面有空格才截断，避免误伤 URL 中的 # 字符）
             if " #" in v:
                 v = v.split(" #")[0].strip()
             v = v.strip().strip("'\"")
@@ -136,11 +130,10 @@ _load_dotenv()
 _IS_WINDOWS   = platform.system() == "Windows"
 _SERVER_PORT  = int(os.environ.get("SERVER_PORT", "8000"))
 _BASE_URL     = f"http://localhost:{_SERVER_PORT}"
-_ICON_PATH    = ROOT / "icon.ico"      # 托盘 / 窗口图标，可选
+_ICON_PATH    = ROOT / "icon.ico"
 _TITLE        = "珊瑚菌 · Ramaria"
 
-# 等待服务就绪的最长时间（秒）和轮询间隔
-_MAX_WAIT_SECONDS  = 120   # 启动时 ML 模型加载较慢
+_MAX_WAIT_SECONDS  = 120
 _POLL_INTERVAL     = 0.5
 
 # =============================================================================
@@ -151,10 +144,13 @@ def _patch_config_paths() -> None:
     """
     修复打包模式下 config.py 和 logger.py 中的路径变量。
 
-    打包后这些模块的 ROOT_DIR 计算错误（指向打包内部路径），
-    此函数在导入其他模块之前调用，用正确路径覆盖。
+    打包后这些模块的 ROOT_DIR 计算错误（指向只读的 _internal/），
+    此函数在导入其他模块之前调用，用正确路径（exe 同级可写目录）覆盖。
 
-    注意：数据目录必须放在 exe 同级目录下（可写），不能放在 _internal（只读）。
+    同时处理配置文件的首次初始化：
+      · .env      — 从打包资源目录复制到 exe 同级（_load_dotenv 已处理）
+      · config/   — 整个目录复制（仅当目录不存在时）
+      · persona.toml — 只在不存在时从 example 复制，不覆盖用户已有配置
     """
     if not getattr(sys, "frozen", False):
         return  # 仅打包模式需要
@@ -162,37 +158,67 @@ def _patch_config_paths() -> None:
     import ramaria.config as config
     import ramaria.logger as logger_module
 
-    # exe 所在目录（可写），用于存放用户数据
-    # sys.executable 指向 dist/Ramaria/Ramaria.exe
-    # sys._MEIPASS 指向 dist/Ramaria/_internal/（只读）
+    # exe 同级目录（可写），用于存放用户数据
     exe_dir = Path(sys.executable).parent
 
-    # 修复 config 路径（用户数据放在 exe 同级目录）
-    config.ROOT_DIR = ROOT                       # 资源目录（只读）
-    config.DATA_DIR = exe_dir / "data"           # 数据目录（可写）
-    config.CONFIG_DIR = exe_dir / "config"       # 配置目录（可写）
-    config.LOG_DIR = exe_dir / "logs"            # 日志目录（可写）
-    config.DB_PATH = config.DATA_DIR / "assistant.db"
-    config.CHROMA_DIR = config.DATA_DIR / "chroma_db"
+    # 修复 config 路径（用户数据放在 exe 同级目录，不放只读的 _internal/）
+    config.ROOT_DIR    = ROOT
+    config.DATA_DIR    = exe_dir / "data"
+    config.CONFIG_DIR  = exe_dir / "config"
+    config.LOG_DIR     = exe_dir / "logs"
+    config.DB_PATH     = config.DATA_DIR    / "assistant.db"
+    config.CHROMA_DIR  = config.DATA_DIR    / "chroma_db"
     config.PERSONA_PATH = config.CONFIG_DIR / "persona.toml"
 
-    # ── 首次运行：从打包资源复制 config 文件到用户目录 ────────────────────
+    # 修复 logger 路径
+    logger_module._ROOT_DIR = exe_dir
+    logger_module.LOG_DIR   = exe_dir / "logs"
+    logger_module.LOG_FILE  = logger_module.LOG_DIR / "coral.log"
+
+    # 确保必要目录存在
+    for d in [config.DATA_DIR, config.CONFIG_DIR, config.LOG_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # ── 首次运行：从打包资源复制 config/ 目录 ────────────────────────────
     bundled_config = ROOT / "config"
     if bundled_config.exists() and not config.CONFIG_DIR.exists():
         import shutil
         try:
             shutil.copytree(bundled_config, config.CONFIG_DIR)
-        except Exception:
-            pass  # 复制失败则后续会报错提示用户
+            print(f"[bundle] config/ 目录已复制到: {config.CONFIG_DIR}")
+        except Exception as e:
+            print(f"[bundle] 复制 config/ 目录失败: {e}")
 
-    # 修复 logger 路径
-    logger_module._ROOT_DIR = exe_dir
-    logger_module.LOG_DIR = exe_dir / "logs"
-    logger_module.LOG_FILE = logger_module.LOG_DIR / "coral.log"
+    # ── persona.toml：只在不存在时从 example 复制，不覆盖用户已有配置 ────
+    persona_path   = config.CONFIG_DIR / "persona.toml"
+    persona_example = config.CONFIG_DIR / "persona.toml.example"
 
-    # 确保目录存在
-    for d in [config.DATA_DIR, config.CONFIG_DIR, config.LOG_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
+    # 也检查打包资源中的 example（config/ 目录可能刚刚复制过来）
+    bundled_example = bundled_config / "persona.toml.example"
+
+    if not persona_path.exists():
+        # 优先用 exe 同级 config/ 中的 example
+        src_example = None
+        if persona_example.exists():
+            src_example = persona_example
+        elif bundled_example.exists():
+            src_example = bundled_example
+
+        if src_example:
+            import shutil
+            try:
+                shutil.copy(src_example, persona_path)
+                print(f"[bundle] persona.toml 已从 example 复制: {persona_path}")
+            except Exception as e:
+                print(f"[bundle] 复制 persona.toml.example 失败: {e}")
+        else:
+            print(
+                "[bundle] 警告: persona.toml 和 persona.toml.example 均不存在，"
+                "服务启动时可能因人格配置缺失而报错。"
+                "请手动创建 config/persona.toml 或参考 README 配置。"
+            )
+    else:
+        print(f"[bundle] persona.toml 已存在，跳过自动创建: {persona_path}")
 
 
 # =============================================================================
@@ -200,34 +226,24 @@ def _patch_config_paths() -> None:
 # =============================================================================
 
 _uvicorn_thread: threading.Thread | None = None
-_service_ready  = threading.Event()     # 服务就绪信号
 
 
 def _start_uvicorn() -> None:
-    """
-    在后台线程中启动 uvicorn（运行 FastAPI app）。
-    服务启动后设置 _service_ready 事件，通知主线程打开窗口。
-    """
+    """在后台线程中启动 uvicorn（运行 FastAPI app）。"""
     import uvicorn
 
-    # uvicorn 的 on_startup 钩子在 lifespan 之后触发，
-    # 这里用轮询代替回调（更可靠，跨平台行为一致）
     config = uvicorn.Config(
         app       = "app.main:app",
         host      = "127.0.0.1",
         port      = _SERVER_PORT,
-        log_level = "warning",     # 减少控制台噪声
+        log_level = "warning",
     )
     server = uvicorn.Server(config)
     server.run()
 
 
 def _wait_for_service() -> bool:
-    """
-    轮询 /api/admin/status 直到服务响应，或超时返回 False。
-
-    返回：True = 服务就绪，False = 超时
-    """
+    """轮询 /api/admin/status 直到服务响应，或超时返回 False。"""
     import urllib.error
     import urllib.request
 
@@ -247,17 +263,13 @@ def _wait_for_service() -> bool:
 
 
 def start_backend() -> bool:
-    """
-    启动后台 uvicorn 线程，等待服务就绪。
-
-    返回：True = 就绪，False = 启动超时
-    """
+    """启动后台 uvicorn 线程，等待服务就绪。返回 True = 就绪，False = 超时。"""
     global _uvicorn_thread
 
     _uvicorn_thread = threading.Thread(
         target = _start_uvicorn,
         name   = "UvicornServer",
-        daemon = True,   # 主线程退出时自动结束
+        daemon = True,
     )
     _uvicorn_thread.start()
 
@@ -269,11 +281,7 @@ def start_backend() -> bool:
 # =============================================================================
 
 def _get_start_url() -> str:
-    """
-    根据当前配置状态决定首页 URL：
-      · 配置不完整 → 配置向导（/api/admin/launcher/page）
-      · 配置完整   → 聊天主界面（/）
-    """
+    """根据当前配置状态决定首页 URL。"""
     from app.core.env_checker import can_start_directly
 
     ok, _ = can_start_directly()
@@ -286,17 +294,11 @@ def _get_start_url() -> str:
 # 步骤 5：webview 窗口管理
 # =============================================================================
 
-_webview_window = None   # pywebview window 对象，全局保存用于托盘回调
+_webview_window = None
 
 
 def _open_or_focus_window(url: str | None = None) -> None:
-    """
-    显示/恢复 webview 窗口。
-    若窗口已存在则恢复到前台；若已销毁则重新创建（不常用场景）。
-
-    参数：
-        url — 打开新 URL；None 表示仅恢复焦点
-    """
+    """显示/恢复 webview 窗口。窗口已存在则恢复焦点；不存在则创建。"""
     global _webview_window
     import webview
 
@@ -309,7 +311,6 @@ def _open_or_focus_window(url: str | None = None) -> None:
         except Exception:
             _webview_window = None
 
-    # 窗口不存在时创建新窗口
     target_url = url or (_BASE_URL + "/")
     _webview_window = webview.create_window(
         title       = _TITLE,
@@ -331,10 +332,7 @@ def _open_setup_in_window() -> None:
 # =============================================================================
 
 def _restart_service() -> None:
-    """
-    重启 uvicorn 后端服务。
-    当前实现：重新启动整个进程（最简单可靠的方式）。
-    """
+    """重启应用：启动新进程后退出当前进程。"""
     import subprocess
     subprocess.Popen([sys.executable] + sys.argv)
     _quit_app()
@@ -345,17 +343,15 @@ def _restart_service() -> None:
 # =============================================================================
 
 def _quit_app() -> None:
-    """彻底退出应用：销毁 webview 窗口，退出 Python 进程。"""
+    """彻底退出应用。"""
     global _webview_window
     import webview
 
     try:
-        # destroy() 会触发 webview 的主循环退出
         webview.windows[0].destroy()
     except Exception:
         pass
 
-    # 确保进程退出（uvicorn/tray 是守护线程，主进程结束后自动结束）
     os._exit(0)
 
 
@@ -364,33 +360,28 @@ def _quit_app() -> None:
 # =============================================================================
 
 def main() -> None:
-    """
-    Ramaria 桌面版启动入口。
-    """
+    """Ramaria 桌面版启动入口。"""
     import webview
     from ramaria.logger import get_logger
 
     logger = get_logger("bundle")
     logger.info(f"Ramaria 桌面版启动，根目录：{ROOT}")
 
-    # ── 修复打包模式下的 config 路径 ──────────────────────────────────────
-    # 必须在导入 app.main 之前执行，否则 app.main 导入时就用了错误路径
+    # 修复打包模式下的 config 路径（必须在导入 app.main 之前执行）
     _patch_config_paths()
     logger.info("路径修复完成")
 
-    # ── 启动后台服务 ───────────────────────────────────────────────────────
+    # 启动后台服务
     logger.info("正在启动后台服务…")
     ready = start_backend()
     if not ready:
-        # 服务启动超时，打开一个错误页面告知用户
         logger.error("后台服务启动超时")
-        # 仍然打开窗口，显示错误提示
         start_url = _BASE_URL + "/api/admin/launcher/page"
     else:
         logger.info("后台服务就绪")
         start_url = _get_start_url()
 
-    # ── 创建系统托盘 ───────────────────────────────────────────────────────
+    # 创建系统托盘
     from app.system.tray import RamariaTrayx
 
     tray = RamariaTrayx(
@@ -403,12 +394,8 @@ def main() -> None:
     )
     tray.start()
 
-    # ── 创建 webview 窗口 ──────────────────────────────────────────────────
+    # 创建 webview 窗口
     global _webview_window
-
-    # 窗口关闭时只隐藏到托盘，不退出进程
-    def _on_window_closed():
-        pass  # 托盘图标仍在，用户可以通过托盘重新打开
 
     _webview_window = webview.create_window(
         title       = _TITLE,
@@ -420,21 +407,17 @@ def main() -> None:
         on_top      = False,
     )
 
-    # 加载图标（可选）
     icon_arg = {}
     if _ICON_PATH.exists():
         icon_arg["icon"] = str(_ICON_PATH)
 
     logger.info(f"打开窗口：{start_url}")
 
-    # webview.start() 阻塞主线程，直到所有窗口关闭
-    # gui=None 表示使用系统默认（Windows 用 EdgeChromium/MSHTML，macOS 用 WebKit）
     webview.start(
-        http_server = False,   # 不使用内置 HTTP 服务器，我们自己运行 uvicorn
+        http_server = False,
         **icon_arg,
     )
 
-    # webview 退出后整个程序退出
     logger.info("窗口已关闭，程序退出")
     os._exit(0)
 

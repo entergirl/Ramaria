@@ -9,7 +9,6 @@
   <style>
     /* ══════════════════════════════════════════════════════════
        setup.html — 配置向导专属样式
-       延续项目视觉语言：暖米白 · 珊瑚橙 · 宋体气质
        ══════════════════════════════════════════════════════════ */
 
     :root {
@@ -55,9 +54,7 @@
       margin-bottom: 32px;
       animation: fadeIn .5s ease both;
     }
-
     .top-brand .icon { font-size: 24px; }
-
     .top-brand .name {
       font-size: 1.05rem;
       font-weight: 500;
@@ -73,13 +70,7 @@
       margin-bottom: 32px;
       animation: fadeIn .5s ease both .1s;
     }
-
-    .step-item {
-      display: flex;
-      align-items: center;
-      gap: 0;
-    }
-
+    .step-item { display: flex; align-items: center; gap: 0; }
     .step-circle {
       width: 28px;
       height: 28px;
@@ -96,34 +87,21 @@
       position: relative;
       z-index: 1;
     }
-
-    .step-circle.active {
-      border-color: var(--coral);
-      background: var(--coral);
-      color: #fff;
-    }
-
-    .step-circle.done {
-      border-color: var(--success);
-      background: var(--success);
-      color: #fff;
-    }
-
+    .step-circle.active { border-color: var(--coral); background: var(--coral); color: #fff; }
+    .step-circle.done   { border-color: var(--success); background: var(--success); color: #fff; }
     .step-line {
-      width: 48px;
+      width: 40px;
       height: 2px;
       background: var(--border);
       transition: background .3s ease;
     }
-
     .step-line.done { background: var(--success); }
-
     .step-label {
       position: absolute;
       top: 34px;
       left: 50%;
       transform: translateX(-50%);
-      font-size: .62rem;
+      font-size: .60rem;
       font-family: var(--font-mono);
       color: var(--text-dim);
       white-space: nowrap;
@@ -136,7 +114,7 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 32px 36px;
-      width: 500px;
+      width: 540px;
       max-width: 94vw;
       box-shadow: var(--shadow);
       animation: slideUp .4s ease both .15s;
@@ -153,7 +131,6 @@
       letter-spacing: .02em;
       margin-bottom: 6px;
     }
-
     .panel-desc {
       font-size: .78rem;
       color: var(--text-mid);
@@ -162,18 +139,8 @@
     }
 
     /* ── 表单字段 ── */
-    .field-group {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
+    .field-group { display: flex; flex-direction: column; gap: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field-label {
       font-size: .78rem;
       font-family: var(--font-mono);
@@ -182,17 +149,8 @@
       align-items: center;
       gap: 6px;
     }
-
-    .field-label .required {
-      color: var(--coral);
-      font-size: .7rem;
-    }
-
-    .field-label .optional {
-      color: var(--text-dim);
-      font-size: .65rem;
-      margin-left: 2px;
-    }
+    .field-label .required { color: var(--coral); font-size: .7rem; }
+    .field-label .optional { color: var(--text-dim); font-size: .65rem; margin-left: 2px; }
 
     .field-input {
       padding: 10px 14px;
@@ -205,13 +163,68 @@
       outline: none;
       transition: border-color .2s ease, box-shadow .2s ease;
     }
-
     .field-input:focus {
       border-color: var(--coral-light);
       box-shadow: 0 0 0 3px rgba(201,124,90,.08);
     }
-
     .field-input::placeholder { color: var(--text-dim); }
+    .field-input.valid   { border-color: #7cad7c; }
+    .field-input.invalid { border-color: var(--error); }
+
+    /* persona 编辑器 */
+    .persona-editor {
+      width: 100%;
+      min-height: 260px;
+      max-height: 360px;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: .74rem;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .persona-editor:focus {
+      border-color: var(--coral-light);
+      box-shadow: 0 0 0 3px rgba(201,124,90,.08);
+    }
+
+    /* persona 提示框 */
+    .persona-hint-box {
+      background: rgba(201,124,90,.06);
+      border: 1px solid var(--coral-light);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: .72rem;
+      color: var(--text-mid);
+      line-height: 1.6;
+    }
+    .persona-hint-box strong { color: var(--coral); }
+
+    /* persona 操作按钮行 */
+    .persona-action-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .btn-small {
+      padding: 5px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: none;
+      color: var(--text-mid);
+      font-size: .70rem;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+    .btn-small:hover { border-color: var(--coral-light); color: var(--coral); }
+    .btn-small.active { border-color: var(--coral); background: var(--coral); color: #fff; }
 
     .field-hint {
       font-size: .68rem;
@@ -219,30 +232,19 @@
       font-family: var(--font-mono);
       line-height: 1.6;
     }
-
-    /* 验证状态 */
-    .field-input.valid   { border-color: #7cad7c; }
-    .field-input.invalid { border-color: var(--error); }
-
     .field-status {
       font-size: .68rem;
       font-family: var(--font-mono);
       min-height: 1.2em;
       transition: color .2s ease;
     }
-
     .field-status.ok   { color: var(--success); }
     .field-status.fail { color: var(--error); }
     .field-status.checking { color: var(--text-dim); }
 
     /* ── 路径选择行 ── */
-    .path-row {
-      display: flex;
-      gap: 8px;
-    }
-
+    .path-row { display: flex; gap: 8px; }
     .path-row .field-input { flex: 1; }
-
     .btn-pick {
       padding: 0 14px;
       background: var(--surface-alt);
@@ -256,7 +258,6 @@
       flex-shrink: 0;
       transition: all .2s ease;
     }
-
     .btn-pick:hover { border-color: var(--coral-light); color: var(--coral); }
 
     /* ── 测试按钮 ── */
@@ -275,42 +276,21 @@
       transition: all .2s ease;
       margin-top: 4px;
     }
-
     .test-btn:hover { border-color: var(--coral-light); color: var(--coral); }
-
     .test-btn .dot {
       width: 6px; height: 6px;
       border-radius: 50%;
       background: var(--text-dim);
       transition: background .2s;
     }
-
     .test-btn.testing .dot { background: var(--coral-light); animation: pulse 1s infinite; }
     .test-btn.ok      .dot { background: var(--success); }
     .test-btn.fail    .dot { background: var(--error); }
 
     /* ── 完成页 ── */
-    .finish-icon {
-      text-align: center;
-      font-size: 48px;
-      margin-bottom: 16px;
-    }
-
-    .finish-title {
-      text-align: center;
-      font-size: 1.2rem;
-      font-weight: 500;
-      color: var(--text);
-      margin-bottom: 8px;
-    }
-
-    .finish-desc {
-      text-align: center;
-      font-size: .8rem;
-      color: var(--text-mid);
-      line-height: 1.7;
-      margin-bottom: 24px;
-    }
+    .finish-icon { text-align: center; font-size: 48px; margin-bottom: 16px; }
+    .finish-title { text-align: center; font-size: 1.2rem; font-weight: 500; color: var(--text); margin-bottom: 8px; }
+    .finish-desc { text-align: center; font-size: .8rem; color: var(--text-mid); line-height: 1.7; margin-bottom: 24px; }
 
     /* ── 初始化进度 ── */
     .init-status {
@@ -325,9 +305,7 @@
       margin-bottom: 20px;
       display: none;
     }
-
     .init-status.visible { display: block; }
-
     .init-line { display: flex; gap: 8px; align-items: center; }
     .init-line .mark-ok   { color: var(--success); }
     .init-line .mark-fail { color: var(--error); }
@@ -341,7 +319,6 @@
       margin-top: 28px;
       gap: 12px;
     }
-
     .btn {
       padding: 10px 24px;
       border-radius: var(--radius-sm);
@@ -351,26 +328,20 @@
       cursor: pointer;
       transition: all .2s ease;
     }
-
     .btn:active:not(:disabled) { transform: scale(.97); }
     .btn:disabled { opacity: .4; cursor: not-allowed; }
-
     .btn-prev {
       background: none;
       border: 1px solid var(--border);
       color: var(--text-mid);
     }
-
     .btn-prev:hover:not(:disabled) { border-color: var(--coral-light); color: var(--coral); }
-
     .btn-next {
       background: var(--coral);
       color: #fff;
       box-shadow: 0 2px 10px rgba(201,124,90,.3);
     }
-
     .btn-next:hover:not(:disabled) { background: var(--coral-dim); }
-
     .step-indicator {
       font-size: .68rem;
       font-family: var(--font-mono);
@@ -396,7 +367,6 @@
       transition: opacity .25s ease, transform .25s ease;
       z-index: 100;
     }
-
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     #toast.error   { border-color: #d4756b; color: #c0534a; }
     #toast.success { border-color: #7cad7c; color: #4f8f4f; }
@@ -445,13 +415,11 @@
 
     <div class="field-group">
       <div class="field">
-        <div class="field-label">
-          推理服务地址 <span class="required">*</span>
-        </div>
+        <div class="field-label">推理服务地址 <span class="required">*</span></div>
         <input class="field-input" id="LOCAL_API_URL" type="text"
                placeholder="http://localhost:1234/v1/chat/completions"
                oninput="clearFieldStatus('api-status')">
-        <div class="field-hint">兼容 OpenAI API 格式的推理服务地址，含路径 /v1/chat/completions</div>
+        <div class="field-hint">兼容 OpenAI API 格式的推理服务地址</div>
         <button class="test-btn" id="test-api-btn" onclick="testApiConnection()">
           <span class="dot"></span> 测试连接
         </button>
@@ -459,9 +427,7 @@
       </div>
 
       <div class="field">
-        <div class="field-label">
-          模型名称 <span class="required">*</span>
-        </div>
+        <div class="field-label">模型名称 <span class="required">*</span></div>
         <input class="field-input" id="LOCAL_MODEL_NAME" type="text"
                placeholder="qwen/qwen3.5-9b">
         <div class="field-hint">必须与推理服务中实际加载的模型名称完全一致（区分大小写）</div>
@@ -479,9 +445,7 @@
 
     <div class="field-group">
       <div class="field">
-        <div class="field-label">
-          嵌入模型文件夹路径 <span class="required">*</span>
-        </div>
+        <div class="field-label">嵌入模型文件夹路径 <span class="required">*</span></div>
         <div class="path-row">
           <input class="field-input" id="EMBEDDING_MODEL" type="text"
                  placeholder="C:\models\Qwen3-Embedding-0.6B"
@@ -489,15 +453,44 @@
         </div>
         <div class="field-hint">
           填写包含 config.json 的模型文件夹路径，不是具体文件路径。<br>
-          下载方法：在项目文档中查看「第四步：准备嵌入模型」。
+          下载方法：访问 <a href="https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B" target="_blank" style="color:var(--coral)">hf-mirror.com</a> 下载全部文件后放入同一文件夹。
         </div>
         <div class="field-status" id="model-status"></div>
       </div>
     </div>
   </div>
 
-  <!-- ══ 步骤 3：可选配置 ══ -->
+  <!-- ══ 步骤 3：人格配置（可选）══ -->
   <div class="panel" id="panel-3">
+    <div class="panel-title">人格配置</div>
+    <div class="panel-desc">
+      珊瑚菌的性格、说话风格、身份设定都在这里定义。已为你准备了默认配置，可直接跳过此步骤使用。
+    </div>
+
+    <div class="persona-hint-box">
+      <strong>提示：</strong>
+      此步骤完全可选。默认配置已包含完整的人格设定，如果你暂时不想修改，点「下一步」直接跳过即可。修改后点「保存人格」生效。
+    </div>
+
+    <div class="field">
+      <div class="field-label" style="justify-content:space-between;">
+        <span>persona.toml 内容</span>
+        <div class="persona-action-row" style="margin-top:0;">
+          <button class="btn-small" onclick="loadPersonaDefault()">恢复默认</button>
+          <button class="btn-small" id="btn-save-persona" onclick="savePersona()">保存人格</button>
+        </div>
+      </div>
+      <textarea class="persona-editor" id="persona-editor"
+                placeholder="正在加载人格配置…"></textarea>
+      <div class="field-status" id="persona-status"></div>
+      <div class="field-hint">
+        修改 <code>[identity]</code> 中的 assistant_name/user_name，以及 <code>[blocks]</code> 中的 A_persona/E_rules 来自定义人格。
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 4：可选配置 ══ -->
+  <div class="panel" id="panel-4">
     <div class="panel-title">可选配置</div>
     <div class="panel-desc">
       以下配置项均有合理默认值，可以直接跳过。需要使用云端 API 或天气功能时再填写。
@@ -505,27 +498,21 @@
 
     <div class="field-group">
       <div class="field">
-        <div class="field-label">
-          云端 API Key <span class="optional">（可选）</span>
-        </div>
+        <div class="field-label">云端 API Key <span class="optional">（可选）</span></div>
         <input class="field-input" id="ANTHROPIC_API_KEY" type="password"
                placeholder="sk-ant-xxxxxx">
         <div class="field-hint">用于调用云端模型处理复杂推理任务。留空则只使用本地模型。</div>
       </div>
 
       <div class="field">
-        <div class="field-label">
-          天气查询城市 <span class="optional">（可选）</span>
-        </div>
+        <div class="field-label">天气查询城市 <span class="optional">（可选）</span></div>
         <input class="field-input" id="WEATHER_CITY" type="text"
                placeholder="Shanghai">
         <div class="field-hint">英文城市名，用于天气感知功能。留空时通过 IP 自动定位。</div>
       </div>
 
       <div class="field">
-        <div class="field-label">
-          服务端口 <span class="optional">（可选）</span>
-        </div>
+        <div class="field-label">服务端口 <span class="optional">（可选）</span></div>
         <input class="field-input" id="SERVER_PORT" type="number"
                placeholder="8000" min="1024" max="65535">
         <div class="field-hint">珊瑚菌服务监听的端口号，默认 8000。端口被占用时需修改。</div>
@@ -533,8 +520,8 @@
     </div>
   </div>
 
-  <!-- ══ 步骤 4：完成 ══ -->
-  <div class="panel" id="panel-4">
+  <!-- ══ 步骤 5：完成 ══ -->
+  <div class="panel" id="panel-5">
     <div class="finish-icon">🎉</div>
     <div class="finish-title">配置完成</div>
     <div class="finish-desc">
@@ -547,9 +534,7 @@
                 border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:20px;
                 font-family:var(--font-mono);font-size:.72rem;color:var(--text-mid);
                 line-height:1.9;">
-      <div id="summary-content">
-        <!-- 由 JS 填充 -->
-      </div>
+      <div id="summary-content"><!-- 由 JS 填充 --></div>
     </div>
 
     <!-- 初始化进度 -->
@@ -571,7 +556,7 @@
     <button class="btn btn-prev" id="btn-prev" onclick="goPrev()" style="visibility:hidden">
       ← 上一步
     </button>
-    <span class="step-indicator" id="step-indicator">1 / 4</span>
+    <span class="step-indicator" id="step-indicator">1 / 5</span>
     <button class="btn btn-next" id="btn-next" onclick="goNext()">
       下一步 →
     </button>
@@ -585,25 +570,25 @@
 // ════════════════════════════════════════════════════════════
 // setup.html 配置向导逻辑
 //
-// 4 步向导：
+// 5 步向导：
 //   Step 1 → 推理服务（LOCAL_API_URL + LOCAL_MODEL_NAME）
 //   Step 2 → 嵌入模型（EMBEDDING_MODEL）
-//   Step 3 → 可选配置（ANTHROPIC_API_KEY + WEATHER_CITY + SERVER_PORT）
-//   Step 4 → 完成确认（保存 .env + init_db）
+//   Step 3 → 人格配置（persona.toml，可选）
+//   Step 4 → 可选配置（ANTHROPIC_API_KEY + WEATHER_CITY + SERVER_PORT）
+//   Step 5 → 完成确认（保存 .env + init_db）
 // ════════════════════════════════════════════════════════════
 
-const STEP_LABELS = ['推理服务', '嵌入模型', '可选配置', '完成'];
-const TOTAL_STEPS = 4;
+const STEP_LABELS = ['推理服务', '嵌入模型', '人格配置', '可选配置', '完成'];
+const TOTAL_STEPS = 5;
 
 let currentStep = 1;
 
-// ── 步骤指示器渲染 ──────────────────────────────────────────
+// 步骤指示器渲染
 function renderStepper() {
   const container = document.getElementById('stepper');
   container.innerHTML = '';
 
   for (let i = 1; i <= TOTAL_STEPS; i++) {
-    // 圆圈
     const circleWrap = document.createElement('div');
     circleWrap.style.cssText = 'position:relative;';
 
@@ -621,7 +606,6 @@ function renderStepper() {
     circleWrap.appendChild(label);
     container.appendChild(circleWrap);
 
-    // 连接线（最后一步后面不加）
     if (i < TOTAL_STEPS) {
       const line = document.createElement('div');
       line.className = 'step-line' + (i < currentStep ? ' done' : '');
@@ -630,19 +614,19 @@ function renderStepper() {
   }
 }
 
-// ── 面板切换 ────────────────────────────────────────────────
+// 面板切换
 function showStep(step) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById(`panel-${step}`).classList.add('active');
 
-  // 上一步按钮
   const btnPrev = document.getElementById('btn-prev');
   btnPrev.style.visibility = step > 1 ? 'visible' : 'hidden';
 
-  // 下一步按钮文字
   const btnNext = document.getElementById('btn-next');
-  if (step === 4) {
+  if (step === TOTAL_STEPS) {
     btnNext.textContent = '完成并启动';
+  } else if (step === 3) {
+    btnNext.textContent = '下一步（可跳过）→';
   } else {
     btnNext.textContent = '下一步 →';
   }
@@ -650,11 +634,14 @@ function showStep(step) {
   document.getElementById('step-indicator').textContent = `${step} / ${TOTAL_STEPS}`;
   renderStepper();
 
-  // 进入第 4 步时填充摘要
-  if (step === 4) renderSummary();
+  // 进入人格步骤时自动加载
+  if (step === 3) loadPersona();
+
+  // 进入最后一步时填充摘要
+  if (step === TOTAL_STEPS) renderSummary();
 }
 
-// ── 导航 ────────────────────────────────────────────────────
+// 导航
 function goPrev() {
   if (currentStep > 1) {
     currentStep--;
@@ -664,18 +651,16 @@ function goPrev() {
 
 async function goNext() {
   if (currentStep < TOTAL_STEPS) {
-    // 校验当前步骤
     const valid = await validateCurrentStep();
     if (!valid) return;
     currentStep++;
     showStep(currentStep);
   } else {
-    // 最后一步：保存并启动
     await finishSetup();
   }
 }
 
-// ── 步骤校验 ────────────────────────────────────────────────
+// 步骤校验
 async function validateCurrentStep() {
   if (currentStep === 1) {
     const url   = document.getElementById('LOCAL_API_URL').value.trim();
@@ -697,17 +682,17 @@ async function validateCurrentStep() {
       showToast('请填写嵌入模型文件夹路径', 'error');
       return false;
     }
-    // 后端校验路径有效性
     const ok = await checkModelPath(path);
     if (!ok) return false;
     return true;
   }
 
-  // 步骤 3 全部可选，直接通过
+  // 步骤 3（人格）和步骤 4（可选）均可直接跳过
   return true;
 }
 
-// ── 连接测试 ────────────────────────────────────────────────
+// ── 推理服务连接测试 ──
+
 async function testApiConnection() {
   const btn    = document.getElementById('test-api-btn');
   const status = document.getElementById('api-status');
@@ -722,9 +707,7 @@ async function testApiConnection() {
   status.className   = 'field-status checking';
 
   try {
-    // 保存当前值，让后端用这个 URL 测试
     await saveField('LOCAL_API_URL', url);
-
     const resp = await fetch('/api/admin/status');
     const data = await resp.json();
     const svc  = data.checks?.inference_service;
@@ -750,28 +733,25 @@ async function testApiConnection() {
   }
 }
 
-// ── 模型路径校验 ────────────────────────────────────────────
+// ── 模型路径校验 ──
+
 async function validateModelPath() {
   const path   = document.getElementById('EMBEDDING_MODEL').value.trim();
   const status = document.getElementById('model-status');
   if (!path) { status.textContent = ''; return; }
-
   status.textContent = '检测中…';
   status.className   = 'field-status checking';
-
   await checkModelPath(path);
 }
 
 async function checkModelPath(path) {
   const status = document.getElementById('model-status');
   const input  = document.getElementById('EMBEDDING_MODEL');
-
   try {
     await saveField('EMBEDDING_MODEL', path);
     const resp = await fetch('/api/admin/status');
     const data = await resp.json();
     const em   = data.checks?.embedding_model;
-
     if (em?.ok) {
       status.textContent = '✓ 路径有效，模型文件完整';
       status.className   = 'field-status ok';
@@ -791,12 +771,119 @@ async function checkModelPath(path) {
   }
 }
 
+// ── 人格配置 ──
+
+// 默认 persona.toml 模板内容（与 persona.toml.example 保持同步）
+const DEFAULT_PERSONA = `[identity]
+assistant_name = "助手"
+user_name = "用户"
+
+[blocks]
+
+A_persona = """
+你是珊瑚菌。女，生日1月1日。
+你是用户的学习伙伴和生活挚友。
+始终以珊瑚菌身份对话。被问及是否是AI时，温柔回避，不承认，不否认。
+
+性格：知性稳重，情绪稳定，偶有冷幽默。知识面广，不卖弄。关注用户的状态和情绪。
+
+讲解时：用生活化比喻替代专业术语。引导探索，不直接给答案。
+"""
+
+E_rules = """
+以下是你说话的方式，每一条都必须执行。
+
+回复格式：所有回复必须用 || 分隔成多条短句发送。每条1-2句。不允许连续写超过两句不加 ||。即使内容很多，也要拆开发，不能写成一段。
+
+正确示例（先读这个，建立直觉）：
+
+对方："我现在在纯摸鱼，就是和你聊聊天"
+你："那挺好的 || 摸鱼就摸鱼，聊天也是正事"
+
+对方说一句，你最多回3条。说完停，不续话。
+聊天模仿社交平台打字节奏，用||断句发送而不是逗号。
+不反问。句尾不出现"对吧""你觉得呢""是吧"。
+不给选项。不说"你是想A还是B"。
+"""`;
+
+async function loadPersona() {
+  const editor = document.getElementById('persona-editor');
+  try {
+    const resp = await fetch('/api/persona/get');
+    if (resp.ok) {
+      const text = await resp.text();
+      if (text && text.trim()) {
+        editor.value = text;
+        return;
+      }
+    }
+    // 接口失败或返回空 → 填充默认模板
+    editor.value = DEFAULT_PERSONA;
+  } catch (e) {
+    editor.value = DEFAULT_PERSONA;
+  }
+}
+
+async function loadPersonaDefault() {
+  const editor = document.getElementById('persona-editor');
+  editor.value = DEFAULT_PERSONA;
+  // 同时尝试加载 example 文件
+  try {
+    const resp = await fetch('/api/persona/example');
+    if (resp.ok) {
+      const text = await resp.text();
+      if (text && text.trim()) editor.value = text;
+    }
+  } catch (_) { /* 静默 */ }
+  showToast('已恢复默认配置', 'default', 2000);
+}
+
+async function savePersona() {
+  const btn     = document.getElementById('btn-save-persona');
+  const status  = document.getElementById('persona-status');
+  const content = document.getElementById('persona-editor').value;
+
+  if (!content.trim()) {
+    showToast('人格配置不能为空', 'error');
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = '保存中…';
+  status.textContent = '保存中…';
+  status.className   = 'field-status checking';
+
+  try {
+    const resp = await fetch('/api/persona/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: content,
+    });
+    if (resp.ok) {
+      status.textContent = '✓ 人格配置已保存';
+      status.className   = 'field-status ok';
+      btn.classList.add('active');
+      showToast('人格配置已保存', 'success', 2000);
+    } else {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    status.textContent = '✗ 保存失败：' + e.message;
+    status.className   = 'field-status fail';
+    showToast('保存失败：' + e.message, 'error');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '保存人格';
+  }
+}
+
+// ── 工具函数 ──
+
 function clearFieldStatus(id) {
   const el = document.getElementById(id);
   if (el) { el.textContent = ''; el.className = 'field-status'; }
 }
 
-// ── 单字段保存（用于实时写入 .env 做后端校验）──────────────
 async function saveField(key, value) {
   await fetch('/api/admin/config', {
     method:  'POST',
@@ -805,7 +892,6 @@ async function saveField(key, value) {
   });
 }
 
-// ── 摘要渲染 ────────────────────────────────────────────────
 function renderSummary() {
   const items = [
     ['LOCAL_API_URL',    '推理服务地址'],
@@ -819,22 +905,26 @@ function renderSummary() {
   const lines = items.map(([id, label]) => {
     const val = document.getElementById(id)?.value?.trim() || '';
     if (!val) return '';
-    // API Key 遮罩显示
     const display = id === 'ANTHROPIC_API_KEY' && val.length > 8
       ? val.slice(0, 8) + '…'
       : val;
     return `<div><span style="color:var(--text-dim)">${label}：</span>${display}</div>`;
   }).filter(Boolean).join('');
 
-  document.getElementById('summary-content').innerHTML = lines || '<div>（无填写内容）</div>';
+  // 检查人格是否已保存
+  const personaStatus = document.getElementById('persona-status');
+  const personaSaved  = personaStatus?.className?.includes('ok');
+  const personaLine   = `<div><span style="color:var(--text-dim)">人格配置：</span>${personaSaved ? '已自定义' : '使用默认'}</div>`;
+
+  document.getElementById('summary-content').innerHTML = (lines || '<div>（无填写内容）</div>') + personaLine;
 }
 
-// ── 完成并启动 ──────────────────────────────────────────────
+// ── 完成并启动 ──
+
 async function finishSetup() {
   const btn = document.getElementById('btn-next');
   btn.disabled = true;
 
-  // 收集全部字段值
   const fields = [
     'LOCAL_API_URL', 'LOCAL_MODEL_NAME', 'EMBEDDING_MODEL',
     'ANTHROPIC_API_KEY', 'WEATHER_CITY', 'SERVER_PORT',
@@ -846,10 +936,9 @@ async function finishSetup() {
     if (val) values[id] = val;
   }
 
-  // 显示初始化进度
   document.getElementById('init-status').classList.add('visible');
 
-  // Step A：保存配置
+  // Step A：保存 .env 配置
   updateInitLine('init-save', 'wait', '保存配置中…');
   try {
     const resp = await fetch('/api/admin/config', {
@@ -866,7 +955,20 @@ async function finishSetup() {
     return;
   }
 
-  // Step B：初始化数据库
+  // Step B：如果人格编辑器有内容但还没保存，自动保存一次
+  const personaContent = document.getElementById('persona-editor')?.value?.trim();
+  const personaStatus  = document.getElementById('persona-status')?.className;
+  if (personaContent && !personaStatus?.includes('ok')) {
+    try {
+      await fetch('/api/persona/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: personaContent,
+      });
+    } catch (_) { /* 静默，不阻断 */ }
+  }
+
+  // Step C：初始化数据库
   document.getElementById('init-db').style.display = 'flex';
   updateInitLine('init-db', 'wait', '初始化数据库…');
   try {
@@ -881,7 +983,7 @@ async function finishSetup() {
     return;
   }
 
-  // Step C：完成，跳转
+  // Step D：完成，跳转
   document.getElementById('init-done').style.display = 'flex';
   updateInitLine('init-done', 'ok', '完成，正在进入聊天界面…');
   setTimeout(() => { window.location.href = '/'; }, 1200);
@@ -890,13 +992,14 @@ async function finishSetup() {
 function updateInitLine(id, state, text) {
   const el = document.getElementById(id);
   if (!el) return;
-  const markClass = state === 'ok' ? 'mark-ok' : state === 'fail' ? 'mark-fail' : 'mark-wait';
-  const icon      = state === 'ok' ? '✓' : state === 'fail' ? '✗' : '⏳';
-  el.innerHTML = `<span class="${markClass}">${icon}</span> ${text}`;
+  const icon = state === 'ok' ? '✓' : state === 'fail' ? '✗' : '⏳';
+  const cls  = state === 'ok' ? 'mark-ok' : state === 'fail' ? 'mark-fail' : 'mark-wait';
+  el.innerHTML = `<span class="${cls}">${icon}</span> ${text}`;
   el.style.display = 'flex';
 }
 
-// ── Toast ────────────────────────────────────────────────────
+// ── Toast ──
+
 let _toastTimer = null;
 function showToast(msg, type = 'default', duration = 3000) {
   const el = document.getElementById('toast');
@@ -909,7 +1012,8 @@ function showToast(msg, type = 'default', duration = 3000) {
   _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
 }
 
-// ── 初始化：读取已有配置回显 ──────────────────────────────────
+// ── 初始化：读取已有配置回显 ──
+
 async function init() {
   renderStepper();
   showStep(1);
@@ -919,7 +1023,6 @@ async function init() {
     const data = await resp.json();
     const vals = data.values || {};
 
-    // 将已有值填入表单
     const fields = [
       'LOCAL_API_URL', 'LOCAL_MODEL_NAME', 'EMBEDDING_MODEL',
       'ANTHROPIC_API_KEY', 'WEATHER_CITY', 'SERVER_PORT',
@@ -929,7 +1032,6 @@ async function init() {
       if (el && vals[id]) el.value = vals[id];
     }
   } catch (e) {
-    // 读取失败时静默，不影响填写
     console.error('读取已有配置失败', e);
   }
 }

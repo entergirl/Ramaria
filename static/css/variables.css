@@ -4,6 +4,14 @@
    所有颜色、字体、圆角、间距等设计 token 集中在此文件管理。
    需要调整视觉风格时，只改这一个文件，其他 CSS 文件自动跟随。
 
+   品牌色 #ffd1cc（浅樱粉）色阶体系：
+     --brand         #ffd1cc  品牌色本体 — 大面积装饰、助手气泡
+     --brand-light   #ffe8e5  极浅 — 微妙高亮
+     --brand-mid     #e6b5b5  中间 — 边框、分割线
+     --brand-dim     #da9a9a  中深 — hover 态背景
+     --brand-deep    #cc7a7a  深色 — 按钮、链接文字
+     --brand-surface #faf2ef  卡片/面板着色背景
+
    主题切换原理：
      默认（亮色）：变量定义在 :root
      暗色模式：    变量定义在 :root[data-theme="dark"]，覆盖同名亮色变量
@@ -12,65 +20,130 @@
 
 :root {
     /* ── 背景层 ── */
-    --bg: #f7f2ee;
-    --surface: #e5ddd5;
-    --surface-alt: #e9e0d8;
-    --assistant-bg: #e9d9d0;
+    --bg:            #faf5f3;
+    --surface:       #f5eeea;
+    --surface-alt:   #f8f0ec;
+    --assistant-bg:  #ffd1cc;   /* 品牌色直接用作助手气泡背景 */
     /* ── 边框 ── */
-    --border: #e8e0d4;
-    --border-light: #ede7dd;
+    --border:        #e8dbd5;
+    --border-light:  #efe4de;
     /* ── 文字 ── */
-    --text: #2d2720;
-    --text-mid: #7a6e63;
-    --text-dim: #b0a89e;
-    /* ── 品牌色：珊瑚橙 ── */
-    --coral: #c97c5a;
-    --coral-light: #e8c4b0;
-    --coral-dim: #d4956f;
+    --text:          #2d2724;
+    --text-mid:      #7a6e68;
+    --text-dim:      #b0a49e;
+
+    /* ═══════════════════════════════════════════════════════════
+       品牌色阶 — 围绕 #ffd1cc 构建
+       ═══════════════════════════════════════════════════════════ */
+    --brand:         #ffd1cc;   /* 品牌色本体 — 大面积装饰、卡片 */
+    --brand-light:   #ffe8e5;   /* 极浅 — 微妙高亮、hover 背景 */
+    --brand-mid:     #e6b5b5;   /* 中间色 — 边框、分割线、focus ring */
+    --brand-dim:     #da9a9a;   /* 中深色 — hover/active 态背景 */
+    --brand-deep:    #cc7a7a;   /* 深色 — 按钮背景、链接文字、品牌强调 */
+    --brand-surface: #faf2ef;   /* 卡片/面板着色背景 */
+
+    /* RGB 分量（供 rgba(var(...), alpha) 使用） */
+    --brand-rgb:      255, 209, 204;
+    --brand-deep-rgb: 204, 122, 122;
+    --brand-dim-rgb:  218, 154, 154;
+
+    /* 品牌色半透明预设（统一管理所有透明度级别） */
+    --brand-alpha-03: rgba(var(--brand-deep-rgb), .03);
+    --brand-alpha-04: rgba(var(--brand-deep-rgb), .04);
+    --brand-alpha-06: rgba(var(--brand-deep-rgb), .06);
+    --brand-alpha-08: rgba(var(--brand-deep-rgb), .08);
+    --brand-alpha-10: rgba(var(--brand-deep-rgb), .10);
+    --brand-alpha-12: rgba(var(--brand-deep-rgb), .12);
+    --brand-alpha-15: rgba(var(--brand-deep-rgb), .15);
+    --brand-alpha-20: rgba(var(--brand-deep-rgb), .20);
+    --brand-alpha-30: rgba(var(--brand-deep-rgb), .30);
+    --brand-alpha-35: rgba(var(--brand-deep-rgb), .35);
+    --brand-alpha-40: rgba(var(--brand-deep-rgb), .40);
+    --brand-alpha-45: rgba(var(--brand-deep-rgb), .45);
+
+    /* ── 兼容旧变量名（映射到新色阶）── */
+    --coral:       var(--brand-deep);
+    --coral-light: var(--brand-mid);
+    --coral-dim:   var(--brand-dim);
+
     /* ── 状态指示点颜色 ── */
-    --dot-local: #7cad7c;
-    --dot-online: #c97c5a;
+    --dot-local:   #7cad7c;
+    --dot-online:  var(--brand-deep);
     --dot-pending: #7fafd4;
+
     /* ── 字体族 ── */
     --font-title: 'Noto Serif SC', Georgia, serif;
-    --font-body: 'Noto Serif SC', Georgia, serif;
-    --font-mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+    --font-body:  'Noto Serif SC', Georgia, serif;
+    --font-mono:  'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+
     /* ── 圆角 ── */
-    --radius: 20px;
+    --radius:    20px;
     --radius-sm: 10px;
+
     /* ── 阴影 ── */
-    --shadow-bubble: 0 1px 4px rgba(0, 0, 0, .05);
-    --shadow-btn: 0 2px 8px rgba(201, 124, 90, .35);
-    --shadow-btn-hover: 0 3px 12px rgba(201, 124, 90, .45);
+    --shadow-bubble:      0 1px 4px rgba(0, 0, 0, .05);
+    --shadow-btn:         0 2px 8px var(--brand-alpha-35);
+    --shadow-btn-hover:   0 3px 12px var(--brand-alpha-45);
+
     /* ── 过渡 ── */
-    --transition-fast: .15s ease;
+    --transition-fast:   .15s ease;
     --transition-normal: .25s ease;
-    --transition-slow: .4s ease;
+    --transition-slow:   .4s ease;
 }
 
     :root[data-theme="dark"] {
         /* ── 背景层 ── */
-        --bg: #1c1917;
-        --surface: #28231f;
-        --surface-alt: #29332b;
-        --assistant-bg: #382b30;
+        --bg:            #1c1917;
+        --surface:       #28231f;
+        --surface-alt:   #292522;
+        --assistant-bg:  #4a3535;
         /* ── 边框 ── */
-        --border: #3d3530;
-        --border-light: #473e39;
+        --border:        #3d3530;
+        --border-light:  #473e39;
         /* ── 文字 ── */
-        --text: #e8e0d4;
-        --text-mid: #9e9087;
-        --text-dim: #5e5650;
-        /* ── 品牌色 ── */
-        --coral: #d9916e;
-        --coral-light: #6b4535;
-        --coral-dim: #e6a882;
+        --text:          #e8e0d4;
+        --text-mid:      #9e9087;
+        --text-dim:      #5e5650;
+
+        /* ── 品牌色阶（暗色主题适配：加深以保持视觉重量）── */
+        --brand:         #ffd1cc;   /* 品牌色本身在暗色下仍然醒目 */
+        --brand-light:   #3d2020;
+        --brand-mid:     #9a6060;
+        --brand-dim:     #d09090;
+        --brand-deep:    #e8b0b0;
+        --brand-surface: #2d1f1f;
+
+        /* RGB 分量（暗色主题覆盖） */
+        --brand-rgb:      255, 209, 204;
+        --brand-deep-rgb: 232, 176, 176;
+        --brand-dim-rgb:  208, 144, 144;
+
+        /* 半透明预设自动重新计算（因为引用了 --brand-deep-rgb） */
+        --brand-alpha-03: rgba(var(--brand-deep-rgb), .03);
+        --brand-alpha-04: rgba(var(--brand-deep-rgb), .04);
+        --brand-alpha-06: rgba(var(--brand-deep-rgb), .06);
+        --brand-alpha-08: rgba(var(--brand-deep-rgb), .08);
+        --brand-alpha-10: rgba(var(--brand-deep-rgb), .10);
+        --brand-alpha-12: rgba(var(--brand-deep-rgb), .12);
+        --brand-alpha-15: rgba(var(--brand-deep-rgb), .15);
+        --brand-alpha-20: rgba(var(--brand-deep-rgb), .20);
+        --brand-alpha-30: rgba(var(--brand-deep-rgb), .30);
+        --brand-alpha-35: rgba(var(--brand-deep-rgb), .35);
+        --brand-alpha-40: rgba(var(--brand-deep-rgb), .40);
+        --brand-alpha-45: rgba(var(--brand-deep-rgb), .45);
+
+        /* ── 兼容旧变量名 ── */
+        --coral:       var(--brand-deep);
+        --coral-light: #6b4040;
+        --coral-dim:   var(--brand-dim);
+
         /* ── 状态指示点 ── */
-        --dot-local: #8fc48f;
-        --dot-online: #d9916e;
+        --dot-local:   #8fc48f;
+        --dot-online:  var(--brand-deep);
         --dot-pending: #8fc0d8;
+
         /* ── 阴影 ── */
-        --shadow-bubble: 0 1px 6px rgba(0, 0, 0, .25);
-        --shadow-btn: 0 2px 8px rgba(217, 145, 110, .3);
-        --shadow-btn-hover: 0 3px 12px rgba(217, 145, 110, .4);
+        --shadow-bubble:      0 1px 6px rgba(0, 0, 0, .25);
+        --shadow-btn:         0 2px 8px var(--brand-alpha-30);
+        --shadow-btn-hover:   0 3px 12px var(--brand-alpha-40);
     }

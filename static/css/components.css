@@ -77,7 +77,7 @@
 #sidebar-toggle:hover {
   border-color: var(--coral-light);
   color: var(--coral);
-  background: rgba(201, 124, 90, .06);
+  background: var(--brand-alpha-06);
 }
 
 #sidebar-toggle:active {
@@ -241,7 +241,7 @@
 #theme-btn:hover {
   border-color: var(--coral-light);
   color: var(--coral);
-  background: rgba(201, 124, 90, .06);
+  background: var(--brand-alpha-06);
 }
 
 #theme-btn:active {
@@ -503,7 +503,7 @@
 
 /* 错误消息气泡样式 */
 .msg.assistant.error .msg-bubble {
-  background: rgba(201, 124, 90, 0.08);
+  background: var(--brand-alpha-08);
   border: 1px solid var(--coral-light);
   border-left: 3px solid var(--coral);
 }
@@ -568,7 +568,7 @@
 
 /* 暗色主题适配 */
 :root[data-theme="dark"] .msg.assistant.error .msg-bubble {
-  background: rgba(217, 145, 110, 0.08);
+  background: var(--brand-alpha-08);
   border-color: var(--coral-dim);
 }
 
@@ -642,7 +642,7 @@
 /* 沉稳设计：聚焦时边框颜色柔和过渡，阴影轻微加深 */
 #user-input:focus {
   border-color: var(--coral-light);
-  box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08);
+  box-shadow: 0 0 0 3px var(--brand-alpha-08);
 }
 
 /* 聚焦时的微光动画（仅在获得焦点时触发一次） */
@@ -696,7 +696,7 @@
 /* 按压：轻微下沉 + 回弹 */
 #send-btn:active:not(:disabled) {
   transform: scale(0.92);
-  box-shadow: 0 1px 4px rgba(201, 124, 90, 0.4);
+  box-shadow: 0 1px 4px var(--brand-alpha-40);
 }
 
 /* 禁用状态：保持灰度，不突兀 */
@@ -858,7 +858,7 @@
 }
 
 #sidebar-close:hover {
-  background: rgba(201, 124, 90, .06);
+  background: var(--brand-alpha-06);
   color: var(--coral);
 }
 
@@ -895,7 +895,7 @@
 }
 
 .session-item.active {
-  background: rgba(201, 124, 90, 0.08);
+  background: var(--brand-alpha-08);
   position: relative;
 }
 
@@ -988,7 +988,7 @@
 .sidebar-action:hover {
   border-color: var(--coral-light);
   color: var(--coral);
-  background: rgba(201, 124, 90, .06);
+  background: var(--brand-alpha-06);
 }
 
 .sidebar-action:active {
@@ -1105,7 +1105,7 @@
 
 .memory-slider-container:hover {
   border-color: var(--coral-light);
-  background: rgba(201, 124, 90, .03);
+  background: var(--brand-alpha-03);
 }
 
 .memory-slider-label {
@@ -1174,7 +1174,7 @@
   border-radius: 3px;
   background: linear-gradient(90deg,
     rgba(124, 173, 124, 0.2) 0%,
-    rgba(201, 124, 90, 0.35) 35%,
+    var(--brand-alpha-35) 35%,
     rgba(127, 175, 212, 0.45) 70%
   );
   pointer-events: none;
@@ -1215,7 +1215,7 @@
   color: var(--coral);
   letter-spacing: .04em;
   padding: 0 8px;
-  background: rgba(201, 124, 90, 0.08);
+  background: var(--brand-alpha-08);
   border-radius: 8px;
   min-width: 48px;
   text-align: center;
@@ -1248,7 +1248,7 @@
 .memory-preset-btn:hover {
   border-color: var(--coral-light);
   color: var(--coral);
-  background: rgba(201, 124, 90, 0.06);
+  background: var(--brand-alpha-06);
 }
 
 .memory-preset-btn:active {
@@ -1351,7 +1351,7 @@
 }
 
 #settings-close:hover {
-  background: rgba(201, 124, 90, .06);
+  background: var(--brand-alpha-06);
   color: var(--coral);
 }
 
@@ -1521,8 +1521,8 @@
     height: 110px;
     object-fit: contain;
     border-radius: 50%;
-    /* 专属暖杏珊瑚柔和阴影光晕 */
-    box-shadow: 0 6px 20px rgba(201, 124, 90, 0.15);
+    /* 专属樱粉柔和阴影光晕 */
+    box-shadow: 0 6px 20px var(--brand-alpha-15);
     /* 表情切换全局流畅过渡核心 */
     transition: opacity 0.32s ease-in-out, transform 0.32s ease-in-out;
 }
@@ -1558,7 +1558,7 @@
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(201, 124, 90, 0.15);
+    box-shadow: 0 8px 24px var(--brand-alpha-15);
     padding: 14px 16px;
     display: flex;
     align-items: center;

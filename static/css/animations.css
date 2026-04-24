@@ -163,10 +163,10 @@
 
 @keyframes pulse-subtle {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(201, 124, 90, 0);
+    box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(201, 124, 90, 0.15);
+    box-shadow: 0 0 0 4px var(--brand-alpha-15);
   }
 }
 
@@ -178,9 +178,9 @@
    ============================================================================= */
 
 @keyframes mode-glow {
-  0% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
-  30% { box-shadow: 0 0 12px 3px rgba(201, 124, 90, 0.2); }
-  100% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
+  30% { box-shadow: 0 0 12px 3px var(--brand-alpha-20); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
 }
 
 
@@ -189,9 +189,9 @@
    ============================================================================= */
 
 @keyframes focus-glow {
-  0% { box-shadow: 0 0 0 0 rgba(201, 124, 90, 0); }
-  50% { box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.12); }
-  100% { box-shadow: 0 0 0 3px rgba(201, 124, 90, 0.08); }
+  0% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
+  50% { box-shadow: 0 0 0 3px var(--brand-alpha-12); }
+  100% { box-shadow: 0 0 0 3px var(--brand-alpha-08); }
 }
 
 

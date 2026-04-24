@@ -6,29 +6,26 @@
   <title>珊瑚菌 · 配置向导</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <!-- 引入全局设计变量（品牌色、字体、阴影等统一管理） -->
+  <link rel="stylesheet" href="/static/css/variables.css">
+
   <style>
     /* ══════════════════════════════════════════════════════════
        setup.html — 配置向导专属样式
+       仅在 :root 中覆盖与通用变量不同的值
        ══════════════════════════════════════════════════════════ */
 
     :root {
+      /* 覆盖 variables.css 默认值：向导页使用白色卡片 + 较小圆角 */
       --bg:           #f7f4ef;
       --surface:      #ffffff;
       --surface-alt:  #fdf8f3;
-      --coral:        #c97c5a;
-      --coral-light:  #e8c4b0;
-      --coral-dim:    #d4956f;
-      --text:         #2d2720;
-      --text-mid:     #7a6e63;
-      --text-dim:     #b0a89e;
-      --border:       #e8e0d4;
-      --border-light: #ede7dd;
-      --success:      #4f8f4f;
-      --error:        #c0534a;
-      --font-body:    'Noto Serif SC', Georgia, serif;
-      --font-mono:    'SFMono-Regular', 'Consolas', monospace;
       --radius:       12px;
       --radius-sm:    8px;
+      /* 向导页专属变量（variables.css 未定义） */
+      --success:      #4f8f4f;
+      --error:        #c0534a;
       --shadow:       0 2px 12px rgba(0,0,0,.06);
     }
 
@@ -165,7 +162,7 @@
     }
     .field-input:focus {
       border-color: var(--coral-light);
-      box-shadow: 0 0 0 3px rgba(201,124,90,.08);
+      box-shadow: 0 0 0 3px var(--brand-alpha-08);
     }
     .field-input::placeholder { color: var(--text-dim); }
     .field-input.valid   { border-color: #7cad7c; }
@@ -190,12 +187,12 @@
     }
     .persona-editor:focus {
       border-color: var(--coral-light);
-      box-shadow: 0 0 0 3px rgba(201,124,90,.08);
+      box-shadow: 0 0 0 3px var(--brand-alpha-08);
     }
 
     /* persona 提示框 */
     .persona-hint-box {
-      background: rgba(201,124,90,.06);
+      background: var(--brand-alpha-06);
       border: 1px solid var(--coral-light);
       border-radius: var(--radius-sm);
       padding: 10px 14px;
@@ -339,7 +336,7 @@
     .btn-next {
       background: var(--coral);
       color: #fff;
-      box-shadow: 0 2px 10px rgba(201,124,90,.3);
+      box-shadow: 0 2px 10px var(--brand-alpha-30);
     }
     .btn-next:hover:not(:disabled) { background: var(--coral-dim); }
     .step-indicator {

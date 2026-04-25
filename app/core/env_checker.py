@@ -12,8 +12,16 @@ app/core/env_checker.py — 环境状态检测模块
     4. .env 文件是否存在，必填项是否已填写
     5. 嵌入模型路径是否存在（目录 + config.json 存在性）
     6. 本地推理服务是否可达（GET /v1/models，超时 3s）
-    7. 数据库是否存在且完整（sqlite3 integrity_check）
+    7. 数据库是否存在且完整（sqlite3 integrity_check + 关键列校验）
     8. 端口 8000（或配置的端口）是否被占用
+
+    v0.6.0 修复：
+    · check_port() — 检测到端口被占用后，进一步判断是否是本进程
+      （uvicorn）在监听。FastAPI 服务启动后调用此函数时，端口被自己占用
+      应视为正常，返回 ok=True。
+    · check_database() — 新增关键列校验：验证 messages.source /
+      messages.import_fingerprint / memory_l1.valence / memory_l1.salience
+      等 v0.3.x 之后新增的列是否存在，及早发现未迁移的旧数据库。
 
 对外接口：
     run_all_checks()      → dict[str, CheckResult]  完整检测，供前端轮询
@@ -25,6 +33,7 @@ app/core/env_checker.py — 环境状态检测模块
 
 from __future__ import annotations
 
+import os
 import platform
 import re
 import socket
@@ -54,6 +63,29 @@ _REQUIRED_ENV_KEYS = ["LOCAL_API_URL", "LOCAL_MODEL_NAME", "EMBEDDING_MODEL"]
 
 # 将 /v1/chat/completions 等路径替换为 /v1/models 用于推理服务检测
 _MODELS_PATH_RE = re.compile(r"/v1/.*$")
+
+# =============================================================================
+# 数据库列级校验清单（v0.6.0 新增）
+# =============================================================================
+# 格式：(表名, 列名, 说明)
+# 这些列在旧版数据库（v0.3.x 之前）可能不存在，迁移脚本负责补齐。
+# 此处只做"是否存在"的检查，不做修复——修复由 ensure_db_ready() 负责。
+_REQUIRED_COLUMNS: list[tuple[str, str, str]] = [
+    # messages 表新增列（v0.3.x 历史导入功能）
+    ("messages", "source",             "消息来源字段，区分本地/线上/导入"),
+    ("messages", "import_fingerprint", "历史导入去重指纹"),
+    # memory_l1 表情感元数据列（v0.3.x 情感功能）
+    ("memory_l1", "valence",           "情绪效价"),
+    ("memory_l1", "salience",          "情感显著性"),
+    ("memory_l1", "last_accessed_at",  "最近访问时间，用于衰减保底"),
+    # memory_l2 表访问时间列
+    ("memory_l2", "last_accessed_at",  "最近访问时间，用于衰减保底"),
+    # keyword_pool 别名归一化列（v0.3.x 图谱功能）
+    ("keyword_pool", "canonical_id",   "规范词 rowid"),
+    ("keyword_pool", "alias_status",   "别名状态"),
+    # conflict_queue 冲突类型列
+    ("conflict_queue", "conflict_type", "冲突来源类型"),
+]
 
 
 # =============================================================================
@@ -137,10 +169,8 @@ def write_env(data: dict[str, str]) -> None:
     参数：
         data — 要写入/更新的 {key: value} 字典
     """
-    # 确保 data/ 目录存在
     (_ROOT / "data").mkdir(exist_ok=True)
 
-    # .env 不存在时先从模板复制
     if not _ENV_FILE.exists():
         example = _ROOT / ".env.example"
         if example.exists():
@@ -152,7 +182,6 @@ def write_env(data: dict[str, str]) -> None:
     lines = _ENV_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
     updated_keys: set[str] = set()
 
-    # 替换已存在的 key
     for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -162,7 +191,6 @@ def write_env(data: dict[str, str]) -> None:
             lines[i] = f"{k}={data[k]}\n"
             updated_keys.add(k)
 
-    # 追加不存在的 key
     new_keys = [k for k in data if k not in updated_keys]
     if new_keys:
         if lines and not lines[-1].endswith("\n"):
@@ -174,7 +202,7 @@ def write_env(data: dict[str, str]) -> None:
 
 
 # =============================================================================
-# 各项检测函数（每个函数独立，返回 CheckResult）
+# 各项检测函数
 # =============================================================================
 
 def check_python_version() -> CheckResult:
@@ -270,7 +298,7 @@ def check_env_file() -> CheckResult:
 def check_embedding_model() -> CheckResult:
     """
     检测 EMBEDDING_MODEL 路径是否存在，
-    且目录内包含 config.json（基础完整性验证）。
+    且目录内包含 config.json（确认是完整的模型目录）。
     """
     path_str = get_env_value("EMBEDDING_MODEL")
     if not path_str:
@@ -346,7 +374,15 @@ def check_inference_service() -> CheckResult:
 
 
 def check_database() -> CheckResult:
-    """检测 assistant.db 是否存在且通过 integrity_check。"""
+    """
+    检测 assistant.db 是否存在、通过 integrity_check，
+    以及 v0.3.x 之后新增的关键列是否都已迁移。
+
+    v0.6.0 新增列级校验：
+        检查 _REQUIRED_COLUMNS 中列出的所有列是否存在。
+        若有缺失，说明数据库是旧版本且迁移未完成，
+        返回警告（ok=False）并告知用户运行 setup_db.py 修复。
+    """
     if not _DB_PATH.exists():
         return CheckResult(
             ok=False,
@@ -355,41 +391,212 @@ def check_database() -> CheckResult:
             data={"path": str(_DB_PATH), "needs_init": True},
         )
 
+    # ── integrity_check ──────────────────────────────────────────────────────
     try:
         conn = sqlite3.connect(str(_DB_PATH))
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+
         cursor.execute("PRAGMA integrity_check")
         results = [row[0] for row in cursor.fetchall()]
-        conn.close()
 
-        if results == ["ok"]:
-            return CheckResult(ok=True, message="数据库完整", data={"path": str(_DB_PATH), "needs_init": False})
-        return CheckResult(
-            ok=False,
-            message="数据库文件损坏",
-            detail="\n".join(results),
-            data={"path": str(_DB_PATH), "needs_init": False},
-        )
+        if results != ["ok"]:
+            conn.close()
+            return CheckResult(
+                ok=False,
+                message="数据库文件损坏",
+                detail="\n".join(results),
+                data={"path": str(_DB_PATH), "needs_init": False},
+            )
+
     except sqlite3.DatabaseError as e:
         return CheckResult(ok=False, message="数据库无法打开", detail=str(e))
 
+    # ── 12 张核心表校验 ───────────────────────────────────────────────────────
+    expected_tables = {
+        "sessions", "messages", "memory_l1", "memory_l2", "l2_sources",
+        "user_profile", "keyword_pool", "graph_nodes", "graph_edges",
+        "conflict_queue", "pending_push", "settings",
+    }
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    existing_tables = {row[0] for row in cursor.fetchall()}
+    missing_tables  = expected_tables - existing_tables
+
+    if missing_tables:
+        conn.close()
+        return CheckResult(
+            ok=False,
+            message=f"数据库缺少 {len(missing_tables)} 张表",
+            detail=(
+                f"缺失：{', '.join(sorted(missing_tables))}\n"
+                f"修复：python scripts/setup_db.py"
+            ),
+            data={"path": str(_DB_PATH), "needs_init": False},
+        )
+
+    # ── v0.6.0 新增：关键列校验 ──────────────────────────────────────────────
+    # 构建各表现有列的缓存，避免对同一张表重复 PRAGMA 查询
+    table_columns: dict[str, set[str]] = {}
+
+    def _get_columns(table: str) -> set[str]:
+        """获取指定表的列名集合，结果缓存避免重复查询。"""
+        if table not in table_columns:
+            cursor.execute(f"PRAGMA table_info({table})")
+            table_columns[table] = {row["name"] for row in cursor.fetchall()}
+        return table_columns[table]
+
+    missing_columns: list[str] = []
+    for table, col, desc in _REQUIRED_COLUMNS:
+        # 只检查已存在的表（表不存在的情况已在上面 missing_tables 里处理了）
+        if table in existing_tables and col not in _get_columns(table):
+            missing_columns.append(f"{table}.{col}（{desc}）")
+
+    conn.close()
+
+    if missing_columns:
+        return CheckResult(
+            ok=False,
+            message=f"数据库缺少 {len(missing_columns)} 个字段（需要迁移）",
+            detail=(
+                f"缺失字段：\n  " + "\n  ".join(missing_columns) + "\n\n"
+                f"这是因为数据库是旧版本创建的，新功能所需的列尚未添加。\n"
+                f"修复方法：运行 python scripts/setup_db.py\n"
+                f"（幂等操作，不会删除已有数据）"
+            ),
+            data={
+                "path": str(_DB_PATH),
+                "needs_init": False,
+                "missing_columns": missing_columns,
+            },
+        )
+
+    return CheckResult(
+        ok=True,
+        message="数据库完整",
+        data={"path": str(_DB_PATH), "needs_init": False},
+    )
+
 
 def check_port(port: int = 8000) -> CheckResult:
-    """检测指定端口是否被占用。被占用时返回 ok=False。"""
+    """
+    检测指定端口是否可以使用。
+
+    v0.6.0 修复逻辑：
+        原实现直接判断"能连上就报占用"，导致 FastAPI 服务本身启动后
+        调用此接口时（/api/admin/status），永远报告端口被占用。
+
+        修复策略：
+            1. 尝试连接端口，连不上 → 端口空闲，返回 ok=True（最常见路径）
+            2. 连得上（端口被占用）→ 进一步用 psutil 检查占用进程：
+               a. psutil 不可用 → 降级，尝试绑定端口
+               b. 占用进程是本进程（os.getpid()）或父进程 → 端口被自己占，
+                  返回 ok=True（FastAPI 已启动状态下调用此函数的正常情况）
+               c. 占用进程是其他进程 → 返回 ok=False，报告进程名和 PID
+            3. 端口绑定测试（psutil 不可用时的降级方案）：
+               尝试 SO_REUSEADDR 绑定，成功说明端口可用（同进程可重用）
+
+    参数：
+        port — 要检测的端口号，默认 8000
+
+    返回：
+        CheckResult，ok=True 表示端口可用（或被本进程占用）
+    """
+    # 第一步：尝试连接，连不上直接返回"端口可用"
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.5)
+            if probe.connect_ex(("127.0.0.1", port)) != 0:
+                # 连接失败 = 端口没有监听者 = 可用
+                return CheckResult(ok=True, message=f"端口 {port} 可用", data={"port": port})
+    except Exception:
+        # socket 操作本身出错，视为可用（不阻断启动）
+        return CheckResult(ok=True, message="端口检测跳过", data={"port": port})
+
+    # 第二步：端口有监听者，判断是不是自己（uvicorn/本进程）
+    own_pid    = os.getpid()
+    own_ppid   = os.getppid() if hasattr(os, "getppid") else -1
+
+    try:
+        import psutil
+
+        # 找出占用该端口的所有连接，提取对端 PID
+        occupying_pids: set[int] = set()
+        for conn in psutil.net_connections(kind="tcp"):
+            # LISTEN 状态的连接，laddr.port 是监听端口
+            if (
+                conn.status == "LISTEN"
+                and conn.laddr
+                and conn.laddr.port == port
+                and conn.pid is not None
+            ):
+                occupying_pids.add(conn.pid)
+
+        if not occupying_pids:
+            # 找不到具体 PID（权限问题等），降级视为可用
+            return CheckResult(ok=True, message=f"端口 {port} 状态未知，视为可用", data={"port": port})
+
+        # 判断是否是本进程或父进程在监听
+        self_pids = {own_pid, own_ppid}
+        foreign_pids = occupying_pids - self_pids
+
+        if not foreign_pids:
+            # 全部是自己的进程（uvicorn 运行中的正常状态）
+            return CheckResult(
+                ok=True,
+                message=f"端口 {port} 由本服务占用（正常）",
+                data={"port": port, "self_occupied": True},
+            )
+
+        # 有其他进程占用，报告进程信息
+        proc_names: list[str] = []
+        for pid in foreign_pids:
+            try:
+                proc = psutil.Process(pid)
+                proc_names.append(f"{proc.name()}（PID {pid}）")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                proc_names.append(f"PID {pid}（无法获取进程名）")
+
+        return CheckResult(
+            ok=False,
+            message=f"端口 {port} 被其他程序占用",
+            detail=(
+                f"占用进程：{', '.join(proc_names)}\n"
+                f"请关闭占用程序，或在 .env 中修改 SERVER_PORT。\n"
+                f"Windows 可用：netstat -ano | findstr :{port}\n"
+                f"Linux/macOS：lsof -i:{port}"
+            ),
+            data={"port": port, "occupying_pids": list(foreign_pids)},
+        )
+
+    except ImportError:
+        # psutil 不可用，降级：尝试用 SO_REUSEADDR 绑定端口
+        # SO_REUSEADDR 允许同进程重用端口，如果是 uvicorn 占用则绑定仍可成功
+        pass
+
+    # psutil 不可用时的降级方案：尝试绑定
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            if s.connect_ex(("127.0.0.1", port)) == 0:
-                return CheckResult(
-                    ok=False,
-                    message=f"端口 {port} 已被占用",
-                    detail=f"请关闭占用端口 {port} 的程序，或在 .env 中修改 SERVER_PORT。",
-                    data={"port": port},
-                )
-        return CheckResult(ok=True, message=f"端口 {port} 可用", data={"port": port})
-    except Exception as e:
-        # 检测失败不阻断启动，视为可用
-        return CheckResult(ok=True, message="端口检测跳过", detail=str(e), data={"port": port})
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", port))
+        # 绑定成功：端口对本进程可用（可能是被本进程的 uvicorn 占用）
+        return CheckResult(
+            ok=True,
+            message=f"端口 {port} 可用（或由本服务占用）",
+            data={"port": port},
+        )
+    except OSError:
+        # 绑定失败：端口确实被其他程序占用，但没有进程信息
+        return CheckResult(
+            ok=False,
+            message=f"端口 {port} 已被占用",
+            detail=(
+                f"无法确定占用进程（psutil 未安装）。\n"
+                f"请安装 psutil 获取详情：pip install psutil\n"
+                f"或手动检查：netstat -ano | findstr :{port}"
+            ),
+            data={"port": port},
+        )
 
 
 # =============================================================================

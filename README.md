@@ -294,43 +294,23 @@ python scripts/setup_db.py --force-rebuild
    - 嵌入模型路径（已下载的本地模型文件夹路径）
 3. 完成配置后自动初始化数据库，进入聊天界面
 
-> 无需安装 Python 或任何依赖，开箱即用。
+> 无需安装 Python 或任何依赖，开箱即用。👉 [详细文字指南](README_快速开始（一键启动）.md)
 
 ### 方式二：从源码运行
 
-#### 环境要求
-
-- **Python** 3.10+
-- **本地模型服务** LM Studio / Ollama 等（兼容 OpenAI API 格式）
-- **嵌入模型** 首次启动时自动下载（约 300MB），或手动配置
-
-#### 安装
+适用于 Linux / macOS 用户，或希望参与开发的用户。
 
 ```bash
-# Windows
-python win/install.py
+# 安装
+python win/install.py          # Windows
+bash linux/install.sh          # Linux / macOS
 
-# Linux / macOS
-bash linux/install.sh
-
-# Docker
-docker-compose up -d
+# 启动
+python win/start.py            # Windows
+bash linux/start.sh            # Linux / macOS
 ```
 
-#### 启动与访问
-
-```bash
-# Windows
-python start.py
-
-# Linux / macOS
-source venv/bin/activate && python app/main.py
-```
-
-- 本地：`http://localhost:8000`
-- 局域网：`http://<电脑IP>:8000`
-
-> 详细安装配置说明请查阅：[快速开始指南](README_快速开始.md)
+> 详细安装配置说明请查阅：👉 [从源码运行指南](README_快速开始（从源码运行）.md)
 
 ---
 

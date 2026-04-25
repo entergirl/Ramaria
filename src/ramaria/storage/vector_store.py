@@ -600,11 +600,14 @@ def _validate_model_path(model_path: str) -> tuple[bool, str]:
         return False, "模型路径为空"
     
     path = Path(model_path)
+    # 显示路径时统一使用正斜杠，保持跨平台一致性
+    display_path = str(model_path).replace("\\", "/")
+
     if not path.exists():
-        return False, f"模型路径不存在：{model_path}"
+        return False, f"模型路径不存在：{display_path}"
     
     if not path.is_dir():
-        return False, f"模型路径不是目录：{model_path}"
+        return False, f"模型路径不是目录：{display_path}"
     
     # 检查必要的模型文件
     has_onnx = any(path.glob("**/*.onnx"))
@@ -612,7 +615,7 @@ def _validate_model_path(model_path: str) -> tuple[bool, str]:
     has_model = (path / "pytorch_model.bin").exists()
     
     if not (has_config and (has_onnx or has_model)):
-        return False, f"模型目录结构不完整，缺少必要的模型文件（config.json 或 .onnx/.bin）：{model_path}"
+        return False, f"模型目录结构不完整，缺少必要的模型文件（config.json 或 .onnx/.bin）：{display_path}"
     
     return True, "模型路径有效"
 

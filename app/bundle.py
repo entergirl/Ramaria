@@ -59,28 +59,35 @@ if str(ROOT) not in sys.path:
 
 def _load_dotenv() -> None:
     """
-    简单解析 .env 文件，将 KEY=VALUE 写入 os.environ。
+    解析 .env 文件，将 KEY=VALUE 写入 os.environ。
     不依赖 python-dotenv，使用纯标准库。
     已有同名环境变量时不覆盖（允许系统环境变量优先）。
 
-    加载顺序（打包模式）：
-    1. exe 同级目录的 .env（用户自定义，优先）
-    2. 资源目录中的 .env（打包时的模板，作为兜底）
+    打包模式路径策略：
+        只读取 exe 同级目录的 .env（用户通过配置向导创建的）。
+        不再从 _MEIPASS 资源目录读取或复制 .env，因为：
+          1. 打包时不再包含 .env（避免开发者配置泄露到用户环境）
+          2. 首次运行时用户没有 .env → can_start_directly() 返回 False
+          3. 配置向导通过 write_env() 在 exe 同级目录创建 .env
+          4. 下次启动时自动加载用户配置
+
+    开发模式路径策略：
+        直接从项目根目录的 .env 加载。
     """
     env_file = None
-    exe_dir  = None
 
     if getattr(sys, "frozen", False):
+        # 打包模式：只读取 exe 同级目录的用户 .env
         exe_dir  = Path(sys.executable).parent
         user_env = exe_dir / ".env"
         if user_env.exists():
             env_file = user_env
             print(f"[bundle] 加载用户 .env: {env_file}")
         else:
-            bundled_env = ROOT / ".env"
-            if bundled_env.exists():
-                env_file = bundled_env
-                print(f"[bundle] 加载 bundled .env: {env_file}")
+            # 首次运行：用户还没有 .env，不创建空文件，
+            # 让 can_start_directly() 自然判定需要引导
+            print(f"[bundle] 首次运行：未找到用户 .env，将进入配置向导")
+            return
     else:
         env_file = ROOT / ".env"
         print(f"[bundle] 加载开发 .env: {env_file}")
@@ -88,17 +95,6 @@ def _load_dotenv() -> None:
     if not env_file or not env_file.exists():
         print(f"[bundle] 警告: 未找到 .env 文件")
         return
-
-    # 打包模式下首次运行：把模板 .env 复制到 exe 同级目录供用户编辑
-    if getattr(sys, "frozen", False) and exe_dir:
-        user_env = exe_dir / ".env"
-        if not user_env.exists():
-            import shutil
-            try:
-                shutil.copy(env_file, user_env)
-                print(f"[bundle] 已复制 .env 到: {user_env}")
-            except Exception as e:
-                print(f"[bundle] 复制 .env 失败: {e}")
 
     loaded_keys = []
     with open(env_file, encoding="utf-8") as f:
@@ -148,7 +144,7 @@ def _patch_config_paths() -> None:
     此函数在导入其他模块之前调用，用正确路径（exe 同级可写目录）覆盖。
 
     同时处理配置文件的首次初始化：
-      · .env      — 从打包资源目录复制到 exe 同级（_load_dotenv 已处理）
+      · .env      — 不再自动创建，首次运行时由配置向导写入（见 _load_dotenv）
       · config/   — 整个目录复制（仅当目录不存在时）
       · persona.toml — 只在不存在时从 example 复制，不覆盖用户已有配置
     """

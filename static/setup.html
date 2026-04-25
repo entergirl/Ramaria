@@ -445,11 +445,12 @@
         <div class="field-label">嵌入模型文件夹路径 <span class="required">*</span></div>
         <div class="path-row">
           <input class="field-input" id="EMBEDDING_MODEL" type="text"
-                 placeholder="C:\models\Qwen3-Embedding-0.6B"
+                 placeholder="D:/models/Qwen3-Embedding-0.6B"
                  oninput="validateModelPath()">
         </div>
         <div class="field-hint">
           填写包含 config.json 的模型文件夹路径，不是具体文件路径。<br>
+          路径分隔符请统一使用正斜杠 / （兼容所有操作系统）。<br>
           下载方法：访问 <a href="https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B" target="_blank" style="color:var(--coral)">hf-mirror.com</a> 下载全部文件后放入同一文件夹。
         </div>
         <div class="field-status" id="model-status"></div>
@@ -733,8 +734,13 @@ async function testApiConnection() {
 // ── 模型路径校验 ──
 
 async function validateModelPath() {
-  const path   = document.getElementById('EMBEDDING_MODEL').value.trim();
+  const input  = document.getElementById('EMBEDDING_MODEL');
   const status = document.getElementById('model-status');
+  // 实时将反斜杠替换为正斜杠，保持视觉一致性
+  if (input.value.includes('\\')) {
+    input.value = input.value.replace(/\\/g, '/');
+  }
+  const path = input.value.trim();
   if (!path) { status.textContent = ''; return; }
   status.textContent = '检测中…';
   status.className   = 'field-status checking';
@@ -882,6 +888,10 @@ function clearFieldStatus(id) {
 }
 
 async function saveField(key, value) {
+  // 嵌入模型路径：统一将反斜杠替换为正斜杠，避免跨平台兼容问题
+  if (key === 'EMBEDDING_MODEL') {
+    value = value.replace(/\\/g, '/');
+  }
   await fetch('/api/admin/config', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -929,7 +939,11 @@ async function finishSetup() {
 
   const values = {};
   for (const id of fields) {
-    const val = document.getElementById(id)?.value?.trim() || '';
+    let val = document.getElementById(id)?.value?.trim() || '';
+    // 嵌入模型路径：统一使用正斜杠
+    if (id === 'EMBEDDING_MODEL' && val) {
+      val = val.replace(/\\/g, '/');
+    }
     if (val) values[id] = val;
   }
 

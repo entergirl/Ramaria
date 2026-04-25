@@ -617,13 +617,13 @@ def _create_fresh_db(conn: sqlite3.Connection) -> None:
     print("\n[1/3] 建立表结构")
     for table_name, sql in _ALL_TABLES:
         cursor.execute(sql)
-        print(f"  ✓  {table_name}")
+        print(f"  [OK] {table_name}")
 
     # ── 建索引 ────────────────────────────────────────────────────────────────
     print("\n[2/3] 建立索引")
     for index_name, sql, desc in _INDEXES:
         cursor.execute(sql)
-        print(f"  ✓  {index_name}")
+        print(f"  [OK] {index_name}")
         print(f"       {desc}")
 
     # ── 写入默认配置 ──────────────────────────────────────────────────────────
@@ -634,7 +634,7 @@ def _create_fresh_db(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
             (key, value, now),
         )
-        print(f"  ✓  {key} = {value}")
+        print(f"  [OK] {key} = {value}")
 
     conn.commit()
 
@@ -679,7 +679,7 @@ def _migrate_existing_db(conn: sqlite3.Connection) -> None:
             continue
 
         if col in _get_columns(table):
-            print(f"  ✓  {table}.{col}（已存在，跳过）")
+            print(f"  [OK] {table}.{col}（已存在，跳过）")
         else:
             cursor.execute(sql)
             # 清除该表的列缓存，下次重新查询
@@ -694,7 +694,7 @@ def _migrate_existing_db(conn: sqlite3.Connection) -> None:
 
     for table_name, sql in _ALL_TABLES:
         if table_name in existing_tables:
-            print(f"  ✓  {table_name}（已存在，跳过）")
+            print(f"  [OK] {table_name}（已存在，跳过）")
         else:
             cursor.execute(sql)
             print(f"  +  {table_name}（新建）")
@@ -707,7 +707,7 @@ def _migrate_existing_db(conn: sqlite3.Connection) -> None:
 
     for index_name, sql, desc in _INDEXES:
         if index_name in existing_indexes:
-            print(f"  ✓  {index_name}（已存在，跳过）")
+            print(f"  [OK] {index_name}（已存在，跳过）")
         else:
             cursor.execute(sql)
             print(f"  +  {index_name}（新建）— {desc}")
@@ -723,7 +723,7 @@ def _migrate_existing_db(conn: sqlite3.Connection) -> None:
         if cursor.rowcount > 0:
             print(f"  +  {key} = {value}（新增）")
         else:
-            print(f"  ✓  {key}（已存在，保留现有值）")
+            print(f"  [OK] {key}（已存在，保留现有值）")
 
     conn.commit()
 
@@ -860,9 +860,9 @@ def main() -> None:
         print("\n=== 验证数据库完整性 ===")
         ok = _verify_db(conn)
         if ok:
-            print("\n✅  数据库就绪，可以运行 python app/main.py 启动服务。")
+            print("\n[OK] 数据库就绪，可以运行 python app/main.py 启动服务。")
         else:
-            print("\n❌  验证发现问题，请检查上方错误信息后重试。")
+            print("\n[FAIL] 验证发现问题，请检查上方错误信息后重试。")
             sys.exit(1)
 
     finally:

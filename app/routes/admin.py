@@ -15,8 +15,14 @@ app/routes/admin.py — 管理与配置 API 路由
 
 设计原则：
     · 所有配置写操作通过 env_checker.write_env() 统一处理
-    · 初始化 DB 调用已有的 scripts/setup_db.py（以子进程运行，隔离异常）
+    · 初始化 DB 在打包模式下进程内调用，开发模式下子进程调用
     · 返回统一的 {ok, message, data} JSON 结构，方便前端判断
+
+路径说明（打包模式兼容）：
+    · 开发模式：路径从 __file__ 推算（app/routes/ → 项目根）
+    · 打包模式：路径从 ramaria.config 获取（由 bundle.py._patch_config_paths() 修复）
+      静态文件（HTML/CSS/JS）从 _MEIPASS 加载（只读资源）
+      用户数据（.env、config/、data/）从 exe 同级目录加载（可写）
 """
 
 import subprocess
@@ -39,14 +45,27 @@ from ramaria.logger import get_logger
 logger  = get_logger(__name__)
 router  = APIRouter()
 
-# 项目根目录（本文件在 app/routes/，向上两级）
-_ROOT        = Path(__file__).resolve().parents[2]
-_STATIC_DIR  = _ROOT / "static"
-_SCRIPTS_DIR = _ROOT / "scripts"
+# =============================================================================
+# 路径常量（支持打包模式和开发模式）
+# =============================================================================
+_IS_FROZEN = getattr(sys, "frozen", False)
 
-# persona 文件路径
-_PERSONA_PATH   = _ROOT / "config" / "persona.toml"
-_PERSONA_EXAMPLE = _ROOT / "config" / "persona.toml.example"
+if _IS_FROZEN:
+    # 打包模式：
+    #   · 静态文件从 _MEIPASS 加载（只读，打包时嵌入）
+    #   · 用户数据路径从 ramaria.config 获取（已由 bundle.py 修复）
+    _MEIPASS      = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    _STATIC_DIR   = _MEIPASS / "static"
+
+    from ramaria.config import CONFIG_DIR
+    _PERSONA_PATH    = CONFIG_DIR / "persona.toml"
+    _PERSONA_EXAMPLE = CONFIG_DIR / "persona.toml.example"
+else:
+    # 开发模式：从 __file__ 推算
+    _ROOT           = Path(__file__).resolve().parents[2]
+    _STATIC_DIR     = _ROOT / "static"
+    _PERSONA_PATH   = _ROOT / "config" / "persona.toml"
+    _PERSONA_EXAMPLE = _ROOT / "config" / "persona.toml.example"
 
 
 # =============================================================================
@@ -139,7 +158,10 @@ async def admin_save_config(payload: ConfigPayload):
 @router.post("/api/admin/init_db")
 async def admin_init_db():
     """
-    以子进程调用 scripts/setup_db.py 初始化/迁移数据库。
+    初始化/迁移数据库。
+
+    打包模式：直接在进程内调用 setup_db.main()。
+    开发模式：以子进程调用 scripts/setup_db.py。
 
     同时在数据库初始化前确保 persona.toml 存在：
       · 如果 persona.toml 已存在 → 不覆盖
@@ -149,17 +171,66 @@ async def admin_init_db():
     # 确保 persona.toml 存在（不覆盖已有配置）
     _ensure_persona_exists()
 
-    setup_script = _SCRIPTS_DIR / "setup_db.py"
+    if getattr(sys, "frozen", False):
+        # 打包模式：直接在进程内调用
+        return _init_db_in_process()
+    else:
+        # 开发模式：子进程调用
+        return _init_db_subprocess()
+
+
+def _init_db_in_process() -> JSONResponse:
+    """打包模式下直接在进程内调用 setup_db.main()。"""
+    import io
+
+    try:
+        from app.core.db_initializer import _import_setup_db
+        setup_db = _import_setup_db()
+
+        # 重定向 stdout/stderr，防止 print 污染日志
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        captured_stdout = io.StringIO()
+        captured_stderr = io.StringIO()
+        try:
+            sys.stdout = captured_stdout  # type: ignore[assignment]
+            sys.stderr = captured_stderr  # type: ignore[assignment]
+            setup_db.main()
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+        logger.info("数据库初始化完成")
+        return _ok("数据库初始化完成")
+
+    except Exception as e:
+        logger.error(f"数据库初始化失败：{e}")
+        return _fail("数据库初始化失败", detail=str(e))
+
+
+def _init_db_subprocess() -> JSONResponse:
+    """开发模式下以子进程调用 scripts/setup_db.py。"""
+    import os
+
+    # 开发模式下的项目根目录和脚本路径
+    scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
+    setup_script = scripts_dir / "setup_db.py"
+    root_dir = scripts_dir.parent
+
     if not setup_script.exists():
         return _fail("未找到 scripts/setup_db.py", detail="请确认项目文件完整。")
+
+    # 设置 PYTHONIOENCODING=utf-8 防止 Windows GBK 编码错误
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
 
     try:
         result = subprocess.run(
             [sys.executable, str(setup_script)],
-            cwd=str(_ROOT),
+            cwd=str(root_dir),
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         if result.returncode == 0:
             logger.info("数据库初始化完成")

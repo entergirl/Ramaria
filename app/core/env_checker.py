@@ -7,21 +7,20 @@ app/core/env_checker.py — 环境状态检测模块
 
 检测项：
     1. Python 版本（>= 3.10）
-    2. 虚拟环境是否已创建（venv 目录）
-    3. 关键依赖是否已安装（fastapi / chromadb 等）
+    2. 虚拟环境是否已创建（venv 目录）—— 打包模式下跳过
+    3. 关键依赖是否已安装（fastapi / chromadb 等）—— 打包模式下跳过
     4. .env 文件是否存在，必填项是否已填写
     5. 嵌入模型路径是否存在（目录 + config.json 存在性）
     6. 本地推理服务是否可达（GET /v1/models，超时 3s）
     7. 数据库是否存在且完整（sqlite3 integrity_check + 关键列校验）
     8. 端口 8000（或配置的端口）是否被占用
 
-    v0.6.0 修复：
-    · check_port() — 检测到端口被占用后，进一步判断是否是本进程
-      （uvicorn）在监听。FastAPI 服务启动后调用此函数时，端口被自己占用
-      应视为正常，返回 ok=True。
-    · check_database() — 新增关键列校验：验证 messages.source /
-      messages.import_fingerprint / memory_l1.valence / memory_l1.salience
-      等 v0.3.x 之后新增的列是否存在，及早发现未迁移的旧数据库。
+打包模式（PyInstaller exe）路径说明：
+    · 打包后 ramaria.config 中的路径由 bundle.py._patch_config_paths() 修复，
+      指向 exe 同级可写目录（data/、config/、logs/ 等）。
+    · 本模块的路径常量（_ROOT / _ENV_FILE / _DB_PATH 等）从 ramaria.config
+      动态获取，确保打包模式和开发模式路径一致。
+    · 不再从 __file__ 推算路径（打包后 __file__ 指向 _MEIPASS 只读目录）。
 
 对外接口：
     run_all_checks()      → dict[str, CheckResult]  完整检测，供前端轮询
@@ -43,14 +42,88 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# ── 路径常量 ────────────────────────────────────────────────────────────────
-# 本文件在 app/core/，项目根目录是上两级
-_ROOT         = Path(__file__).resolve().parents[2]
-_ENV_FILE     = _ROOT / ".env"
-_VENV_DIR     = _ROOT / "venv"
-_DB_PATH      = _ROOT / "data" / "assistant.db"
 
-# venv 内 Python 可执行文件（Windows / Unix 路径不同）
+# =============================================================================
+# 路径常量（支持打包模式和开发模式）
+# =============================================================================
+# 关键设计：打包后 __file__ 指向 _MEIPASS 只读目录，不能用来推算用户数据路径。
+# 必须从 ramaria.config 获取路径（由 bundle.py._patch_config_paths() 修复）。
+#
+# 但 ramaria.config 在首次 import 时会执行 os.environ.get()，
+# 所以必须在 bundle.py._load_dotenv() 之后才能 import。
+# 此处使用延迟计算：_get_root() / _get_env_file() / _get_db_path()
+# 在首次调用时才 import ramaria.config 并缓存结果。
+
+_cached_root: Path | None = None
+_cached_env_file: Path | None = None
+_cached_db_path: Path | None = None
+
+_IS_FROZEN = getattr(sys, "frozen", False)
+
+
+def _get_root() -> Path:
+    """
+    获取项目根目录（延迟计算，首次调用时缓存）。
+
+    · 打包模式：从 ramaria.config.ROOT_DIR 获取（已由 bundle.py 修复为 exe 同级目录）
+    · 开发模式：从 __file__ 推算（app/core/ → app/ → 项目根）
+    """
+    global _cached_root
+    if _cached_root is not None:
+        return _cached_root
+
+    if _IS_FROZEN:
+        from ramaria.config import ROOT_DIR
+        _cached_root = ROOT_DIR
+    else:
+        _cached_root = Path(__file__).resolve().parents[2]
+
+    return _cached_root
+
+
+def _get_env_file() -> Path:
+    """
+    获取 .env 文件路径（延迟计算，首次调用时缓存）。
+
+    · 打包模式：exe 同级目录的 .env（用户实际配置）
+    · 开发模式：项目根目录的 .env
+    """
+    global _cached_env_file
+    if _cached_env_file is not None:
+        return _cached_env_file
+
+    if _IS_FROZEN:
+        # 打包模式：.env 在 exe 同级目录（由 bundle.py 复制/用户编辑）
+        _cached_env_file = Path(sys.executable).parent / ".env"
+    else:
+        _cached_env_file = _get_root() / ".env"
+
+    return _cached_env_file
+
+
+def _get_db_path() -> Path:
+    """
+    获取数据库文件路径（延迟计算，首次调用时缓存）。
+
+    · 打包模式：从 ramaria.config.DB_PATH 获取（已由 bundle.py 修复）
+    · 开发模式：项目根目录 / data / assistant.db
+    """
+    global _cached_db_path
+    if _cached_db_path is not None:
+        return _cached_db_path
+
+    if _IS_FROZEN:
+        from ramaria.config import DB_PATH
+        _cached_db_path = DB_PATH
+    else:
+        _cached_db_path = _get_root() / "data" / "assistant.db"
+
+    return _cached_db_path
+
+
+# venv 相关路径（仅开发模式使用，打包模式下 check_venv() 直接跳过）
+_VENV_DIR = _get_root() / "venv" if not _IS_FROZEN else Path("")
+
 _IS_WINDOWS   = platform.system() == "Windows"
 _VENV_PYTHON  = (
     _VENV_DIR / "Scripts" / "python.exe"
@@ -118,10 +191,11 @@ def get_env_value(key: str) -> str | None:
     从 .env 文件读取指定 key 的值。
     去除行尾注释、首尾引号和空白。文件不存在或 key 不存在时返回 None。
     """
-    if not _ENV_FILE.exists():
+    env_file = _get_env_file()
+    if not env_file.exists():
         return None
 
-    with open(_ENV_FILE, encoding="utf-8") as f:
+    with open(env_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -141,10 +215,11 @@ def get_all_env_values() -> dict[str, str]:
     注释行和空行忽略，值已去除首尾引号和行尾注释。
     """
     result: dict[str, str] = {}
-    if not _ENV_FILE.exists():
+    env_file = _get_env_file()
+    if not env_file.exists():
         return result
 
-    with open(_ENV_FILE, encoding="utf-8") as f:
+    with open(env_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -169,17 +244,20 @@ def write_env(data: dict[str, str]) -> None:
     参数：
         data — 要写入/更新的 {key: value} 字典
     """
-    (_ROOT / "data").mkdir(exist_ok=True)
+    root = _get_root()
+    env_file = _get_env_file()
 
-    if not _ENV_FILE.exists():
-        example = _ROOT / ".env.example"
+    (root / "data").mkdir(exist_ok=True)
+
+    if not env_file.exists():
+        example = root / ".env.example"
         if example.exists():
             import shutil
-            shutil.copy(example, _ENV_FILE)
+            shutil.copy(example, env_file)
         else:
-            _ENV_FILE.touch()
+            env_file.touch()
 
-    lines = _ENV_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = env_file.read_text(encoding="utf-8").splitlines(keepends=True)
     updated_keys: set[str] = set()
 
     for i, line in enumerate(lines):
@@ -198,7 +276,7 @@ def write_env(data: dict[str, str]) -> None:
         for k in new_keys:
             lines.append(f"{k}={data[k]}\n")
 
-    _ENV_FILE.write_text("".join(lines), encoding="utf-8")
+    env_file.write_text("".join(lines), encoding="utf-8")
 
 
 # =============================================================================
@@ -221,7 +299,14 @@ def check_python_version() -> CheckResult:
 
 
 def check_venv() -> CheckResult:
-    """检测 venv 虚拟环境是否已创建。"""
+    """
+    检测 venv 虚拟环境是否已创建。
+
+    打包模式下自动跳过（exe 自带 Python 运行时，无需虚拟环境）。
+    """
+    if _IS_FROZEN:
+        return CheckResult(ok=True, message="打包模式，无需虚拟环境")
+
     if _VENV_PYTHON.exists():
         return CheckResult(ok=True, message="虚拟环境已就绪", data={"path": str(_VENV_DIR)})
     return CheckResult(
@@ -236,7 +321,12 @@ def check_dependencies() -> CheckResult:
     """
     检测关键依赖是否已安装。
     通过 importlib.import_module 逐个探测，不调用 pip，速度快。
+
+    打包模式下自动跳过（exe 已包含所有依赖）。
     """
+    if _IS_FROZEN:
+        return CheckResult(ok=True, message="打包模式，所有依赖已内置")
+
     import importlib
 
     required = [
@@ -271,7 +361,8 @@ def check_dependencies() -> CheckResult:
 
 def check_env_file() -> CheckResult:
     """检测 .env 文件是否存在，且三个必填项均已填写。"""
-    if not _ENV_FILE.exists():
+    env_file = _get_env_file()
+    if not env_file.exists():
         return CheckResult(
             ok=False,
             message=".env 配置文件不存在",
@@ -305,27 +396,29 @@ def check_embedding_model() -> CheckResult:
         return CheckResult(
             ok=False,
             message="嵌入模型路径未填写",
-            detail="请在配置向导中填写嵌入模型的本地文件夹绝对路径。",
+            detail="请在配置向导中填写嵌入模型的本地文件夹绝对路径（路径分隔符请使用 / ）。",
         )
 
     model_path = Path(path_str)
+    # 统一显示路径使用正斜杠，保持跨平台一致性
+    display_path = path_str.replace("\\", "/")
     if not model_path.exists():
         return CheckResult(
             ok=False,
             message="嵌入模型路径不存在",
-            detail=f"路径 {model_path} 不存在。请确认模型已下载并填写正确的文件夹路径。",
-            data={"path": str(model_path)},
+            detail=f"路径 {display_path} 不存在。请确认模型已下载并填写正确的文件夹路径。",
+            data={"path": display_path},
         )
 
     if not (model_path / "config.json").exists():
         return CheckResult(
             ok=False,
             message="嵌入模型文件不完整",
-            detail=f"目录 {model_path} 中未找到 config.json，模型可能下载不完整。",
-            data={"path": str(model_path)},
+            detail=f"目录 {display_path} 中未找到 config.json，模型可能下载不完整。",
+            data={"path": display_path},
         )
 
-    return CheckResult(ok=True, message="嵌入模型路径有效", data={"path": str(model_path)})
+    return CheckResult(ok=True, message="嵌入模型路径有效", data={"path": display_path})
 
 
 def check_inference_service() -> CheckResult:
@@ -383,17 +476,18 @@ def check_database() -> CheckResult:
         若有缺失，说明数据库是旧版本且迁移未完成，
         返回警告（ok=False）并告知用户运行 setup_db.py 修复。
     """
-    if not _DB_PATH.exists():
+    db_path = _get_db_path()
+    if not db_path.exists():
         return CheckResult(
             ok=False,
             message="数据库不存在",
             detail="首次启动时将自动初始化数据库，无需手动创建。",
-            data={"path": str(_DB_PATH), "needs_init": True},
+            data={"path": str(db_path), "needs_init": True},
         )
 
     # ── integrity_check ──────────────────────────────────────────────────────
     try:
-        conn = sqlite3.connect(str(_DB_PATH))
+        conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -406,7 +500,7 @@ def check_database() -> CheckResult:
                 ok=False,
                 message="数据库文件损坏",
                 detail="\n".join(results),
-                data={"path": str(_DB_PATH), "needs_init": False},
+                data={"path": str(db_path), "needs_init": False},
             )
 
     except sqlite3.DatabaseError as e:
@@ -432,7 +526,7 @@ def check_database() -> CheckResult:
                 f"缺失：{', '.join(sorted(missing_tables))}\n"
                 f"修复：python scripts/setup_db.py"
             ),
-            data={"path": str(_DB_PATH), "needs_init": False},
+            data={"path": str(db_path), "needs_init": False},
         )
 
     # ── v0.6.0 新增：关键列校验 ──────────────────────────────────────────────
@@ -465,7 +559,7 @@ def check_database() -> CheckResult:
                 f"（幂等操作，不会删除已有数据）"
             ),
             data={
-                "path": str(_DB_PATH),
+                "path": str(db_path),
                 "needs_init": False,
                 "missing_columns": missing_columns,
             },
@@ -474,7 +568,7 @@ def check_database() -> CheckResult:
     return CheckResult(
         ok=True,
         message="数据库完整",
-        data={"path": str(_DB_PATH), "needs_init": False},
+        data={"path": str(db_path), "needs_init": False},
     )
 
 

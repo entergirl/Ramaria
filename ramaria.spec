@@ -41,15 +41,12 @@ datas = [
     (str(ROOT / "static"),          "static"),
     # 配置模板（用户未创建 persona.toml 时的提示）
     (str(ROOT / "config"),          "config"),
-    # 数据库初始化脚本（admin.py 以子进程调用）
+    # 数据库初始化脚本（打包模式下由 db_initializer 进程内调用）
     (str(ROOT / "scripts"),         "scripts"),
-    # .env.example 模板（首次启动时复制生成 .env）
+    # .env.example 模板（首次启动时复制生成空 .env，引导用户填写）
+    # 注意：不打包 .env 本身，避免开发者配置泄露到用户环境
     (str(ROOT / ".env.example"),    "."),
 ] + chromadb_datas
-
-# 如果存在 .env 文件，也打包进去（作为默认配置）
-if (ROOT / ".env").exists():
-    datas.append((str(ROOT / ".env"), "."))
 
 # =============================================================================
 # 隐式导入：PyInstaller 分析不到、但运行时需要的模块

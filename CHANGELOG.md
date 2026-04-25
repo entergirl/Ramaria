@@ -1,5 +1,70 @@
 # 变更日志
 
+## [0.6.0] - 2026-04-25
+
+### 新增功能
+
+#### EXE 一键分发
+- 打包为 PyInstaller 文件夹模式 exe，用户无需安装 Python 或任何依赖，双击即可使用
+- `ramaria.spec` 不再打包开发者 `.env`，仅包含 `.env.example` 模板，避免配置泄露
+- `app/bundle.py` 作为桌面版主入口，集成 pywebview 窗口 + 系统托盘 + 后台 FastAPI 服务
+- 打包模式下 `db_initializer.py` 改为进程内调用 `setup_db.main()`，避免 subprocess 执行 `.py` 文件失败
+- 打包模式下自动跳过 venv / 依赖检测（exe 已包含全部运行时）
+
+#### 首次启动配置向导
+- 首次运行时自动进入配置向导页面（5 步引导：推理服务 → 嵌入模型 → 人格配置 → 可选配置 → 完成）
+- `env_checker.py` 路径常量改为延迟计算 + 缓存，打包模式下从 `ramaria.config` 动态获取正确路径
+- `admin.py` 路径常量区分打包/开发模式，静态文件从 `_MEIPASS` 加载，用户数据从 exe 同级目录加载
+- 配置向导完成后自动初始化数据库，随后跳转聊天界面
+
+#### 配置热更新
+- `write_env()` 写入 `.env` 文件后同步更新 `os.environ`，当前进程立即可读
+- `admin_save_config()` 保存配置后调用 `_reload_config_values()` 刷新 `ramaria.config` 模块级常量
+- `llm_client.py` 改用 `from ramaria import config as _config` 模块引用，不再绑定 import 时的旧值
+- 模型名称、API 地址等配置修改后无需重启服务即可生效
+
+---
+
+### 修复
+
+#### 打包模式启动报错（UnicodeEncodeError）
+- 修复 `setup_db.py` 中的 emoji 字符（`✅`/`❌`）在 Windows GBK 控制台下的编码错误
+- 开发模式 subprocess 调用添加 `PYTHONIOENCODING=utf-8` 环境变量
+
+#### 首次运行跳过配置向导
+- 修复 `.env` 被打包进 exe 导致首次运行时误判配置完整的问题
+- 修复 `bundle.py` `_load_dotenv()` 将开发者配置复制到用户目录的问题
+- 首次运行时不再创建空 `.env`，让 `can_start_directly()` 自然判定需要引导
+
+#### 模型名称配置不生效
+- 修复配置向导保存 `LOCAL_MODEL_NAME` 后仍使用默认值 `qwen/qwen3.5-9b` 的问题
+- 根因：`write_env()` 只写文件不更新 `os.environ`，`ramaria.config` 模块变量不刷新，`llm_client.py` 使用 import 绑定旧值
+
+#### 思考模式干扰对话输出
+- 修复 gemma 等模型默认启用思考模式后，`<think〉...<／think〉` 标签出现在对话回复中的问题
+- 新增 `_remove_think_tags()` 通用函数，在 `_call()` 中统一剥离思考链标签
+- `strip_thinking()` 拆分为标签剥离 + JSON 截断两步，摘要类任务继续使用，对话类任务只做标签剥离
+- 预编译正则 `_THINK_TAG_RE` 提升匹配性能
+
+#### 路径分隔符不统一
+- 向量模型路径提示信息中 `\` 统一替换为 `/`，保持跨平台一致性
+- 配置向导输入时实时将 `\` 转换为 `/`
+- `.env.example` 路径示例改为正斜杠格式
+
+---
+
+### 改进优化
+
+#### 数据库列级校验
+- `check_database()` 新增关键列校验，检测 v0.3.x 之前数据库缺少的新增字段
+- 缺失字段时返回具体修复建议，引导运行 `setup_db.py` 迁移
+
+#### 端口检测修复
+- 修复 FastAPI 服务启动后 `check_port()` 永远报告端口被占用的问题
+- 使用 psutil 检查占用进程是否为自身，本进程占用视为正常
+
+---
+
 ## [0.5.0] - 2026-04-19
 
 ### 新增功能

@@ -1,4 +1,4 @@
-# 快速开始
+# 快速开始（从源码运行）
 
 本章节帮助你从零完成珊瑚菌的安装与启动。按顺序执行每个步骤，遇到报错请直接查阅文末的[常见问题](#常见问题)。
 
@@ -49,13 +49,12 @@ cd Ramaria
 
 ### Windows
 
-  1. 进入项目根目录，右键窗口空白处选择 `在终端中打开`
-  2. 运行安装脚本：
+1. 进入项目根目录，右键窗口空白处选择 `在终端中打开`
+2. 运行安装脚本：
 
 ```bash
 python win/install.py
 ```
-
 
 ### Linux
 
@@ -97,12 +96,13 @@ LOCAL_API_URL=http://localhost:1234/v1/chat/completions
 
 # 模型名称，必须与推理服务中实际加载的模型名称完全一致
 # 在 LM Studio 的 Local Server 页面可以查看当前加载的模型名称
-LOCAL_MODEL_NAME=qwen/qwen3.5-9b   #(LM studio) 
+LOCAL_MODEL_NAME=qwen/qwen3.5-9b   #(LM Studio)
 # 或者
 LOCAL_MODEL_NAME=qwen3.5:9b        #(Ollama)
 
 # 嵌入模型的本地文件夹路径（第四步会说明如何获取）
-# Windows 示例：F:\models\Qwen3-Embedding-0.6B
+# 路径分隔符请使用正斜杠 / （兼容所有操作系统）
+# Windows 示例：D:/models/Qwen3-Embedding-0.6B
 # Linux/macOS 示例：/home/user/models/Qwen3-Embedding-0.6B
 EMBEDDING_MODEL=
 ```
@@ -154,19 +154,21 @@ export HF_ENDPOINT=https://hf-mirror.com
 set HF_ENDPOINT=https://hf-mirror.com
 ```
 
-**方法二：手动下载 （推荐）**
+**方法二：手动下载（推荐）**
 
-访问 https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B ，点击页面上的文件列表，将全部文件下载后放入同一个文件夹（如 `F:\models\Qwen3-Embedding-0.6B`）。
+访问 https://hf-mirror.com/Qwen/Qwen3-Embedding-0.6B ，点击页面上的文件列表，将全部文件下载后放入同一个文件夹（如 `D:/models/Qwen3-Embedding-0.6B`）。
 
 ### 填写路径
 
 下载完成后，将模型**文件夹**的完整绝对路径填入 `.env`：
 
 ```ini
-EMBEDDING_MODEL=F:\models\Qwen3-Embedding-0.6B
+EMBEDDING_MODEL=D:/models/Qwen3-Embedding-0.6B
 ```
 
 **验证路径正确的方法**：打开该路径对应的文件夹，里面应能看到 `config.json`、`tokenizer.json` 等文件。如果这些文件存在，路径就是正确的。
+
+> 📝 **提示**：路径分隔符请统一使用正斜杠 `/`（如 `D:/models/...`），兼容所有操作系统。
 
 ---
 
@@ -185,8 +187,8 @@ EMBEDDING_MODEL=F:\models\Qwen3-Embedding-0.6B
 ### Ollama
 
 ```bash
-# 首次使用，拉取模型（以 qwen2.5:7b 为例）
-ollama pull qwen2.5:7b
+# 首次使用，拉取模型（以 qwen3.5:7b 为例）
+ollama pull qwen3.5:7b
 
 # 启动服务（保持此终端不关闭）
 ollama serve
@@ -208,13 +210,18 @@ http://localhost:1234/v1/models
 
 ### Windows
 
- 1. 通过启动脚本启动
-```
+1. 通过启动脚本启动（推荐，会自动检查环境）：
+```bash
 python win/start.py
 ```
 
- 2. 跳过配置检测直接启动
+2. 通过桌面版入口启动（pywebview 窗口 + 系统托盘）：
+```bash
+python app/bundle.py
 ```
+
+3. 跳过配置检测直接启动：
+```bash
 python app/main.py
 ```
 
@@ -236,6 +243,12 @@ bash mac/start.sh
 
 ## 第七步：访问界面
 
+### 使用 bundle.py 启动
+
+自动弹出 pywebview 桌面窗口。首次运行会进入配置向导页面。
+
+### 使用 app/main.py 启动
+
 服务启动成功后，终端会出现：
 
 ```
@@ -249,6 +262,7 @@ INFO:     Application startup complete.
 |------|------|
 | 本机访问 | http://localhost:8000 |
 | 局域网内其他设备 | http://\<本机IP\>:8000 |
+| 配置向导 | http://localhost:8000/api/admin/setup/page |
 
 ---
 
@@ -343,22 +357,10 @@ venv\Scripts\pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 使用了旧版 `pyproject.toml`，`logger.py` 和 `constants.py` 未被正确安装。
 
-解决：确认使用最新版 `pyproject.toml`（v0.3.6-hotfix），然后重新安装：
+解决：确认使用最新版 `pyproject.toml`，然后重新安装：
 ```bash
 pip install -e .
 ```
-
----
-
-**Q：提示 `RuntimeError: Form data requires "python-multipart" to be installed`**
-
-旧版 `pyproject.toml` 遗漏了 `python-multipart` 依赖。
-
-解决：
-```bash
-pip install python-multipart
-```
-或更新 `pyproject.toml` 后重新 `pip install -e .`。
 
 ---
 
@@ -386,7 +388,7 @@ bash mac/install.sh    # macOS
 解决：
 1. 确认嵌入模型已完整下载（文件夹内有 `config.json`、`tokenizer.json` 等文件）
 2. 确认填写的是**文件夹**的完整绝对路径，而非相对路径或某个具体文件的路径
-3. Windows 路径中的反斜杠和正斜杠均可，但不能有多余空格
+3. 路径分隔符请使用正斜杠 `/`（如 `D:/models/Qwen3-Embedding-0.6B`）
 
 ---
 
@@ -420,6 +422,14 @@ bash mac/install.sh    # macOS
 1. 确认 LM Studio / Ollama 正在运行且已加载模型
 2. 在浏览器访问 `http://localhost:1234/v1/models`，确认返回 JSON 数据
 3. 确认 `LOCAL_MODEL_NAME` 与推理服务中加载的模型名称完全一致（区分大小写）
+
+---
+
+**Q：修改模型名称后仍然使用旧模型**
+
+配置修改后立即生效，无需重启服务。如果仍然使用旧模型，请确认：
+1. 模型名称与推理服务中加载的模型名称完全一致（区分大小写）
+2. 在 LM Studio 的 Local Server 页面查看当前加载的模型标识符
 
 ---
 

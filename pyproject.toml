@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ramaria"
-version = "0.5.0"
+version = "0.6.0"
 description = "珊瑚菌 - 本地运行的个人 AI 陪伴记忆系统"
 readme = "README.md"
 license = { text = "MIT" }

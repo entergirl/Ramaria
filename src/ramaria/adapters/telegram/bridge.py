@@ -79,7 +79,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "烧酒，我是黎杋枫 🍄\n"
+        "烧酒，我是黎杋枫 🪸\n"
         "通过 Telegram 跟你聊天，跟在网页上一样。\n"
         "直接发消息就好啦~"
     )
@@ -207,7 +207,7 @@ def main():
         return
 
     print("=" * 50)
-    print("🍄 RAMARIA Telegram Bridge 启动中...")
+    print("🪸 RAMARIA Telegram Bridge 启动中...")
     print(f"   RAMARIA 地址：{RAMARIA_API_URL}")
     print(f"   白名单用户ID：{ALLOWED_USER_ID or '未设置（所有人可用）'}")
     print("=" * 50)

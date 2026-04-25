@@ -3,10 +3,10 @@ src/ramaria/core/llm_client.py — 本地模型调用公共模块
 
 职责：
     1. 封装对本地模型服务（Ollama / LM Studio）的 HTTP 请求
-    2. 提供 strip_thinking() 工具函数，剥离本地模型输出中的思考链
+    2. 提供思考链剥离工具函数
 
 对外暴露三个函数：
-    strip_thinking()     — 剥离模型思考链，返回纯 JSON 文本
+    strip_thinking()     — 剥离模型思考链，提取 JSON 文本（摘要类任务用）
     call_local_summary() — 摘要类任务（L1/L2 生成、冲突检测、画像提取）
     call_local_chat()    — 对话类任务（日常聊天，需要更长回复空间）
 
@@ -17,13 +17,7 @@ import re
 
 import requests
 
-from ramaria.config import (
-    LOCAL_API_URL,
-    LOCAL_MAX_TOKENS_CHAT,
-    LOCAL_MAX_TOKENS_SUMMARY,
-    LOCAL_MODEL_NAME,
-    LOCAL_TEMPERATURE,
-)
+from ramaria import config as _config
 
 from ramaria.logger import get_logger
 
@@ -34,14 +28,38 @@ logger = get_logger(__name__)
 # 工具函数：思考链剥离
 # =============================================================================
 
+# 预编译正则：匹配 <think〉...<／think〉 标签（含属性变体）
+_THINK_TAG_RE = re.compile(
+    r'<think\b[^>]*>.*?</think\s*>',
+    flags=re.DOTALL | re.IGNORECASE,
+)
+
+
+def _remove_think_tags(text: str) -> str:
+    """
+    剥离文本中的 <think〉...<／think〉 标签及其内容。
+
+    部分模型（如 gemma 系列）默认启用思考模式，返回内容中
+    包含 <think〉...<／think〉 标签。此函数将其移除，
+    只保留标签之后的实际回复内容。
+
+    适用于所有模型输出（摘要类 + 对话类），
+    在 _call() 中统一调用，确保下游无需处理思考链。
+    """
+    return _THINK_TAG_RE.sub('', text).lstrip()
+
+
 def strip_thinking(raw_text: str) -> str:
     """
     剥离模型输出中的思考链内容，只保留 JSON 部分。
 
+    适用于摘要类任务（L1/L2 生成、冲突检测、画像提取等），
+    模型输出应包含 JSON 格式的结构化数据。
+
     支持三种格式：
 
         格式一：标签格式（思考链模式开启时）
-            输入：<think>\\n这是思考过程\\n</think>\\n{"summary": "..."}
+            输入：<think〉\\n这是思考过程\\n<／think〉\\n{"summary": "..."}
             输出：{"summary": "..."}
 
         格式二：纯文本前缀格式（模型直接以推理步骤开头）
@@ -59,13 +77,8 @@ def strip_thinking(raw_text: str) -> str:
     返回：
         str — 剥离思考链后的文本（已去除首尾空白）
     """
-    # 第一步：处理标签格式的思考链
-    cleaned = re.sub(
-        r'<think>.*?</think>',
-        '',
-        raw_text,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+    # 第一步：剥离 <think〉...<／think〉 标签
+    cleaned = _remove_think_tags(raw_text)
 
     # 第二步：处理纯文本前缀格式
     # 同时查找 { 和 [ 的位置，取更靠前的那个作为 JSON 起点
@@ -105,7 +118,7 @@ def call_local_summary(
         str  — 模型回复的文本内容（已去除首尾空白）
         None — 任何网络或解析错误时返回 None
     """
-    return _call(messages, LOCAL_MAX_TOKENS_SUMMARY, caller)
+    return _call(messages, _config.LOCAL_MAX_TOKENS_SUMMARY, caller)
 
 
 def call_local_chat(
@@ -127,7 +140,7 @@ def call_local_chat(
         str  — 模型回复的文本内容（已去除首尾空白）
         None — 任何网络或解析错误时返回 None
     """
-    return _call(messages, LOCAL_MAX_TOKENS_CHAT, caller)
+    return _call(messages, _config.LOCAL_MAX_TOKENS_CHAT, caller)
 
 
 # =============================================================================
@@ -150,23 +163,34 @@ def _call(
     返回：str 或 None
     """
     payload = {
-        "model":       LOCAL_MODEL_NAME,
+        "model":       _config.LOCAL_MODEL_NAME,
         "messages":    messages,
-        "temperature": LOCAL_TEMPERATURE,
+        "temperature": _config.LOCAL_TEMPERATURE,
         "max_tokens":  max_tokens,
         # 关闭流式，避免 Ollama 下首 token 丢失导致回复截断
         "stream":      False,
     }
 
+    api_url = _config.LOCAL_API_URL
+
     try:
-        response = requests.post(LOCAL_API_URL, json=payload, timeout=120)
+        response = requests.post(api_url, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+        raw_content = data["choices"][0]["message"]["content"].strip()
+
+        # 统一剥离 <think〉...<／think〉 标签
+        # 部分模型（如 gemma 系列）默认启用思考模式，
+        # 返回内容中包含思考链标签。在此统一移除，
+        # 确保下游只处理实际回复内容。
+        # 注意：这里只做标签剥离，不做 JSON 截断。
+        # 摘要类任务需要在拿到返回值后额外调用 strip_thinking() 处理。
+        cleaned = _remove_think_tags(raw_content)
+        return cleaned
 
     except requests.exceptions.ConnectionError:
         logger.error(
-            f"[caller={caller}] 无法连接到本地模型（{LOCAL_API_URL}），"
+            f"[caller={caller}] 无法连接到本地模型（{api_url}），"
             f"请确认服务已启动"
         )
         return None

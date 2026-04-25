@@ -81,6 +81,49 @@ class ConfigPayload(BaseModel):
 # 通用响应构建
 # =============================================================================
 
+def _reload_config_values(values: dict[str, str]) -> None:
+    """
+    配置保存后刷新 ramaria.config 模块级常量。
+
+    ramaria.config 中的变量（LOCAL_MODEL_NAME 等）是模块级常量，
+    在 import 时从 os.environ.get() 读取一次，后续不会自动更新。
+    此函数在 .env 写入后手动同步这些变量，使 llm_client 等模块
+    无需重启即可使用新值。
+    """
+    import ramaria.config as config
+
+    _CONFIG_KEY_MAP = {
+        "LOCAL_API_URL":            "LOCAL_API_URL",
+        "LOCAL_MODEL_NAME":         "LOCAL_MODEL_NAME",
+        "LOCAL_TEMPERATURE":        "LOCAL_TEMPERATURE",
+        "LOCAL_MAX_TOKENS_SUMMARY": "LOCAL_MAX_TOKENS_SUMMARY",
+        "LOCAL_MAX_TOKENS_CHAT":    "LOCAL_MAX_TOKENS_CHAT",
+        "SERVER_HOST":              "SERVER_HOST",
+        "SERVER_PORT":              "SERVER_PORT",
+        "EMBEDDING_MODEL":          "EMBEDDING_MODEL",
+        "ANTHROPIC_API_KEY":        "ANTHROPIC_API_KEY",
+        "WEATHER_CITY":             "WEATHER_CITY",
+    }
+
+    _TYPE_CONVERTERS = {
+        "LOCAL_TEMPERATURE":        float,
+        "LOCAL_MAX_TOKENS_SUMMARY": int,
+        "LOCAL_MAX_TOKENS_CHAT":    int,
+        "SERVER_PORT":              int,
+    }
+
+    for env_key, config_attr in _CONFIG_KEY_MAP.items():
+        if env_key in values:
+            new_value = values[env_key]
+            converter = _TYPE_CONVERTERS.get(config_attr)
+            if converter:
+                try:
+                    new_value = converter(new_value)
+                except (ValueError, TypeError):
+                    continue
+            setattr(config, config_attr, new_value)
+
+
 def _ok(message: str = "ok", data: dict | None = None) -> JSONResponse:
     return JSONResponse({"ok": True, "message": message, "data": data or {}})
 
@@ -139,6 +182,9 @@ async def admin_save_config(payload: ConfigPayload):
     except Exception as e:
         logger.error(f"写入 .env 失败 — {e}")
         return _fail("写入配置失败", detail=str(e))
+
+    # 刷新 ramaria.config 模块级常量，使 llm_client 等模块立即使用新值
+    _reload_config_values(payload.values)
 
     from app.core.env_checker import check_embedding_model, check_env_file
     return JSONResponse({

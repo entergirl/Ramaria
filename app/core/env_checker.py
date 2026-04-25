@@ -278,6 +278,10 @@ def write_env(data: dict[str, str]) -> None:
 
     env_file.write_text("".join(lines), encoding="utf-8")
 
+    # 同步更新 os.environ，使当前进程中的 os.environ.get() 能读到最新值
+    for k, v in data.items():
+        os.environ[k] = v
+
 
 # =============================================================================
 # 各项检测函数

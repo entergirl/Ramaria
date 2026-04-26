@@ -1,5 +1,30 @@
 # 变更日志
 
+## [0.6.1] - 2026-04-26
+
+### 修复
+
+#### 打包后 Python310.dll 加载失败
+- 禁用 UPX 压缩（UPX 会损坏 Python DLL）
+- 添加 runtime hook (`scripts/_runtime_hook.py`) 修复 DLL 加载路径
+- 自动收集 VC++ 运行时 DLL（`vcruntime140.dll`、`msvcp140.dll` 等）
+- `scripts/collect_dlls.py` 在打包后自动复制必要的运行时库
+
+#### 打包后 WebView2 窗口未弹出
+- 添加 `WebView2Loader.dll` 到打包文件列表
+- pywebview 在 Windows 上依赖 Edge WebView2 Runtime
+
+---
+
+### 工程改善
+
+#### 构建脚本优化
+- 重构 `build.bat`，精简步骤，自动生成 `dist/Ramaria-win-x64.zip` 发行包
+- 配置文件复制改为只复制 `.example` 模板，不包含开发者测试配置
+- 打包脚本统一存放至 `scripts/` 目录
+
+---
+
 ## [0.6.0] - 2026-04-25
 
 ### 新增功能

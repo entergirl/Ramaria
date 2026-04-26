@@ -136,6 +136,15 @@ Ramaria.exe  ← 主程序
 
 ## 常见问题
 
+### Q: 启动时报错"Failed to load Python DLL"
+
+这是因为目标电脑缺少 Visual C++ 运行时库。
+
+**解决方法**：下载并安装 Microsoft Visual C++ Redistributable：
+- [Visual C++ Redistributable 2015-2022 (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+
+安装后重新启动程序即可。
+
 ### Q: 启动后显示"服务启动失败"或空白页面
 
 请检查：

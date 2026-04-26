@@ -121,6 +121,9 @@ hiddenimports = [
     "psutil",
     "requests",
     "winreg",        # Windows 注册表（仅 Windows 可用）
+    # 消除警告的模块
+    "email_validator",   # FastAPI EmailStr 类型需要
+    "pycparser",         # CFFI 依赖
 ] + chromadb_hiddenimports
 
 # =============================================================================
@@ -158,15 +161,45 @@ excludes = [
 # PyInstaller 打包配置
 # =============================================================================
 
+# 收集 Python DLL 和运行时库（解决 python310.dll 加载失败）
+import sysconfig
+import os
+
+python_dir = sysconfig.get_path("scripts").replace("\\Scripts", "")
+
+extra_binaries = []
+if sys.platform == "win32":
+    # Python DLL
+    python_dll = sysconfig.get_config_var("LDLIBRARY") or "python310.dll"
+    python_dll_path = str(Path(python_dir) / python_dll)
+    if Path(python_dll_path).exists():
+        extra_binaries.append((python_dll_path, "."))
+
+    # 收集 DLLs 目录下的所有 DLL（C 运行时库等）
+    dlls_dir = Path(python_dir) / "DLLs"
+    if dlls_dir.exists():
+        for dll in dlls_dir.glob("vcruntime*.dll"):
+            extra_binaries.append((str(dll), "."))
+        for dll in dlls_dir.glob("msvcp*.dll"):
+            extra_binaries.append((str(dll), "."))
+        for dll in dlls_dir.glob("python*.dll"):
+            if str(dll) not in [p for p, _ in extra_binaries]:
+                extra_binaries.append((str(dll), "."))
+        # WebView2Loader.dll (pywebview 需要)
+        webview2_dll = dlls_dir / "WebView2Loader.dll"
+        if webview2_dll.exists():
+            extra_binaries.append((str(webview2_dll), "."))
+
+
 a = Analysis(
     scripts    = [str(ROOT / "app" / "bundle.py")],
     pathex     = [str(ROOT), str(ROOT / "src")],
-    binaries   = chromadb_binaries,
+    binaries   = chromadb_binaries + extra_binaries,
     datas      = datas,
     hiddenimports = hiddenimports,
     hookspath  = [],
     hooksconfig= {},
-    runtime_hooks = [],
+    runtime_hooks = [str(ROOT / "scripts" / "_runtime_hook.py")],
     excludes   = excludes,
     noarchive  = False,
 )
@@ -182,8 +215,8 @@ exe = EXE(
     debug            = False,
     bootloader_ignore_signals = False,
     strip            = False,
-    upx              = True,         # UPX 压缩，减小体积（需要安装 UPX）
-    console          = True,         # 临时开启控制台以便调试
+    upx              = False,        # UPX 压缩已禁用（会导致 python310.dll 损坏）
+    console          = True,         # 显示控制台窗口用于调试
     disable_windowed_traceback = False,
     target_arch      = None,
     codesign_identity = None,
@@ -196,7 +229,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip    = False,
-    upx      = True,
+    upx      = False,
     upx_exclude = [],
     name     = "Ramaria",
 )

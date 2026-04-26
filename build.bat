@@ -1,92 +1,52 @@
 @echo off
 cd /d "%~dp0"
+setlocal EnableDelayedExpansion
 
-REM Find Python (venv first, then system)
-set PYTHON=
+REM ================================================
+REM   Ramaria Release Build Script
+REM ================================================
+
+REM Find Python (venv first)
+set "PYTHON="
 if exist "venv\Scripts\python.exe" (
-    set PYTHON=venv\Scripts\python.exe
-    echo [Info] Using venv Python
+    set "PYTHON=venv\Scripts\python.exe"
 ) else (
-    set PYTHON=python
-    echo [Info] Using system Python
+    set "PYTHON=python"
 )
 
-echo ================================================
-echo   Ramaria Build Script
-echo ================================================
-echo.
-echo [Step 1] Check Python...
-%PYTHON% --version
-if errorlevel 1 goto error_python
-
-echo.
-echo [Step 2] Check PyInstaller...
-%PYTHON% -m PyInstaller --version
-if errorlevel 1 goto error_pyinstaller
-
-echo.
-echo [Step 3] Clean old builds...
+echo [1/5] Cleaning old builds...
 if exist "dist\Ramaria" rmdir /s /q "dist\Ramaria"
 if exist "build\Ramaria" rmdir /s /q "build\Ramaria"
+if exist "Ramaria*.zip" del /q "Ramaria*.zip"
 
-echo.
-echo [Step 4] Building... (This may take 2-5 minutes)
+echo [2/5] Building (2-5 min)...
 %PYTHON% -m PyInstaller ramaria.spec --noconfirm
-if errorlevel 1 goto error_build
+if errorlevel 1 goto :error
 
-echo.
-echo [Step 5] Copy config files...
-if exist "dist\Ramaria" (
-    if not exist "dist\Ramaria\config" mkdir "dist\Ramaria\config"
-    xcopy /Y /E "config\*" "dist\Ramaria\config\" >nul 2>&1
-    echo [OK] Config files copied
-)
+echo [3/5] Copying config templates...
+if not exist "dist\Ramaria\config" mkdir "dist\Ramaria\config"
+copy /Y "config\persona.toml.example" "dist\Ramaria\config\persona.toml" >nul 2>&1
+if exist ".env.example" copy /Y ".env.example" "dist\Ramaria\.env" >nul 2>&1
 
-echo.
-echo [Step 5b] Copy .env file...
-if exist "dist\Ramaria" (
-    if exist ".env" (
-        copy /Y ".env" "dist\Ramaria\.env" >nul 2>&1
-        echo [OK] .env file copied
-    ) else (
-        echo [Warning] .env not found, copying .env.example instead
-        copy /Y ".env.example" "dist\Ramaria\.env" >nul 2>&1
-    )
-)
+echo [4/5] Collecting VC++ runtime DLLs...
+%PYTHON% scripts\collect_dlls.py >nul 2>&1
 
-echo.
-echo [Step 6] Generate readme...
-if exist "dist\Ramaria" (
-    echo Ramaria Distribution Package > "dist\Ramaria\README.txt"
-    echo. >> "dist\Ramaria\README.txt"
-    echo See README_QuickStart_Distribution.md for usage instructions. >> "dist\Ramaria\README.txt"
-)
+echo [5/5] Creating zip archive...
+powershell -Command "Compress-Archive -Path 'dist\Ramaria' -DestinationPath 'dist\Ramaria-win-x64.zip' -Force"
 
 echo.
 echo ================================================
-echo   Build Complete!
+echo   Done!
 echo ================================================
 echo.
-echo Output: dist\Ramaria\
+echo Output: dist\Ramaria-win-x64.zip
+powershell -Command "(Get-Item 'dist\Ramaria-win-x64.zip').Length / 1MB | ForEach-Object { 'Size: {0:N1} MB' -f $_ }"
 echo.
 pause
-exit
+exit /b 0
 
-:error_python
+:error
 echo.
-echo [Error] Python not found. Please install Python 3.10+
-pause
-exit /b 1
-
-:error_pyinstaller
-echo.
-echo [Error] PyInstaller not found. Please run:
-echo %PYTHON% -m pip install pyinstaller
-pause
-exit /b 1
-
-:error_build
-echo.
-echo [Error] Build failed.
+echo [ERROR] Build failed
 pause
 exit /b 1

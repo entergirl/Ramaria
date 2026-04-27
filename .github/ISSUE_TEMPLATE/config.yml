@@ -1,0 +1,15 @@
+# Issue 表单配置
+# 用于 GitHub Issue Templates 的全局设置
+
+contact_links:
+  - name: "📖 快速开始（一键启动）"
+    url: "https://github.com/entergirl/Ramaria/blob/main/README_快速开始（一键启动）.md"
+    about_url: "EXE一键启动包问题先看这里！"
+
+  - name: "📖 快速开始（从源码运行）"
+    url: "https://github.com/entergirl/Ramaria/blob/main/README_快速开始（从源码运行）.md"
+    about_url: "从源码运行相关问题先看这里！"
+
+  - name: "📋 已有问题汇总"
+    url: "https://github.com/entergirl/Ramaria/issues"
+    about_url: "不管什么问题都先看这里！"

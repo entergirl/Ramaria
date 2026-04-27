@@ -1,0 +1,125 @@
+name: "🔧 疑难杂症"
+description: "有不会的事？来问问我吧！"
+title: "[Help] "
+labels: ["question", "help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 👋 你好！
+
+        这个模板用于解决以下情况：
+
+        - 📖 README 中提到的功能，不知道如何开启/配置
+        - 🔌 第三方集成（如 MCP、Telegram Bot）配置不成功
+        - 💭 感觉应该能实现某个功能，但找不到方法
+        - ⚙️ 环境或依赖配置问题
+
+        **提问前**：
+        - [ ] 查看 [快速开始指南](README_快速开始（一键启动）.md) 或 [从源码运行指南](README_快速开始（从源码运行）.md)
+        - [ ] 查看 [已知问题汇总](https://github.com/entergirl/Ramaria/issues)
+        - [ ] 搜索过已有的 issue
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: "📂 问题分类"
+      options:
+        - "配置向导 / 首次启动"
+        - "本地模型接入（LM Studio / Ollama 等）"
+        - "嵌入模型配置"
+        - "MCP Server 集成"
+        - "Telegram Bot 桥接"
+        - "聊天记录导入"
+        - "记忆系统使用"
+        - "知识图谱"
+        - "Docker 部署"
+        - "移动端访问"
+        - "其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-want
+    attributes:
+      label: "🎯 想要达成什么？"
+      placeholder: |
+        描述你希望实现的目标
+
+        例如:
+        我想通过 Claude Desktop 访问珊瑚菌的记忆系统，
+        但不知道 MCP Server 怎么配置
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-tried
+    attributes:
+      label: "🔍 尝试过什么？"
+      placeholder: |
+        描述你已经尝试过的步骤
+
+        例如:
+        1. 在 Claude Desktop 中添加 MCP 服务器
+        2. 填入了 http://localhost:8000/mcp 作为地址
+        3. 提示连接失败
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "🤔 遇到了什么问题？"
+      placeholder: |
+        描述具体遇到的情况
+
+        例如:
+        提示 "Connection refused" 或
+        功能没有达到预期效果
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "💻 操作系统"
+      options:
+        - Windows 10/11
+        - Ubuntu / Debian
+        - 其他 Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: ramaria-version
+    attributes:
+      label: "📦 珊瑚菌版本"
+      placeholder: "v0.x.x"
+
+  - type: textarea
+    id: relevant-config
+    attributes:
+      label: "⚙️ 相关配置"
+      description: "贴出你认为可能相关的配置（注意脱敏）"
+      placeholder: |
+        例如 config/persona.toml 中的相关配置
+        或 .env 中的 API 地址等（非密钥部分）
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "📋 相关日志"
+      description: "来自终端或 logs/ramaria.log"
+      render: shell
+      placeholder: |
+        粘贴相关日志片段
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "✅ 已确认"
+      options:
+        - label: "本地推理服务正在运行"
+        - label: "程序可以正常启动并访问 Web 界面"
+        - label: "已阅读相关 README 章节"

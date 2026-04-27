@@ -1,0 +1,127 @@
+name: "🐛 问题反馈"
+description: "遇到问题了？一起来解决！"
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 👋 你好！
+
+        感谢反馈！开始之前：
+
+        - [ ] 查看 [已知问题汇总](https://github.com/entergirl/Ramaria/issues)
+        - [ ] 确认使用的是最新版本
+        - [ ] 搜索过已有 issue
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "💻 操作系统"
+      options:
+        - Windows 10/11
+        - Windows (其他版本)
+        - Ubuntu / Debian
+        - 其他 Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: ramaria-version
+    attributes:
+      label: "📦 珊瑚菌版本"
+      description: "启动界面或 exe 文件名显示的版本"
+      placeholder: "v0.x.x"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: "📥 安装方式"
+      options:
+        - "EXE 一键启动包（推荐）"
+        - "从源码运行"
+        - "Docker"
+        - "其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "🤔 发生了什么？"
+      placeholder: |
+        清楚描述问题
+
+        例如:
+        首次启动后，配置向导完成后进入聊天界面，但发送消息没有回应
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "🔄 复现步骤"
+      placeholder: |
+        1. 双击运行 Ramaria.exe
+        2. 完成配置向导
+        3. 进入聊天界面
+        4. 发送消息"你好"
+        5. 看到错误/无响应
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "✨ 期望结果"
+      placeholder: |
+        应该发生什么？
+
+  - type: dropdown
+    id: model-type
+    attributes:
+      label: "🤖 本地模型类型"
+      options:
+        - "LM Studio"
+        - "Ollama"
+        - "其他兼容 OpenAI API 的推理服务"
+        - "未配置"
+    validations:
+      required: true
+
+  - type: input
+    id: model-name
+    attributes:
+      label: "📝 模型名称"
+      description: "在推理服务中加载的模型名称"
+      placeholder: "e.g., llama-3.2-3b-instruct"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "📋 错误日志"
+      description: "来自终端窗口或日志文件 logs/ramaria.log"
+      render: shell
+      placeholder: |
+        粘贴错误信息
+
+        [ERROR] xxx
+        ...
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: "📸 截图"
+      description: "拖拽图片到这里（如有）"
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "✅ 检查清单"
+      options:
+        - label: "本地推理服务正在运行"
+        - label: "API 地址配置正确（http://localhost:1234）"
+        - label: "嵌入模型文件已下载并配置路径"
+        - label: "Web 界面可以访问（http://localhost:8000）"
+        - label: "尝试过重启程序"

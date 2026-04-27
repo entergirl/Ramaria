@@ -58,7 +58,7 @@ desktop.ini
 .idea/
 .codebuddy/
 .workbuddy/
-.github/
+.github/copilot-instructions.md
 importer/export.json
 
 # ============================================================
@@ -71,5 +71,5 @@ importer/export.json
 # ============================================================
 *.log
 logs/
-README_DISTRIBUTION.md
+CODE_REVIEW_REPORT.md
 .gitignore

@@ -222,6 +222,7 @@ def _patch_config_paths() -> None:
 # =============================================================================
 
 _uvicorn_thread: threading.Thread | None = None
+_uvicorn_server: "uvicorn.Server | None" = None  # 保存 server 引用，用于 shutdown
 
 
 def _start_uvicorn() -> None:
@@ -234,8 +235,9 @@ def _start_uvicorn() -> None:
         port      = _SERVER_PORT,
         log_level = "warning",
     )
-    server = uvicorn.Server(config)
-    server.run()
+    global _uvicorn_server
+    _uvicorn_server = uvicorn.Server(config)
+    _uvicorn_server.run()
 
 
 def _wait_for_service() -> bool:
@@ -245,16 +247,55 @@ def _wait_for_service() -> bool:
 
     url      = f"{_BASE_URL}/api/admin/status"
     deadline = time.time() + _MAX_WAIT_SECONDS
+    start_time = time.time()
+    poll_count = 0
+
+    print(f"\n  [启动] 等待后台服务就绪…")
+    print(f"  [启动] 确保本地模型推理服务已启动（LM Studio / Ollama）\n")
 
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1) as resp:
                 if resp.status == 200:
+                    elapsed = time.time() - start_time
+                    print(f"  [启动] ✓ 后台服务就绪 ({elapsed:.1f}s)")
                     return True
         except Exception:
             pass
+        
+        elapsed = time.time() - start_time
+        poll_count += 1
+        
+        # 每 10s 打印一次进度
+        if poll_count % 20 == 0:
+            remaining = _MAX_WAIT_SECONDS - elapsed
+            print(
+                f"  [启动] 仍在等待… ({elapsed:.0f}s/{_MAX_WAIT_SECONDS}s, "
+                f"剩余 {remaining:.0f}s)"
+            )
+        
         time.sleep(_POLL_INTERVAL)
 
+    elapsed = time.time() - start_time
+    print(f"\n  [错误] ❌ 启动超时（{elapsed:.0f}s）")
+    print(
+        f"\n  可能的原因：\n"
+        f"    1. 本地模型推理服务未启动\n"
+        f"       → 请先启动 LM Studio 或 Ollama\n\n"
+        f"    2. .env 中的配置不正确\n"
+        f"       → 检查 LOCAL_API_URL 是否指向推理服务\n"
+        f"       → 检查 LOCAL_MODEL_NAME 是否正确\n"
+        f"       → 检查 EMBEDDING_MODEL 路径是否存在\n\n"
+        f"    3. 嵌入模型加载缓慢\n"
+        f"       → 等待更长时间（2-3 分钟）再试\n"
+        f"       → 查看日志：logs/coral.log\n\n"
+        f"  调试步骤：\n"
+        f"    1. 查看日志文件了解详细错误：logs/coral.log\n"
+        f"    2. 尝试手动访问：{_BASE_URL}\n"
+        f"    3. 验证推理服务：\n"
+        f"       - LM Studio: http://localhost:1234/v1/models\n"
+        f"       - Ollama: http://localhost:11434/api/tags\n"
+    )
     return False
 
 
@@ -339,15 +380,32 @@ def _restart_service() -> None:
 # =============================================================================
 
 def _quit_app() -> None:
-    """彻底退出应用。"""
-    global _webview_window
+    """彻底退出应用，先优雅关闭服务再退出进程。"""
+    global _webview_window, _uvicorn_server
     import webview
+    from ramaria.logger import get_logger
 
+    logger = get_logger("bundle")
+
+    # 步骤1：优雅关闭 uvicorn 服务（触发 lifespan shutdown 释放资源）
+    if _uvicorn_server is not None:
+        try:
+            logger.info("正在关闭后台服务…")
+            # stop() 会触发 lifespan 的 shutdown 阶段，
+            # 正确关闭数据库连接、停止后台线程、释放端口
+            _uvicorn_server.stop()
+            logger.info("后台服务已关闭")
+        except Exception as e:
+            logger.warning(f"关闭服务时出错（可忽略）：{e}")
+
+    # 步骤2：销毁 webview 窗口
     try:
-        webview.windows[0].destroy()
+        if webview.windows:
+            webview.windows[0].destroy()
     except Exception:
         pass
 
+    # 步骤3：安全退出进程
     os._exit(0)
 
 
@@ -390,32 +448,81 @@ def main() -> None:
     )
     tray.start()
 
-    # 创建 webview 窗口
+    # 创建并启动 webview 窗口（增加异常处理）
     global _webview_window
 
-    _webview_window = webview.create_window(
-        title       = _TITLE,
-        url         = start_url,
-        width       = 1024,
-        height      = 720,
-        min_size    = (800, 600),
-        resizable   = True,
-        on_top      = False,
-    )
+    try:
+        logger.info(f"创建 WebView 窗口…")
+        _webview_window = webview.create_window(
+            title       = _TITLE,
+            url         = start_url,
+            width       = 1024,
+            height      = 720,
+            min_size    = (800, 600),
+            resizable   = True,
+            on_top      = False,
+            background_color = "#faf5f3",
+        )
+        logger.info(f"WebView 窗口创建成功，访问 {start_url}")
 
-    icon_arg = {}
-    if _ICON_PATH.exists():
-        icon_arg["icon"] = str(_ICON_PATH)
+        icon_arg = {}
+        if _ICON_PATH.exists():
+            icon_arg["icon"] = str(_ICON_PATH)
 
-    logger.info(f"打开窗口：{start_url}")
+        # 启动 WebView（主线程阻塞，直到用户关闭窗口）
+        webview.start(
+            http_server = False,
+            **icon_arg,
+        )
 
-    webview.start(
-        http_server = False,
-        **icon_arg,
-    )
+    except ImportError as e:
+        logger.error(f"❌ WebView2 库缺失或加载失败: {e}")
+        logger.info("降级方案：尝试用浏览器打开应用")
+        print(
+            f"\n[警告] WebView 创建失败，可能原因：\n"
+            f"  · Windows: 缺少 WebView2 Runtime\n"
+            f"  · 请访问: https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n"
+            f"  · 下载并安装 WebView2 Runtime\n\n"
+            f"临时方案：用浏览器访问：{_BASE_URL}\n"
+        )
+        try:
+            import webbrowser
+            webbrowser.open(start_url)
+            print("已为您打开浏览器，按 Ctrl+C 退出。")
+            import time
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+        except Exception as e2:
+            logger.error(f"浏览器打开也失败: {e2}")
+            print(f"请手动访问：{_BASE_URL}")
 
-    logger.info("窗口已关闭，程序退出")
-    os._exit(0)
+    except Exception as e:
+        logger.error(f"❌ WebView 启动异常: {e}")
+        logger.exception(e)
+        print(
+            f"\n[错误] 启动失败，详细信息见日志：logs/coral.log\n"
+            f"临时方案：用浏览器访问：{_BASE_URL}\n"
+        )
+        try:
+            import webbrowser
+            webbrowser.open(start_url)
+            print("已为您打开浏览器，按 Ctrl+C 退出。")
+            import time
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+        except Exception as e2:
+            logger.error(f"浏览器打开也失败: {e2}")
+            print(f"请手动访问：{_BASE_URL}")
+    
+    finally:
+        logger.info("窗口已关闭，程序退出")
+        _quit_app()
 
 
 # =============================================================================

@@ -31,16 +31,17 @@ if exist ".env.example" copy /Y ".env.example" "dist\Ramaria\.env" >nul 2>&1
 echo [4/5] Collecting VC++ runtime DLLs...
 %PYTHON% scripts\collect_dlls.py >nul 2>&1
 
-echo [5/5] Creating zip archive...
-powershell -Command "Compress-Archive -Path 'dist\Ramaria' -DestinationPath 'dist\Ramaria-win-x64.zip' -Force"
+REM echo [5/5] Creating zip archive...
+REM powershell -Command "Compress-Archive -Path 'dist\Ramaria' -DestinationPath 'dist\Ramaria-win-x64.zip' -Force"
+REM echo.
+echo [5/5] Skip compression (output: dist\Ramaria\)
 
 echo.
 echo ================================================
 echo   Done!
 echo ================================================
 echo.
-echo Output: dist\Ramaria-win-x64.zip
-powershell -Command "(Get-Item 'dist\Ramaria-win-x64.zip').Length / 1MB | ForEach-Object { 'Size: {0:N1} MB' -f $_ }"
+echo Output: dist\Ramaria\
 echo.
 pause
 exit /b 0

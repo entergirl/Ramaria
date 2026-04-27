@@ -353,7 +353,12 @@ async function pollStatus() {
         document.getElementById('btn-setup').style.display = 'none';
       } else {
         // 只有推理服务等"可选"项失败，继续轮询
-        setHint('部分检测未通过，继续等待…');
+        const inferenceCheck = checks['inference_service'];
+        if (inferenceCheck && !inferenceCheck.ok) {
+          setHint('推理服务未启动（LM Studio 或 Ollama），请先启动…');
+        } else {
+          setHint('部分检测未通过，继续等待…');
+        }
         setActionButton(true, '进入聊天界面', goToChat);
         showSetupButton();
       }

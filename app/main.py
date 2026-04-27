@@ -73,40 +73,70 @@ async def lifespan(app: FastAPI):
         1. 停止 AccessBoostWorker
         2. SessionManager.stop()（内部会停止 PushScheduler）
     """
+    import time
+    
+    logger.info("=" * 60)
     logger.info("应用启动中…")
+    logger.info("=" * 60)
+    
+    startup_start = time.time()
+
+    # 步骤 -1：验证关键资源
+    logger.info("[0/6] 验证应用资源…")
+    if not _HTML_FILE.exists():
+        logger.error(f"❌ 致命错误：前端文件缺失")
+        logger.error(f"   路径：{_HTML_FILE}")
+        logger.error(f"   请确认 static/ 目录完整，或重新拉取代码")
+        raise FileNotFoundError(f"前端文件缺失：{_HTML_FILE}")
+    else:
+        logger.info("      ✓ 前端资源就绪")
 
     # 步骤 0：确保数据库已初始化（PyInstaller exe 首次运行时自动初始化）
+    logger.info("[1/6] 检查数据库…")
     from app.core.db_initializer import ensure_db_ready
     ensure_db_ready()
 
     # 步骤1：数据库迁移
+    logger.info("[2/6] 数据库迁移…")
     from ramaria.storage.database import add_last_accessed_at_columns
     add_last_accessed_at_columns()
+    logger.info("      ✓ 数据库迁移完成")
 
     # 步骤2：启动访问回写线程
+    logger.info("[3/6] 启动访问回写线程…")
     from ramaria.storage.vector_store import _start_access_worker
     _start_access_worker()
+    logger.info("      ✓ 访问回写线程就绪")
 
     # 步骤3：BM25 索引预热
+    logger.info("[4/6] 预热 BM25 索引…")
     from ramaria.storage.vector_store import _bm25_index, _start_bm25_timer
+    t0 = time.time()
     _bm25_index.rebuild("l1")
     _bm25_index.rebuild("l2")
-    logger.info("BM25 索引预热完成")
+    logger.info(f"      ✓ BM25 索引预热完成 ({time.time() - t0:.2f}s)")
 
     # 步骤3.5：启动 BM25 后台定时重建线程（预热之后启动，避免启动时重复重建）
     _start_bm25_timer()
 
     # 步骤4：图谱加载
-    from ramaria.memory.graph_builder import load_graph_to_memory
-    load_graph_to_memory()
+    logger.info("[5/6] 加载知识图谱…")
+    try:
+        t0 = time.time()
+        from ramaria.memory.graph_builder import load_graph_to_memory
+        load_graph_to_memory()
+        logger.info(f"      ✓ 知识图谱加载完成 ({time.time() - t0:.2f}s)")
+    except Exception as e:
+        logger.warning(f"      ⚠ 知识图谱加载出错（可继续运行）: {e}")
 
     # 步骤5：SessionManager 启动
+    logger.info("[6/6] 启动 SessionManager…")
     from app.dependencies import session_manager
     session_manager.start()
+    logger.info("      ✓ SessionManager 启动完成")
 
     # 步骤6：PushScheduler 启动
-    # 注入三个运行时函数：广播、在线判断、获取当前 session_id
-    # 这三个函数都定义在 app/dependencies.py 或 app/routes/chat.py
+    logger.info("      启动 PushScheduler…")
     from ramaria.memory.push_scheduler import PushScheduler
     from app.dependencies import ws_broadcast, is_user_online
 
@@ -120,17 +150,25 @@ async def lifespan(app: FastAPI):
     # 将 scheduler 引用存入 session_manager，
     # 方便 stop() 时统一停止
     session_manager._push_scheduler = _push_scheduler
+    logger.info("      ✓ PushScheduler 启动完成")
 
-    logger.info(f"就绪，访问 http://localhost:{SERVER_PORT}")
+    total_time = time.time() - startup_start
+    logger.info("=" * 60)
+    logger.info(f"✓ 就绪 (总耗时: {total_time:.2f}s)")
+    logger.info(f"  访问 http://localhost:{SERVER_PORT}")
+    logger.info("=" * 60)
     yield
 
     # ── shutdown ──
+    logger.info("=" * 60)
     logger.info("关闭中…")
+    logger.info("=" * 60)
     from ramaria.storage.vector_store import _stop_access_worker, _stop_bm25_timer
     _stop_access_worker()
     _stop_bm25_timer() 
     session_manager.stop()
-    logger.info("已停止")
+    logger.info("✓ 已停止")
+    logger.info("=" * 60)
 
 
 # =============================================================================

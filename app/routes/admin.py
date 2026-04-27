@@ -404,3 +404,84 @@ async def get_persona_example():
             media_type="text/plain",
         )
     return Response(status_code=404, content="persona.toml.example 不存在")
+
+
+# =============================================================================
+# 诊断 API（用于故障排除）
+# =============================================================================
+
+@router.get("/api/admin/diagnostic")
+async def admin_diagnostic():
+    """
+    返回完整的诊断信息，帮助用户排查启动问题。
+    包括文件存在性、路径正确性、系统资源等。
+    """
+    from datetime import datetime
+    from pathlib import Path
+    
+    # 重要配置项
+    from ramaria.config import DB_PATH, CHROMA_DIR, EMBEDDING_MODEL, CONFIG_DIR, DATA_DIR
+    
+    diagnostics = {
+        "timestamp": datetime.now().isoformat(),
+        "is_frozen": getattr(sys, "frozen", False),  # 是否为打包版本
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        
+        # 文件路径检查
+        "paths": {
+            "database": {
+                "path": str(DB_PATH),
+                "exists": DB_PATH.exists(),
+                "size_mb": round(DB_PATH.stat().st_size / (1024*1024), 2) if DB_PATH.exists() else 0,
+                "writable": DB_PATH.parent.exists() and __import__('os').access(DB_PATH.parent, __import__('os').W_OK),
+            },
+            "chroma_db": {
+                "path": str(CHROMA_DIR),
+                "exists": CHROMA_DIR.exists(),
+                "writable": CHROMA_DIR.exists() and __import__('os').access(CHROMA_DIR, __import__('os').W_OK),
+            },
+            "embedding_model": {
+                "path": str(EMBEDDING_MODEL),
+                "exists": Path(EMBEDDING_MODEL).exists(),
+                "configured": bool(EMBEDDING_MODEL),
+            },
+            "config_dir": {
+                "path": str(CONFIG_DIR),
+                "exists": CONFIG_DIR.exists(),
+                "writable": CONFIG_DIR.exists() and __import__('os').access(CONFIG_DIR, __import__('os').W_OK),
+            },
+            "persona_toml": {
+                "path": str(CONFIG_DIR / "persona.toml"),
+                "exists": (CONFIG_DIR / "persona.toml").exists(),
+            },
+        },
+        
+        # 系统资源
+        "system": {
+            "platform": sys.platform,
+            "memory_available_mb": 0,  # 不依赖 psutil
+        },
+        
+        # 环境变量检查
+        "env_vars": {
+            "LOCAL_API_URL": bool(__import__('os').environ.get("LOCAL_API_URL")),
+            "LOCAL_MODEL_NAME": bool(__import__('os').environ.get("LOCAL_MODEL_NAME")),
+            "EMBEDDING_MODEL": bool(__import__('os').environ.get("EMBEDDING_MODEL")),
+        },
+    }
+    
+    # 尝试获取系统内存（如果 psutil 可用）
+    try:
+        import psutil
+        diagnostics["system"]["memory_available_mb"] = round(
+            psutil.virtual_memory().available / (1024*1024), 2
+        )
+        diagnostics["system"]["cpu_percent"] = psutil.cpu_percent()
+    except:
+        pass
+    
+    return JSONResponse({
+        "ok": True,
+        "message": "诊断信息",
+        "data": diagnostics,
+    })

@@ -13,12 +13,10 @@ v0.4.0 变更：
 """
 
 import json
-import math
 import os
 import queue
 import threading
 from collections import Counter
-from datetime import datetime, timezone
 
 # 打包环境下 chromadb 默认嵌入函数依赖 onnxruntime，
 # 但我们使用 SentenceTransformerEmbeddingFunction，不需要它。
@@ -844,37 +842,6 @@ def _calc_decay_factor(
         last_accessed_at_str=last_accessed_at_str,
         salience=salience,
     )
-
-    try:
-        created_at = datetime.fromisoformat(created_at_str)
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        t_days = max((now - created_at).total_seconds() / 86400, 0)
-    except (ValueError, TypeError):
-        logger.warning(f"无法解析 created_at={created_at_str!r}，衰减跳过（R=1.0）")
-        return 1.0
-
-    s_val = salience if salience is not None else 0.5
-    s_val = max(0.0, min(1.0, s_val))
-    decay_s_adjusted = decay_s * (1.0 + s_val * SALIENCE_DECAY_MULTIPLIER)
-
-    R = math.exp(-t_days / decay_s_adjusted)
-
-    if (
-        MEMORY_DECAY_ENABLE_ACCESS_BOOST
-        and last_accessed_at_str is not None
-    ):
-        try:
-            last_accessed = datetime.fromisoformat(last_accessed_at_str)
-            if last_accessed.tzinfo is None:
-                last_accessed = last_accessed.replace(tzinfo=timezone.utc)
-            days_since_access = (now - last_accessed).total_seconds() / 86400
-            if days_since_access <= MEMORY_DECAY_RECENT_BOOST_DAYS:
-                R = max(R, MEMORY_DECAY_RECENT_BOOST_FLOOR)
-        except (ValueError, TypeError):
-            pass
-
-    return R
 
 
 def _adjust_distance(semantic_distance: float, R: float) -> float:

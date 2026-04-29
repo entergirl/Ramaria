@@ -47,6 +47,41 @@
 <body>
 
 <!-- ============================================================
+     加载界面（应用初始化时显示）
+     ============================================================ -->
+<div id="loading-screen" class="loading-screen">
+  <div class="loading-content">
+    <!-- 品牌 Logo 动画 -->
+    <div class="loading-logo">
+      <svg viewBox="0 0 64 64" class="logo-svg">
+        <defs>
+          <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#ffd1cc;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#cc7a7a;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="28" fill="none" stroke="url(#logoGradient)" stroke-width="3" class="logo-circle"/>
+        <path d="M20 32c0-6.6 5.4-12 12-12s12 5.4 12 12-5.4 12-12 12" fill="none" stroke="url(#logoGradient)" stroke-width="3" stroke-linecap="round" class="logo-path"/>
+        <circle cx="26" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
+        <circle cx="38" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
+        <path d="M28 38c2 2 6 2 8 0" fill="none" stroke="#cc7a7a" stroke-width="2" stroke-linecap="round" class="logo-smile"/>
+      </svg>
+    </div>
+    <!-- 品牌名称 -->
+    <div class="loading-brand">珊瑚菌</div>
+    <div class="loading-tagline">正在唤醒你的 AI 陪伴助手...</div>
+    <!-- 进度条 -->
+    <div class="loading-progress-container">
+      <div class="loading-progress-bar" id="loading-progress-bar"></div>
+    </div>
+    <!-- 进度百分比 -->
+    <div class="loading-percentage" id="loading-percentage">0%</div>
+    <!-- 加载状态文字 -->
+    <div class="loading-status" id="loading-status">正在初始化...</div>
+  </div>
+</div>
+
+<!-- ============================================================
      顶部导航栏
      sticky 定位，始终固定在视口顶部。
      ============================================================ -->

@@ -477,10 +477,156 @@ function initSettingsPanel() {
 
 
 /* =============================================================================
+   加载界面管理
+   ============================================================================= */
+
+/**
+ * 加载界面管理器
+ * 处理应用初始化时的加载进度显示和自动隐藏
+ */
+const LoadingScreen = {
+  /** 加载阶段配置 */
+  stages: [
+    { progress: 15, message: '正在初始化...', delay: 100 },
+    { progress: 35, message: '加载核心模块...', delay: 200 },
+    { progress: 55, message: '连接服务器...', delay: 300 },
+    { progress: 75, message: '同步会话数据...', delay: 250 },
+    { progress: 90, message: '准备就绪...', delay: 200 },
+    { progress: 100, message: '完成', delay: 300 }
+  ],
+
+  /** 当前阶段索引 */
+  currentStage: 0,
+
+  /** 定时器引用 */
+  timer: null,
+
+  /**
+   * 初始化加载界面
+   */
+  init() {
+    const loadingScreen = document.getElementById('loading-screen');
+    if (!loadingScreen) return;
+
+    // 检查是否首次加载（使用 sessionStorage）
+    const hasLoaded = sessionStorage.getItem('ramaria_loaded');
+
+    if (hasLoaded) {
+      // 非首次加载，快速跳过
+      this.skip();
+      return;
+    }
+
+    // 开始加载动画
+    this.start();
+  },
+
+  /**
+   * 开始加载进度动画
+   */
+  start() {
+    this.currentStage = 0;
+    this.updateProgress(0, '正在启动...');
+    this.scheduleNextStage();
+  },
+
+  /**
+   * 调度下一阶段
+   */
+  scheduleNextStage() {
+    if (this.currentStage >= this.stages.length) {
+      // 所有阶段完成，准备隐藏
+      this.finish();
+      return;
+    }
+
+    const stage = this.stages[this.currentStage];
+
+    this.timer = setTimeout(() => {
+      this.updateProgress(stage.progress, stage.message);
+      this.currentStage++;
+      this.scheduleNextStage();
+    }, stage.delay);
+  },
+
+  /**
+   * 更新进度显示
+   * @param {number} progress - 进度百分比 (0-100)
+   * @param {string} message - 状态消息
+   */
+  updateProgress(progress, message) {
+    const progressBar = document.getElementById('loading-progress-bar');
+    const percentage = document.getElementById('loading-percentage');
+    const status = document.getElementById('loading-status');
+
+    if (progressBar) {
+      progressBar.style.width = `${progress}%`;
+    }
+    if (percentage) {
+      percentage.textContent = `${progress}%`;
+    }
+    if (status) {
+      status.textContent = message;
+    }
+  },
+
+  /**
+   * 完成加载，隐藏界面
+   */
+  finish() {
+    // 标记已加载
+    sessionStorage.setItem('ramaria_loaded', 'true');
+
+    // 短暂延迟后隐藏，让用户看到100%
+    setTimeout(() => {
+      this.hide();
+    }, 200);
+  },
+
+  /**
+   * 跳过加载动画（快速显示）
+   */
+  skip() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.hide();
+  },
+
+  /**
+   * 隐藏加载界面
+   */
+  hide() {
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+      loadingScreen.classList.add('hidden');
+
+      // 动画结束后从 DOM 中移除（可选）
+      setTimeout(() => {
+        loadingScreen.style.display = 'none';
+      }, 500);
+    }
+  },
+
+  /**
+   * 重置加载状态（用于调试）
+   */
+  reset() {
+    sessionStorage.removeItem('ramaria_loaded');
+    location.reload();
+  }
+};
+
+
+/* =============================================================================
    事件绑定与初始化（DOMContentLoaded）
    ============================================================================= */
 
 document.addEventListener('DOMContentLoaded', () => {
+
+  // 初始化加载界面
+  LoadingScreen.init();
 
   const textarea = document.getElementById('user-input');
   const sendBtn  = document.getElementById('send-btn');

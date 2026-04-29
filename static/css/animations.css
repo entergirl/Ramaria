@@ -196,6 +196,52 @@
 
 
 /* =============================================================================
+   加载界面动画
+   ============================================================================= */
+
+/* Logo 圆形描边动画 */
+@keyframes logoCircleDraw {
+  0% { stroke-dashoffset: 176; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Logo 路径绘制动画 */
+@keyframes logoPathDraw {
+  0% { stroke-dashoffset: 76; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Logo 圆点淡入 */
+@keyframes logoDotFade {
+  0%, 60% { opacity: 0; transform: scale(0); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Logo 微笑绘制 */
+@keyframes logoSmileDraw {
+  0% { stroke-dashoffset: 12; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* 加载界面淡出 */
+@keyframes loadingFadeOut {
+  0% { opacity: 1; visibility: visible; }
+  100% { opacity: 0; visibility: hidden; }
+}
+
+/* 进度条 shimmer 效果 */
+@keyframes progressShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* 加载界面脉冲 */
+@keyframes loadingPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* =============================================================================
    用户偏好：减少动效模式
    -----------------------------------------------------------------------------
    prefers-reduced-motion: reduce 时，将所有动画压缩到极短，

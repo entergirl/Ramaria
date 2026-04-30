@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="珊瑚菌">
+  <meta name="theme-color" content="#faf5f3">
+  <title>珊瑚菌 · 启动中</title>
+
+  <!-- 复用 variables.css 中的 CSS 变量 -->
+  <link rel="stylesheet" href="/static/css/variables.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/animations.css">
+
+  <style>
+    /* 加载页面专用样式 */
+    .loading-page {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+    }
+
+    .loading-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 40px;
+      text-align: center;
+    }
+
+    /* Logo 动画容器 */
+    .loading-logo {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 8px;
+    }
+
+    .logo-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 品牌名称 */
+    .loading-brand {
+      font-family: var(--font-title);
+      font-size: 1.5rem;
+      font-weight: 500;
+      color: var(--coral);
+      letter-spacing: 4px;
+      animation: fadeIn 0.6s ease-out 0.3s both;
+    }
+
+    /* 标语 */
+    .loading-tagline {
+      font-size: 0.85rem;
+      color: var(--text-mid);
+      font-family: var(--font-body);
+      letter-spacing: 0.5px;
+      animation: fadeIn 0.6s ease-out 0.5s both;
+    }
+
+    /* 进度条容器 */
+    .loading-progress-container {
+      width: 200px;
+      height: 4px;
+      background: var(--border-light);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+      animation: fadeIn 0.4s ease-out 0.6s both;
+    }
+
+    /* 进度条 */
+    .loading-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg,
+        var(--brand) 0%,
+        var(--coral) 50%,
+        var(--brand) 100%
+      );
+      background-size: 200% 100%;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+      animation: progressShimmer 2s linear infinite;
+    }
+
+    /* 百分比显示 */
+    .loading-percentage {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      color: var(--coral);
+      letter-spacing: 1px;
+      animation: fadeIn 0.4s ease-out 0.6s both;
+    }
+
+    /* 状态文字 */
+    .loading-status {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      letter-spacing: 0.5px;
+      animation: fadeIn 0.4s ease-out 0.6s both;
+    }
+
+    /* 响应式适配 */
+    @media (max-width: 768px) {
+      .loading-logo {
+        width: 64px;
+        height: 64px;
+      }
+
+      .loading-brand {
+        font-size: 1.25rem;
+        letter-spacing: 3px;
+      }
+
+      .loading-tagline {
+        font-size: 0.78rem;
+      }
+
+      .loading-progress-container {
+        width: 160px;
+      }
+
+      .loading-content {
+        padding: 24px;
+      }
+    }
+
+    /* 减少动画偏好适配 */
+    @media (prefers-reduced-motion: reduce) {
+      .loading-brand,
+      .loading-tagline,
+      .loading-progress-container,
+      .loading-percentage,
+      .loading-status {
+        animation: none;
+        opacity: 1;
+      }
+
+      .loading-progress-bar {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 加载界面（复用 index.html 中的设计） -->
+<div class="loading-page">
+  <div class="loading-content">
+    <!-- 品牌 Logo 动画 -->
+    <div class="loading-logo">
+      <svg viewBox="0 0 64 64" class="logo-svg">
+        <defs>
+          <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#ffd1cc;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#cc7a7a;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="28" fill="none" stroke="url(#logoGradient)" stroke-width="3" class="logo-circle"/>
+        <path d="M20 32c0-6.6 5.4-12 12-12s12 5.4 12 12-5.4 12-12 12" fill="none" stroke="url(#logoGradient)" stroke-width="3" stroke-linecap="round" class="logo-path"/>
+        <circle cx="26" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
+        <circle cx="38" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
+        <path d="M28 38c2 2 6 2 8 0" fill="none" stroke="#cc7a7a" stroke-width="2" stroke-linecap="round" class="logo-smile"/>
+      </svg>
+    </div>
+    <!-- 品牌名称 -->
+    <div class="loading-brand">珊瑚菌</div>
+    <div class="loading-tagline">正在启动你的 AI 陪伴助手...</div>
+    <!-- 进度条 -->
+    <div class="loading-progress-container">
+      <div class="loading-progress-bar" id="progress-bar"></div>
+    </div>
+    <!-- 进度百分比 -->
+    <div class="loading-percentage" id="progress-percent">0%</div>
+    <!-- 加载状态文字 -->
+    <div class="loading-status" id="progress-status">正在初始化...</div>
+  </div>
+</div>
+
+<script>
+/**
+ * 加载页面进度管理器
+ * 轮询后端服务状态，实时更新加载进度
+ */
+
+(function() {
+  'use strict';
+
+  // 配置
+  const POLL_INTERVAL = 500;      // 轮询间隔 (ms)
+  const MAX_WAIT_TIME = 120000;   // 最大等待时间 (ms)
+  const STATUS_URL = '/api/admin/status';
+
+  // 加载阶段配置（与服务启动进度对应）
+  const stages = [
+    { progress: 10, message: '正在初始化...',      checkReady: false },
+    { progress: 25, message: '加载核心模块...',     checkReady: false },
+    { progress: 40, message: '连接数据库...',        checkReady: false },
+    { progress: 55, message: '初始化向量存储...',   checkReady: false },
+    { progress: 70, message: '加载语言模型...',     checkReady: false },
+    { progress: 85, message: '启动服务...',         checkReady: true  },
+    { progress: 100, message: '准备就绪!',          done: true }
+  ];
+
+  let currentStage = 0;
+  let startTime = Date.now();
+  let pollTimer = null;
+
+  // DOM 元素
+  const progressBar = document.getElementById('progress-bar');
+  const progressPercent = document.getElementById('progress-percent');
+  const progressStatus = document.getElementById('progress-status');
+
+  /**
+   * 更新进度显示
+   */
+  function updateProgress(progress, message) {
+    if (progressBar) progressBar.style.width = progress + '%';
+    if (progressPercent) progressPercent.textContent = progress + '%';
+    if (progressStatus) progressStatus.textContent = message;
+  }
+
+  /**
+   * 跳转到目标页面
+   */
+  function redirectTo(url) {
+    // 使用 pywebview 的 load_url 或浏览器跳转
+    // pywebview 环境检测
+    if (window.pywebview && window.pywebview.api) {
+      // pywebview 环境：调用 Python 暴露的 API
+      try {
+        window.pywebview.api.navigate_to(url);
+        return;
+      } catch (e) {
+        console.log('[Loading] pywebview API 调用失败，尝试备用方案:', e);
+      }
+    }
+    // 浏览器或备用方案：使用标准跳转
+    window.location.href = url;
+  }
+
+  /**
+   * 检查服务是否就绪
+   */
+  async function checkServiceReady() {
+    try {
+      const response = await fetch(STATUS_URL, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.ok) {
+        return true;
+      }
+    } catch (e) {
+      // 服务未就绪，继续等待
+    }
+    return false;
+  }
+
+  /**
+   * 执行轮询
+   */
+  async function poll() {
+    const elapsed = Date.now() - startTime;
+
+    // 超时处理
+    if (elapsed >= MAX_WAIT_TIME) {
+      updateProgress(100, '启动超时，请检查配置...');
+      console.error('服务启动超时');
+      return;
+    }
+
+    // 更新到下一阶段
+    if (currentStage < stages.length) {
+      const stage = stages[currentStage];
+      updateProgress(stage.progress, stage.message);
+
+      if (stage.done) {
+        // 所有阶段完成，异步获取目标URL后跳转
+        setTimeout(async () => {
+          const targetUrl = await determineTargetUrl();
+          redirectTo(targetUrl);
+        }, 300);
+        return;
+      }
+
+      // 需要检查服务就绪
+      if (stage.checkReady) {
+        const ready = await checkServiceReady();
+        if (ready) {
+          currentStage++;
+        }
+      } else {
+        currentStage++;
+      }
+    }
+
+    // 继续轮询
+    pollTimer = setTimeout(poll, POLL_INTERVAL);
+  }
+
+  /**
+   * 根据环境决定跳转目标
+   */
+  async function determineTargetUrl() {
+    // 首先尝试从 pywebview API 获取正确的目标页面
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_start_url) {
+      try {
+        const url = await window.pywebview.api.get_start_url();
+        if (url) return url;
+      } catch (e) {
+        console.log('[Loading] 获取目标URL失败，使用默认:', e);
+      }
+    }
+    // 默认跳转到首页，由 index.html 处理首次运行逻辑
+    return '/';
+  }
+
+  /**
+   * 启动加载流程
+   */
+  function start() {
+    console.log('[Loading] 启动进度轮询...');
+    updateProgress(stages[0].progress, stages[0].message);
+    currentStage = 1;
+    poll();
+  }
+
+  // 页面加载完成后自动启动
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+
+</body>
+</html>

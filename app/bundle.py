@@ -4,16 +4,19 @@ app/bundle.py — Ramaria 桌面版主入口
 双击 Ramaria.exe 时执行此文件（PyInstaller 打包入口）。
 开发调试时也可直接 python app/bundle.py 运行。
 
-启动流程：
+启动流程（优化版 — 先显示加载页）：
     1. 修复打包后的模块路径（PyInstaller _MEIPASS）
     2. 加载 .env 中的环境变量到当前进程
-    3. 在后台线程启动 FastAPI（uvicorn）
-    4. 等待服务就绪（轮询 /api/admin/status）
-    5. 判断是否需要显示配置向导：
-       · 首次启动 / .env 缺失 → launcher.html → setup.html
-       · 配置完整             → 直接打开 index.html
-    6. 创建系统托盘图标
-    7. 打开 pywebview 窗口（阻塞，直到用户关闭）
+    3. 创建 pywebview 窗口，显示 loading.html（加载动画）
+    4. 后台线程启动 FastAPI（uvicorn）
+    5. loading.html 轮询 /api/admin/status，实时更新进度
+    6. 服务就绪后，自动跳转到 index.html 或 launcher.html
+    7. 系统托盘在后台运行（守护线程）
+
+这样设计的好处：
+    · 用户立即看到加载动画，而不是等待服务启动的黑屏
+    · 加载进度透明化，提升用户体验
+    · 复用前端的 LoadingScreen 动画逻辑
 
 线程模型：
     主线程    — pywebview（必须在主线程运行，macOS/Windows GUI 要求）
@@ -223,11 +226,15 @@ def _patch_config_paths() -> None:
 
 _uvicorn_thread: threading.Thread | None = None
 _uvicorn_server: "uvicorn.Server | None" = None  # 保存 server 引用，用于 shutdown
+_uvicorn_started: threading.Event = threading.Event()  # 标记 uvicorn 已启动（非就绪）
 
 
 def _start_uvicorn() -> None:
     """在后台线程中启动 uvicorn（运行 FastAPI app）。"""
     import uvicorn
+
+    # 标记启动中（让主线程知道线程已创建，可以开始轮询）
+    _uvicorn_started.set()
 
     config = uvicorn.Config(
         app       = "app.main:app",
@@ -328,8 +335,32 @@ def _get_start_url() -> str:
 
 
 # =============================================================================
-# 步骤 5：webview 窗口管理
+# 步骤 5：webview 窗口管理 & JS 桥接
 # =============================================================================
+
+# JS 桥接对象（暴露给 loading.html 的 JavaScript）
+class WebviewBridge:
+    """暴露给前端 JavaScript 的 API"""
+
+    def navigate_to(self, url: str) -> None:
+        """
+        加载页面就绪后，调用此方法跳转到目标页面。
+        这是推荐的方式，因为它通过 pywebview 内部机制处理页面切换。
+        """
+        global _webview_window
+        if _webview_window:
+            # 构造完整 URL
+            target_url = url if url.startswith('http') else _BASE_URL + url
+            _webview_window.load_url(target_url)
+            print(f"[Bridge] 导航到: {target_url}")
+
+    def get_start_url(self) -> str:
+        """获取应该显示的起始页面（index 或 launcher）"""
+        return _get_start_url()
+
+
+# 全局桥接实例
+_webview_bridge = WebviewBridge()
 
 _webview_window = None
 
@@ -425,104 +456,126 @@ def main() -> None:
     _patch_config_paths()
     logger.info("路径修复完成")
 
-    # 启动后台服务
-    logger.info("正在启动后台服务…")
-    ready = start_backend()
-    if not ready:
-        logger.error("后台服务启动超时")
-        start_url = _BASE_URL + "/api/admin/launcher/page"
-    else:
-        logger.info("后台服务就绪")
-        start_url = _get_start_url()
-
-    # 创建系统托盘
-    from app.system.tray import RamariaTrayx
-
-    tray = RamariaTrayx(
-        open_window_fn = lambda: _open_or_focus_window(),
-        restart_fn     = _restart_service,
-        quit_fn        = _quit_app,
-        open_setup_fn  = _open_setup_in_window,
-        exe_path       = Path(sys.executable) if getattr(sys, "frozen", False) else None,
-        icon_path      = _ICON_PATH if _ICON_PATH.exists() else None,
-    )
-    tray.start()
-
-    # 创建并启动 webview 窗口（增加异常处理）
+    # ── 步骤 1：立即创建 webview 窗口，显示加载页面 ──────────────────────────
+    # 先打开窗口让用户看到加载动画，提升启动体验
     global _webview_window
 
+    loading_url = _BASE_URL + "/loading.html"
+
     try:
-        logger.info(f"创建 WebView 窗口…")
+        logger.info(f"创建 WebView 窗口（显示加载页面）…")
         _webview_window = webview.create_window(
-            title       = _TITLE,
-            url         = start_url,
-            width       = 1024,
-            height      = 720,
-            min_size    = (800, 600),
-            resizable   = True,
-            on_top      = False,
+            title           = _TITLE,
+            url             = loading_url,
+            width           = 1024,
+            height          = 720,
+            min_size        = (800, 600),
+            resizable       = True,
+            on_top          = False,
             background_color = "#faf5f3",
         )
-        logger.info(f"WebView 窗口创建成功，访问 {start_url}")
+        logger.info(f"WebView 窗口创建成功")
 
         icon_arg = {}
         if _ICON_PATH.exists():
             icon_arg["icon"] = str(_ICON_PATH)
 
-        # 启动 WebView（主线程阻塞，直到用户关闭窗口）
+        # ── 步骤 2：后台启动 uvicorn（在窗口显示后立即开始）────────────────────
+        logger.info("启动后台服务线程…")
+        _uvicorn_thread = threading.Thread(
+            target  = _start_uvicorn,
+            name    = "UvicornServer",
+            daemon  = True,
+        )
+        _uvicorn_thread.start()
+
+        # 等待 uvicorn 线程真正启动（避免 webview 启动后立即退出）
+        _uvicorn_started.wait(timeout=5)
+        logger.info("后台服务线程已启动")
+
+        # ── 步骤 3：创建系统托盘图标 ──────────────────────────────────────────
+        # 托盘需要独立线程运行，不阻塞主线程
+        from app.system.tray import RamariaTrayx
+
+        tray = RamariaTrayx(
+            open_window_fn = lambda: _open_or_focus_window(),
+            restart_fn     = _restart_service,
+            quit_fn        = _quit_app,
+            open_setup_fn  = _open_setup_in_window,
+            exe_path       = Path(sys.executable) if getattr(sys, "frozen", False) else None,
+            icon_path      = _ICON_PATH if _ICON_PATH.exists() else None,
+        )
+        tray.start()
+        logger.info("系统托盘已启动")
+
+        # ── 步骤 3：启动 WebView（主线程阻塞）───────────────────────────────────
+        # 加载页面内部会轮询服务状态，就绪后自动跳转
+        logger.info("启动 WebView 主循环…")
+
         webview.start(
+            func       = None,          # 不需要单独的 init 函数
+            js_api     = _webview_bridge,  # 暴露桥接对象的方法给 JS
             http_server = False,
             **icon_arg,
         )
 
     except ImportError as e:
         logger.error(f"❌ WebView2 库缺失或加载失败: {e}")
-        logger.info("降级方案：尝试用浏览器打开应用")
-        print(
-            f"\n[警告] WebView 创建失败，可能原因：\n"
-            f"  · Windows: 缺少 WebView2 Runtime\n"
-            f"  · 请访问: https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n"
-            f"  · 下载并安装 WebView2 Runtime\n\n"
-            f"临时方案：用浏览器访问：{_BASE_URL}\n"
-        )
-        try:
-            import webbrowser
-            webbrowser.open(start_url)
-            print("已为您打开浏览器，按 Ctrl+C 退出。")
-            import time
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                pass
-        except Exception as e2:
-            logger.error(f"浏览器打开也失败: {e2}")
-            print(f"请手动访问：{_BASE_URL}")
+        _handle_webview_fallback(logger, "启动中")
+        return
 
     except Exception as e:
         logger.error(f"❌ WebView 启动异常: {e}")
         logger.exception(e)
-        print(
-            f"\n[错误] 启动失败，详细信息见日志：logs/coral.log\n"
-            f"临时方案：用浏览器访问：{_BASE_URL}\n"
-        )
-        try:
-            import webbrowser
-            webbrowser.open(start_url)
-            print("已为您打开浏览器，按 Ctrl+C 退出。")
-            import time
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                pass
-        except Exception as e2:
-            logger.error(f"浏览器打开也失败: {e2}")
-            print(f"请手动访问：{_BASE_URL}")
-    
+        _handle_webview_fallback(logger, "启动中")
+        return
+
     finally:
         logger.info("窗口已关闭，程序退出")
         _quit_app()
+
+
+def _handle_webview_fallback(logger, page_hint: str = "") -> None:
+    """
+    WebView 失败时的降级处理：尝试用浏览器打开。
+    同时在后台启动服务。
+    """
+    import webbrowser
+
+    # 先启动后台服务
+    logger.info("降级方案：启动后台服务…")
+    global _uvicorn_thread
+    _uvicorn_thread = threading.Thread(
+        target  = _start_uvicorn,
+        name    = "UvicornServer",
+        daemon  = True,
+    )
+    _uvicorn_thread.start()
+
+    # 等待服务就绪
+    ready = _wait_for_service()
+    if not ready:
+        print(f"\n[错误] 后台服务启动失败，请检查日志")
+        return
+
+    # 用浏览器打开
+    start_url = _get_start_url()
+    print(
+        f"\n[警告] WebView 不可用，已用浏览器打开应用\n"
+        f"访问地址：{start_url}\n"
+        f"按 Ctrl+C 退出。\n"
+    )
+
+    try:
+        webbrowser.open(start_url)
+        import time
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+    except Exception as e2:
+        logger.error(f"浏览器打开失败: {e2}")
 
 
 # =============================================================================

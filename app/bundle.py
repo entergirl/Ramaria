@@ -422,9 +422,12 @@ def _quit_app() -> None:
     if _uvicorn_server is not None:
         try:
             logger.info("正在关闭后台服务…")
-            # stop() 会触发 lifespan 的 shutdown 阶段，
-            # 正确关闭数据库连接、停止后台线程、释放端口
-            _uvicorn_server.stop()
+            # 新版 uvicorn 使用 should_exit 代替 stop()
+            if hasattr(_uvicorn_server, 'should_exit'):
+                _uvicorn_server.should_exit = True
+            else:
+                # 旧版 fallback
+                _uvicorn_server.stop()
             logger.info("后台服务已关闭")
         except Exception as e:
             logger.warning(f"关闭服务时出错（可忽略）：{e}")
@@ -460,7 +463,7 @@ def main() -> None:
     # 先打开窗口让用户看到加载动画，提升启动体验
     global _webview_window
 
-    loading_url = _BASE_URL + "/loading.html"
+    loading_url = _BASE_URL + "/static/loading.html"
 
     try:
         logger.info(f"创建 WebView 窗口（显示加载页面）…")
@@ -473,6 +476,7 @@ def main() -> None:
             resizable       = True,
             on_top          = False,
             background_color = "#faf5f3",
+            js_api          = _webview_bridge,  # 暴露 JS API 给前端
         )
         logger.info(f"WebView 窗口创建成功")
 
@@ -514,7 +518,6 @@ def main() -> None:
 
         webview.start(
             func       = None,          # 不需要单独的 init 函数
-            js_api     = _webview_bridge,  # 暴露桥接对象的方法给 JS
             http_server = False,
             **icon_arg,
         )

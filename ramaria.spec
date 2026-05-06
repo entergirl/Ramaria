@@ -147,11 +147,11 @@ excludes = [
     "isort",
     "mypy",
     "pylint",
-    # 不需要的科学计算
+    # 不需要的科学计算（仅排除重量级可视化库）
     "matplotlib",
     "pandas",
-    # "sklearn",  # 需要用于向量检索/BM25，不能排除
-    "scipy",
+    # scipy 不能排除 — sentence_transformers 依赖它做向量运算
+    # "scipy",
     # Telegram 适配（打包版不需要）
     "telegram",
     "python_telegram_bot",

@@ -25,6 +25,9 @@ const UI = (() => {
   /** Toast 自动消失计时器 */
   let _toastTimer = null;
 
+  /** 用户显示名称（可从后端获取或用户设置） */
+  let _userDisplayName = '我';
+
 
   // ── 工具函数 ──
 
@@ -57,7 +60,7 @@ const UI = (() => {
 
   /**
    * 创建消息气泡 DOM 元素。
-   * 所有消息（用户/助手）都通过此函数创建，确保结构统一。
+   * 结构使用 index.html 最新样式：.msg-row > .avatar + .msg-content > .bubble + .msg-time
    *
    * @param {string} text - 气泡文本内容
    * @param {'user'|'assistant'} role - 发言方
@@ -67,25 +70,30 @@ const UI = (() => {
    */
   function _createBubbleElement(text, role, isOnlineMsg, isConfirm) {
     const div = document.createElement('div');
-    div.className = `msg ${role}`;
+    // 使用 index.html 的样式类名结构
+    div.className = `msg-row${role === 'user' ? ' user' : ''}`;
 
-    // 线上模式 / 等待确认的状态类
-    if (isOnlineMsg) div.classList.add('is-online');
-    if (isConfirm)   div.classList.add('confirm');
+    // 头像
+    const avatar = document.createElement('div');
+    avatar.className = `avatar ${role === 'user' ? 'user-avatar' : 'ai-avatar'}`;
+    avatar.textContent = role === 'user' ? _userDisplayName : '🪸';
 
-    // 发言方标签
-    const label = document.createElement('div');
-    label.className = 'msg-label';
+    // 消息内容容器
+    const content = document.createElement('div');
+    content.className = 'msg-content';
     if (role === 'user') {
-      label.textContent = '你';
-    } else {
-      label.innerHTML = '助手' + (isOnlineMsg ? '<span class="tag-online">API</span>' : '');
+      content.style.alignItems = 'flex-end';
     }
 
     // 气泡主体
     const bubble = document.createElement('div');
-    bubble.className = 'msg-bubble';
-    bubble.tabIndex = 0; // 可聚焦，支持键盘操作
+    bubble.className = `bubble ${role === 'user' ? 'user' : 'ai'}`;
+
+    // 确认消息样式（蓝色虚线边框）
+    if (isConfirm) {
+      bubble.style.border = '2px dashed var(--blue-400)';
+      bubble.style.background = 'var(--blue-50)';
+    }
 
     // 提取并渲染思考过程（仅助手消息）
     if (role === 'assistant') {
@@ -108,8 +116,27 @@ const UI = (() => {
     // 消息正文用 createTextNode 插入，保证特殊字符不被解析为 HTML
     bubble.appendChild(document.createTextNode(text));
 
-    div.appendChild(label);
-    div.appendChild(bubble);
+    // 线上 API 来源标记
+    if (role === 'assistant' && isOnlineMsg) {
+      const sourceTag = document.createElement('span');
+      sourceTag.className = 'msg-source';
+      sourceTag.textContent = ' · 线上';
+      sourceTag.style.fontSize = '0.75rem';
+      sourceTag.style.color = 'var(--text-3)';
+      sourceTag.style.marginLeft = '6px';
+      bubble.appendChild(sourceTag);
+    }
+
+    // 消息时间
+    const time = document.createElement('div');
+    time.className = 'msg-time';
+    time.textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+    // 组装结构
+    content.appendChild(bubble);
+    content.appendChild(time);
+    div.appendChild(avatar);
+    div.appendChild(content);
 
     return div;
   }
@@ -117,6 +144,7 @@ const UI = (() => {
   /**
    * 创建并插入一条消息气泡。
    * 所有消息（用户/助手/系统）都通过此函数创建，确保结构统一。
+   * 使用 index.html 的 .messages-inner 作为容器。
    *
    * @param {string} text - 气泡文本内容
    * @param {'user'|'assistant'} role - 发言方
@@ -125,13 +153,14 @@ const UI = (() => {
    * @param {string} created_at - 可选，消息时间戳（ISO 8601）
    */
   function appendBubble(text, role, isOnlineMsg, isConfirm, created_at) {
-    const container = document.getElementById('messages');
+    // 优先使用 .messages-inner（与 index.html 一致），降级到 .messages
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
     if (!container) return;
 
-    // T7: 检查是否需要插入时间戳
+    // 检查是否需要插入时间戳
     if (created_at && _lastMessageTime && _shouldInsertTimeStamp(_lastMessageTime, created_at)) {
       const timeStampEl = document.createElement('div');
-      timeStampEl.className = 'msg-timestamp';
+      timeStampEl.className = 'time-divider';
       timeStampEl.textContent = _formatTime(created_at);
       container.appendChild(timeStampEl);
     }
@@ -176,32 +205,38 @@ const UI = (() => {
 
   /**
    * 显示打字动画（三点跳动的等待指示器）。
+   * 使用 index.html 的 .typing-bubble 结构。
    * 在发送消息后、收到回复前调用。
    */
   function showTyping() {
-    const container = document.getElementById('messages');
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
     if (!container) return;
 
+    // 移除已存在的指示器
+    const existing = document.getElementById('typing-indicator');
+    if (existing) existing.remove();
+
     const el = document.createElement('div');
-    el.className = 'msg assistant';
+    el.className = 'msg-row';
     el.id = 'typing-indicator';
-    el.innerHTML =
-      '<div class="msg-label">助手</div>'
-      + '<div class="msg-bubble">'
-      + '<div class="typing" aria-label="助手正在输入" role="status">'
-      + '<span></span><span></span><span></span>'
-      + '</div>'
-      + '<div class="typing-text">正在回复...</div>'
-      + '</div>';
+    el.innerHTML = `
+      <div class="avatar ai-avatar">🪸</div>
+      <div class="msg-content">
+        <div class="typing-bubble" aria-label="助手正在输入" role="status">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>`;
     container.appendChild(el);
     scrollToBottom();
 
     // T8: 超过10秒时切换提示文字
     el._typingTimeout = setTimeout(() => {
-      const textEl = el.querySelector('.typing-text');
-      if (textEl) {
-        textEl.textContent = '正在思考…';
-        textEl.classList.add('typing-long');
+      const bubbleEl = el.querySelector('.typing-bubble');
+      if (bubbleEl) {
+        bubbleEl.innerHTML = '<div class="typing-text">正在思考…</div>';
+        bubbleEl.classList.add('thinking');
       }
     }, 10000); // 10秒
   }
@@ -254,18 +289,18 @@ const UI = (() => {
 
   /**
    * 在消息列表插入一条系统提示条。
-   * 用于"对话已保存"等非对话内容的提示。
+   * 使用 index.html 的 .sys-notice 结构。
    *
    * @param {string} text - 提示文本
    */
   function appendSysNotice(text) {
-    const container = document.getElementById('messages');
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
     if (!container) return;
 
     const notice = document.createElement('div');
-    notice.className   = 'sys-notice';
+    notice.className = 'sys-notice';
     // 使用 textContent 而非 innerHTML，防止 XSS
-    notice.textContent = text;
+    notice.innerHTML = `<span>${_esc(text)}</span>`;
     container.appendChild(notice);
     scrollToBottom();
   }
@@ -348,23 +383,25 @@ const UI = (() => {
       errorDetails = '对话保存失败，对话内容仍在当前会话中，刷新前不会丢失。';
     }
 
-    // 显示错误气泡
-    const errorBubble = document.createElement('div');
-    errorBubble.className = 'msg assistant error';
-    errorBubble.innerHTML = `
-      <div class="msg-label">助手</div>
-      <div class="msg-bubble">
-        <div class="error-message">⚠️ <strong>${errorMessage}</strong></div>
-        <div class="error-details">${errorDetails}</div>
-        ${context !== 'unknown' ? `<div class="error-context">（错误场景：${context}）</div>` : ''}
-      </div>
-    `;
+    // 显示错误气泡 - 使用 index.html 的消息结构
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
+    if (!container) return;
 
-    const container = document.getElementById('messages');
-    if (container) {
-      container.appendChild(errorBubble);
-      scrollToBottom();
-    }
+    const errorRow = document.createElement('div');
+    errorRow.className = 'msg-row error';
+    errorRow.innerHTML = `
+      <div class="avatar ai-avatar">🪸</div>
+      <div class="msg-content">
+        <div class="bubble ai error">
+          <div class="error-message">⚠️ <strong>${_esc(errorMessage)}</strong></div>
+          <div class="error-details">${_esc(errorDetails)}</div>
+          ${context !== 'unknown' ? `<div class="error-context">（错误场景：${_esc(context)}）</div>` : ''}
+        </div>
+        <div class="msg-time">${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</div>
+      </div>`;
+
+    container.appendChild(errorRow);
+    scrollToBottom();
 
     // 可选：显示toast通知
     if (showToast) {
@@ -418,17 +455,14 @@ const UI = (() => {
    * @returns {HTMLElement} - 加载状态元素
    */
   function showLoadingIndicator(message = '正在加载...', id = null) {
-    const container = document.getElementById('messages');
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
     if (!container) return null;
 
     const loaderId = id || `loader-${Date.now()}`;
     const loaderEl = document.createElement('div');
     loaderEl.id = loaderId;
-    loaderEl.className = 'loading-indicator';
-    loaderEl.innerHTML = `
-      <div class="loading-spinner"></div>
-      <div class="loading-text">${message}</div>
-    `;
+    loaderEl.className = 'sys-notice loading-indicator';
+    loaderEl.innerHTML = `<span><span class="loading-spinner"></span> ${_esc(message)}</span>`;
     loaderEl.setAttribute('role', 'alert');
     loaderEl.setAttribute('aria-live', 'polite');
 
@@ -639,7 +673,7 @@ const UI = (() => {
           return;
         }
 
-        const container = document.getElementById('messages');
+        const container = document.getElementById('messages-inner') || document.getElementById('messages');
         if (!container) return;
 
         const historyBlock = document.createElement('div');
@@ -655,7 +689,7 @@ const UI = (() => {
         messages.forEach(msg => {
           if (msg.created_at && prevMessageTime && _shouldInsertTimeStamp(prevMessageTime, msg.created_at)) {
             const timeStampEl = document.createElement('div');
-            timeStampEl.className = 'msg-timestamp';
+            timeStampEl.className = 'time-divider';
             timeStampEl.textContent = _formatTime(msg.created_at);
             historyBlock.appendChild(timeStampEl);
           }
@@ -749,7 +783,7 @@ const UI = (() => {
    * 渲染记忆强度滑块组件
    */
   function renderMemorySlider() {
-    const container = document.getElementById('messages');
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
     if (!container) return;
 
     const existingSlider = document.getElementById('memory-slider-container');
@@ -940,6 +974,24 @@ const UI = (() => {
   }
 
 
+  /**
+   * 设置用户显示名称。
+   * @param {string} name - 用户显示名称
+   */
+  function setUserDisplayName(name) {
+    if (name && typeof name === 'string' && name.trim()) {
+      _userDisplayName = name.trim().substring(0, 2); // 最多2个字符
+    }
+  }
+
+  /**
+   * 获取当前用户显示名称。
+   * @returns {string}
+   */
+  function getUserDisplayName() {
+    return _userDisplayName;
+  }
+
   // ── 暴露公开接口 ──
   return {
     appendBubble,
@@ -963,6 +1015,8 @@ const UI = (() => {
     closeAndLoadHistory,
     renderMemorySlider,
     checkAndShowMemorySlider,
+    setUserDisplayName,
+    getUserDisplayName,
   };
 
 })();

@@ -9,6 +9,13 @@ Runtime Hook: 确保 python310.dll 和 VC++ 运行时库能被正确加载
 import os
 import sys
 import ctypes
+import time as _time
+
+
+def _ts() -> str:
+    """返回统一格式的时间戳，与 ramaria.logger 保持一致。"""
+    return _time.strftime("%Y-%m-%d %H:%M:%S")
+
 
 def fix_dll_loading():
     """修复 DLL 加载路径问题"""
@@ -17,7 +24,6 @@ def fix_dll_loading():
 
     # 获取 _internal 目录（PyInstaller 打包后的资源目录）
     if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS  # PyInstaller 打包后的临时目录
         app_path = os.path.dirname(sys.executable)
         internal_path = os.path.join(app_path, '_internal')
     else:
@@ -42,8 +48,8 @@ def fix_dll_loading():
         if os.path.exists(dll_path):
             try:
                 ctypes.CDLL(dll_path)
-                print(f"[OK] Loaded {dll_name}")
+                print(f"{_ts()} [runtime_hook] INFO: Loaded {dll_name}")
             except Exception as e:
-                print(f"[WARN] Failed to load {dll_name}: {e}")
+                print(f"{_ts()} [runtime_hook] WARN: Failed to load {dll_name}: {e}")
 
 fix_dll_loading()

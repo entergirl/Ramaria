@@ -6,72 +6,22 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fdf2f0">
 <title>珊瑚菌 · Ramaria</title>
+<!-- Google Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- 全局 CSS 变量 -->
+<link rel="stylesheet" href="/static/css/variables.css">
 <style>
-/* ─── 设计令牌 ─────────────────────────────────────────────── */
+/* ─── 覆盖全局变量（index.html 专用值） ───────────────────── */
 :root {
-  --pink-50:  oklch(0.97 0.008 25);
-  --pink-100: oklch(0.93 0.030 22);
-  --pink-200: oklch(0.87 0.060 18);
-  --pink-300: oklch(0.76 0.10 14);
-  --pink-400: oklch(0.65 0.15 12);
-  --pink-500: oklch(0.55 0.18 10);
-  --pink-600: oklch(0.44 0.14 10);
-
-  --blue-50:  oklch(0.97 0.015 225);
-  --blue-100: oklch(0.88 0.055 225);
-  --blue-200: oklch(0.78 0.09 225);
-  --blue-300: oklch(0.67 0.13 225);
-  --blue-400: oklch(0.57 0.16 225);
-  --blue-500: oklch(0.48 0.16 225);
-
-  --gray-0:   #ffffff;
-  --gray-50:  oklch(0.975 0.002 25);
-  --gray-100: oklch(0.94 0.003 25);
-  --gray-200: oklch(0.88 0.004 25);
-  --gray-300: oklch(0.76 0.005 25);
-  --gray-400: oklch(0.60 0.005 25);
-  --gray-500: oklch(0.46 0.004 25);
-  --gray-600: oklch(0.30 0.004 25);
-  --gray-700: oklch(0.18 0.003 25);
-
-  --bg:           var(--gray-50);
-  --surface:      var(--gray-0);
-  --surface-2:    var(--gray-50);
-  --overlay-bg:   oklch(0.14 0.01 25 / 0.5);
-
-  --text-1: var(--gray-700);
-  --text-2: var(--gray-500);
-  --text-3: var(--gray-400);
-
-  --border:    var(--gray-200);
-  --border-md: var(--gray-300);
-
-  --font-display: 'DM Serif Display', Georgia, serif;
-  --font-body:    'DM Sans', system-ui, sans-serif;
-  --font-mono:    'JetBrains Mono', monospace;
-
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --radius-xl: 32px;
-  --radius-full: 9999px;
-
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / .06), 0 1px 2px oklch(0 0 0 / .04);
-  --shadow-md: 0 4px 12px oklch(0 0 0 / .08), 0 2px 4px oklch(0 0 0 / .04);
-  --shadow-lg: 0 12px 32px oklch(0 0 0 / .10), 0 4px 8px oklch(0 0 0 / .05);
-  --shadow-pink: 0 4px 20px oklch(0.55 0.18 10 / .22);
-  --shadow-blue: 0 4px 20px oklch(0.48 0.16 225 / .22);
-
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  --ease-out:    cubic-bezier(0.0, 0.0, 0.2, 1);
-
+  /* 页面背景色 */
+  --bg: oklch(0.975 0.002 25);
+  /* 侧边栏尺寸 */
   --sidebar-w: 300px;
   --header-h:  62px;
 }
 
+/* ─── 页面样式 ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 body {
@@ -90,7 +40,7 @@ body {
   left: 0; top: 0; bottom: 0;
   width: var(--sidebar-w);
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-default);
   display: flex;
   flex-direction: column;
   z-index: 20;
@@ -108,7 +58,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
 
@@ -119,7 +69,7 @@ body {
 }
 .logo-icon {
   width: 34px; height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(135deg, var(--pink-300), var(--pink-500));
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
@@ -216,7 +166,7 @@ body {
 /* 侧边栏底部 */
 .sidebar-footer {
   padding: 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-default);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -246,6 +196,7 @@ body {
   pointer-events: none;
   transition: opacity 0.28s;
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 .overlay.show { opacity: 1; pointer-events: auto; }
 
@@ -265,7 +216,7 @@ body {
   background: oklch(0.975 0.002 25 / 0.85);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -342,7 +293,7 @@ body {
 }
 .empty-hero {
   width: 80px; height: 80px;
-  border-radius: 24px;
+  border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--pink-200), var(--pink-400));
   display: flex; align-items: center; justify-content: center;
   font-size: 36px;
@@ -374,7 +325,7 @@ body {
 .suggestion-chip {
   padding: 11px 16px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   font-size: 0.875rem;
   color: var(--text-2);
@@ -404,7 +355,7 @@ body {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--border);
+  background: var(--border-default);
 }
 
 /* 消息行 */
@@ -423,7 +374,7 @@ body {
 
 .avatar {
   width: 32px; height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px;
@@ -454,7 +405,7 @@ body {
 
 .bubble.ai {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
   color: var(--text-1);
   box-shadow: var(--shadow-sm);
@@ -491,7 +442,7 @@ body {
 /* 打字动画 */
 .typing-bubble {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
   padding: 14px 18px;
   display: flex; gap: 5px; align-items: center;
@@ -520,7 +471,7 @@ body {
 }
 .sys-notice span {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
   padding: 4px 14px;
   display: inline-block;
@@ -532,7 +483,7 @@ body {
   background: oklch(0.975 0.002 25 / 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-default);
   flex-shrink: 0;
 }
 
@@ -543,7 +494,7 @@ body {
   align-items: flex-end;
   gap: 10px;
   background: var(--surface);
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-default);
   border-radius: var(--radius-xl);
   padding: 8px 8px 8px 16px;
   transition: border-color 0.18s, box-shadow 0.18s;
@@ -729,36 +680,8 @@ textarea#user-input::placeholder { color: var(--text-3); }
     新建对话
   </button>
 
-  <div class="session-list-wrap">
-    <div class="session-group-label">今天</div>
-    <div class="session-item active" onclick="loadSession(1)">
-      <div class="session-title">关于记忆系统设计的讨论</div>
-      <div class="session-meta"><span>刚刚</span></div>
-    </div>
-    <div class="session-item" onclick="loadSession(2)">
-      <div class="session-title">Hybrid Search 验证测试</div>
-      <div class="session-meta"><span>2小时前</span></div>
-    </div>
-
-    <div class="session-group-label">昨天</div>
-    <div class="session-item" onclick="loadSession(3)">
-      <div class="session-title">RAG 检索链路端到端验证</div>
-      <div class="session-meta"><span>昨天 22:14</span></div>
-    </div>
-    <div class="session-item" onclick="loadSession(4)">
-      <div class="session-title">向量数据库接入测试</div>
-      <div class="session-meta"><span>昨天 18:30</span></div>
-    </div>
-    <div class="session-item" onclick="loadSession(5)">
-      <div class="session-title">summarizer 模块验证</div>
-      <div class="session-meta"><span>昨天 14:05</span></div>
-    </div>
-
-    <div class="session-group-label">本周</div>
-    <div class="session-item" onclick="loadSession(6)">
-      <div class="session-title">系统架构树状关联网络</div>
-      <div class="session-meta"><span>周二</span></div>
-    </div>
+  <div class="session-list-wrap" id="session-list">
+    <!-- 会话列表由 JS 动态加载 -->
   </div>
 
   <div class="sidebar-footer">
@@ -893,6 +816,15 @@ textarea#user-input::placeholder { color: var(--text-3); }
 <!-- Toast -->
 <div class="toast-container" id="toasts"></div>
 
+<!-- 屏幕阅读器通知容器 -->
+<div id="sr-announce" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+
+<!-- JS 模块加载（必须在内联脚本之前） -->
+<script src="/static/js/state.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/app.js"></script>
+
 <script>
 // ─── 侧边栏 ─────────────────────────────────────────────────────
 function toggleSidebar() {
@@ -933,11 +865,157 @@ function newChat() {
     </div>`;
   document.getElementById('header-title').textContent = '新对话';
   closeSidebar();
+  AppState.setSessionId(null);
+}
+
+// ─── 加载会话列表 ────────────────────────────────────────────────
+async function loadSessionList() {
+  const container = document.getElementById('session-list');
+  if (!container) return;
+
+  try {
+    const sessions = await API.getSessions();
+    renderSessionList(sessions);
+  } catch (err) {
+    console.error('加载会话列表失败:', err);
+    container.innerHTML = `
+      <div class="session-item empty-state">
+        <div class="session-title">加载失败</div>
+        <div class="session-preview">请刷新页面重试</div>
+      </div>`;
+  }
+}
+
+function renderSessionList(sessions) {
+  const container = document.getElementById('session-list');
+  if (!container) return;
+
+  if (!sessions || sessions.length === 0) {
+    container.innerHTML = `
+      <div class="session-item empty-state">
+        <div class="session-title">暂无历史对话</div>
+        <div class="session-preview">开始与珊瑚菌对话后，对话记录会显示在这里</div>
+      </div>`;
+    return;
+  }
+
+  const now = new Date();
+  const today = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate() - 7);
+
+  const groups = { today: [], yesterday: [], week: [], older: [] };
+
+  sessions.forEach(session => {
+    const date = session.last_message_at ? new Date(session.last_message_at) : new Date(session.started_at);
+    if (date.toDateString() === today) {
+      groups.today.push(session);
+    } else if (date.toDateString() === yesterdayStr) {
+      groups.yesterday.push(session);
+    } else if (date > weekAgo) {
+      groups.week.push(session);
+    } else {
+      groups.older.push(session);
+    }
+  });
+
+  let html = '';
+
+  if (groups.today.length > 0) {
+    html += '<div class="session-group-label">今天</div>';
+    groups.today.forEach(s => {
+      html += createSessionItem(s, '刚刚');
+    });
+  }
+
+  if (groups.yesterday.length > 0) {
+    html += '<div class="session-group-label">昨天</div>';
+    groups.yesterday.forEach(s => {
+      const time = formatSessionTime(new Date(s.last_message_at || s.started_at), true);
+      html += createSessionItem(s, '昨天 ' + time);
+    });
+  }
+
+  if (groups.week.length > 0) {
+    html += '<div class="session-group-label">本周</div>';
+    groups.week.forEach(s => {
+      const date = new Date(s.last_message_at || s.started_at);
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      const time = formatSessionTime(date, false);
+      html += createSessionItem(s, days[date.getDay()] + ' ' + time);
+    });
+  }
+
+  if (groups.older.length > 0) {
+    html += '<div class="session-group-label">更早</div>';
+    groups.older.forEach(s => {
+      const date = new Date(s.last_message_at || s.started_at);
+      const time = formatSessionTime(date, false);
+      html += createSessionItem(s, `${date.getMonth() + 1}/${date.getDate()} ${time}`);
+    });
+  }
+
+  container.innerHTML = html;
+}
+
+function createSessionItem(session, timeStr) {
+  const isActive = AppState.sessionId === session.id;
+  const title = session.last_message_preview || `Session #${session.id}`;
+  const preview = session.last_message_preview ? title.substring(0, 30) + (title.length > 30 ? '...' : '') : '';
+  return `
+    <div class="session-item${isActive ? ' active' : ''}" onclick="loadSession(${session.id})">
+      <div class="session-title" title="${title}">${title}</div>
+      <div class="session-meta"><span>${timeStr}</span></div>
+    </div>`;
+}
+
+function formatSessionTime(date, includeToday) {
+  const hhmm = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (includeToday) {
+    const diffMs = new Date() - date;
+    if (diffMs < 5 * 60 * 1000) return '刚刚';
+    if (diffMs < 60 * 60 * 1000) return Math.floor(diffMs / 60000) + '分钟前';
+  }
+  return hhmm;
 }
 
 function loadSession(id) {
   closeSidebar();
-  showToast('对话加载中…');
+  AppState.setLoading(true);
+  UI.showToast('对话加载中…');
+
+  // 加载历史消息
+  API.getSessionMessages(id)
+    .then(messages => {
+      if (messages.length === 0) {
+        UI.showToast('该对话暂无消息');
+        AppState.setLoading(false);
+        return;
+      }
+
+      // 清空当前消息
+      const container = document.getElementById('messages-inner');
+      container.innerHTML = '';
+
+      // 渲染历史消息
+      messages.forEach(msg => {
+        UI.appendBubble(msg.content, msg.role, false, false, msg.created_at);
+      });
+
+      AppState.setSessionId(id);
+      document.getElementById('header-title').textContent = messages[0]?.content?.substring(0, 20) || '历史对话';
+      AppState.setLoading(false);
+
+      // 更新会话列表中的高亮
+      loadSessionList();
+    })
+    .catch(err => {
+      UI.showToast('加载失败：' + err.message, 'error');
+      AppState.setLoading(false);
+    });
 }
 
 // ─── 发送消息 ────────────────────────────────────────────────────
@@ -948,6 +1026,8 @@ function sendSuggestion(el) {
 }
 
 function sendMessage() {
+  if (AppState.isLoading) return;
+
   const input = document.getElementById('user-input');
   const content = input.value.trim();
   if (!content) return;
@@ -956,110 +1036,53 @@ function sendMessage() {
   const emptyState = document.getElementById('empty-state');
   if (emptyState) emptyState.remove();
 
-  // 渲染用户消息
-  appendMessage('user', content);
+  // 渲染用户消息（使用 UI 模块）
+  UI.appendBubble(content, 'user', false, false, new Date().toISOString());
   input.value = '';
-  autoResize(input);
+  UI.autoResizeTextarea(input);
 
   // 显示打字动画
-  showTyping();
+  UI.showTyping();
+  AppState.setLoading(true);
 
-  // 模拟回复（实际接入 API）
-  setTimeout(() => {
-    hideTyping();
-    const replies = [
-      '我记得你之前讨论过这个问题。根据你的对话历史，我发现你在记忆系统设计方面有深入的思考。',
-      '这是个很有意思的问题。从你的描述来看，混合检索路径（向量 + BM25 + 图谱）是目前最有效的方案之一。',
-      '我刚刚从你的记忆库里检索到相关内容。你上次提到过类似的想法，要结合一下吗？'
-    ];
-    const reply = replies[Math.floor(Math.random() * replies.length)];
-    appendMessage('ai', reply);
-    document.getElementById('save-chip').style.display = 'flex';
-  }, 1400);
-}
-
-function appendMessage(role, content) {
-  const container = document.getElementById('messages-inner');
-  const now = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
-
-  const row = document.createElement('div');
-  row.className = `msg-row ${role}`;
-
-  if (role === 'ai') {
-    row.innerHTML = `
-      <div class="avatar ai-avatar">🪸</div>
-      <div class="msg-content">
-        <div class="bubble ai">${content}</div>
-        <div class="msg-time">${now}</div>
-      </div>`;
-  } else {
-    row.innerHTML = `
-      <div class="msg-content">
-        <div class="bubble user">${content}</div>
-        <div class="msg-time">${now}</div>
-      </div>
-      <div class="avatar user-avatar">烧</div>`;
+  // 通过 WebSocket 发送消息
+  const sent = API.wsSendChat(_ws, content);
+  if (!sent) {
+    UI.hideTyping();
+    AppState.setLoading(false);
+    UI.showToast('消息发送失败，请检查网络连接', 'error');
   }
-
-  container.appendChild(row);
-  scrollToBottom();
 }
 
-let typingEl = null;
-function showTyping() {
-  const container = document.getElementById('messages-inner');
-  const row = document.createElement('div');
-  row.className = 'msg-row';
-  row.id = 'typing-row';
-  row.innerHTML = `
-    <div class="avatar ai-avatar">🪸</div>
-    <div class="msg-content">
-      <div class="typing-bubble">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-      </div>
-    </div>`;
-  container.appendChild(row);
-  scrollToBottom();
-}
-function hideTyping() {
-  const el = document.getElementById('typing-row');
-  if (el) el.remove();
+// appendMessage 已由 UI.appendBubble 替代，此函数保留用于兼容性
+function appendMessage(role, content) {
+  UI.appendBubble(content, role, false, false, new Date().toISOString());
 }
 
-function scrollToBottom() {
-  const msgs = document.getElementById('messages');
-  msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
-}
+// showTyping/hideTyping 已由 UI.showTyping/UI.hideTyping 替代
+// 保留别名用于兼容性
+function showTyping() { UI.showTyping(); }
+function hideTyping() { UI.hideTyping(); }
+
+// scrollToBottom 已由 UI.scrollToBottom 替代
+function scrollToBottom() { UI.scrollToBottom(); }
 
 // ─── 保存 ────────────────────────────────────────────────────────
-function saveSession() {
-  showToast('对话已保存 ✓', 'success');
-  document.getElementById('save-chip').style.display = 'none';
+async function saveSession() {
+  try {
+    await API.save();
+    UI.showToast('对话已保存', 'success');
+    document.getElementById('save-chip').style.display = 'none';
+  } catch (err) {
+    UI.showToast('保存失败：' + err.message, 'error');
+  }
 }
 
-// ─── Toast ───────────────────────────────────────────────────────
-function showToast(msg, type = '') {
-  const wrap = document.getElementById('toasts');
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  wrap.appendChild(el);
-  setTimeout(() => {
-    el.style.animation = 'none';
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(8px)';
-    el.style.transition = 'all 0.25s';
-    setTimeout(() => el.remove(), 300);
-  }, 2500);
-}
+// showToast 已由 UI.showToast 替代
+function showToast(msg, type = '') { UI.showToast(msg, type); }
 
-// ─── 输入框自适应高度 ─────────────────────────────────────────────
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
-}
+// autoResize 已由 UI.autoResizeTextarea 替代
+function autoResize(el) { UI.autoResizeTextarea(el); }
 
 const textarea = document.getElementById('user-input');
 textarea.addEventListener('input', function() {
@@ -1073,6 +1096,13 @@ textarea.addEventListener('keydown', function(e) {
     e.preventDefault();
     sendMessage();
   }
+});
+
+// ─── 页面初始化 ────────────────────────────────────────────────────
+// 页面加载完成后建立 WebSocket 连接并加载会话列表
+document.addEventListener('DOMContentLoaded', () => {
+  connectWebSocket();
+  loadSessionList();
 });
 </script>
 </body>

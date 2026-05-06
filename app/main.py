@@ -29,12 +29,18 @@ import os
 import sys
 import time
 import threading
+import warnings
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # 禁止 HuggingFace 在启动时联网检查模型更新，避免离线环境启动卡顿
 os.environ["HF_HUB_OFFLINE"] = "1"
+
+# 抑制 requests 库的 urllib3/charset_normalizer 版本警告
+warnings.filterwarnings("ignore", message=".*urllib3.*")
+warnings.filterwarnings("ignore", message=".*chardet.*")
+warnings.filterwarnings("ignore", message=".*charset_normalizer.*")
 
 # ── 直接执行 app/main.py 时，将项目根目录和 src/ 加入 Python 模块搜索路径 ──
 _ROOT_DIR = Path(__file__).resolve().parent.parent

@@ -26,7 +26,7 @@ if errorlevel 1 goto :error
 echo [3/5] Copying config templates...
 if not exist "dist\Ramaria\config" mkdir "dist\Ramaria\config"
 copy /Y "config\persona.toml.example" "dist\Ramaria\config\persona.toml" >nul 2>&1
-if exist ".env.example" copy /Y ".env.example" "dist\Ramaria\.env" >nul 2>&1
+echo   .env file is NOT copied - first launch will trigger setup wizard
 
 echo [4/5] Collecting VC++ runtime DLLs...
 %PYTHON% scripts\collect_dlls.py >nul 2>&1

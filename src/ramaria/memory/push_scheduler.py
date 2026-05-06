@@ -388,6 +388,7 @@ class PushScheduler:
         调用本地模型生成主动推送消息。
 
         步骤：
+            0. 检查本地模型是否已配置（未配置则跳过）
             1. 从 persona.toml 读取助手名和用户名
             2. 从数据库读取近期 L1 摘要作为记忆上下文
             3. 拼装 prompt，调用本地模型
@@ -397,6 +398,12 @@ class PushScheduler:
             str  — 生成的消息文本
             None — 任何步骤失败时返回 None
         """
+        # ── 检查本地模型是否已配置 ──────────────────────────────────────────
+        import os
+        if not os.environ.get("LOCAL_API_URL") or not os.environ.get("LOCAL_MODEL_NAME"):
+            logger.debug("本地模型未配置，跳过推送消息生成")
+            return None
+
         # ── 读取身份信息 ──────────────────────────────────────────────────────
         try:
             from ramaria.core.prompt_builder import get_builder

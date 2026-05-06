@@ -68,11 +68,35 @@
 
   /* ── 功能性背景 ── */
   --assistant-bg: oklch(0.97 0.005 25);  /* 助手消息背景：微微暖灰 */
+  --overlay-bg:    oklch(0.14 0.01 25 / 0.5);  /* 遮罩层背景 */
+
+  /* ── 兼容别名（index.html 使用 text-1/2/3） ── */
+  --text-1: var(--text-primary);
+  --text-2: var(--text-secondary);
+  --text-3: var(--text-tertiary);
+
+  /* 老界面兼容别名 */
+  --text:     var(--text-primary);
+  --text-mid: var(--text-secondary);
+  --text-dim: var(--text-tertiary);
+
+  /* ── 兼容别名（layout.css 旧变量） ── */
+  --bg:      var(--bg-page);
+  --surface: var(--bg-card);
+  --surface-2: var(--bg-subtle);
+
+  /* 品牌色兼容（老界面使用 --coral, --coral-light, --coral-dim） */
+  --coral:       var(--color-primary);
+  --coral-light: var(--pink-300);
+  --coral-dim:   var(--color-primary-active);
 
   --border-default:  var(--gray-200);
   --border-strong:   var(--gray-300);
+  --border-md:       var(--gray-300);    /* 兼容 index.html */
   --border-pink:     var(--pink-200);
   --border-blue:     var(--blue-200);
+  --border:          var(--border-default);  /* 兼容老界面 */
+  --border-light:     var(--border-default);  /* 兼容老界面 */
 
   --color-primary:        var(--pink-500);
   --color-primary-hover:  var(--pink-400);
@@ -93,6 +117,7 @@
   --font-display: 'DM Serif Display', Georgia, serif;
   --font-body:    'DM Sans', -apple-system, sans-serif;
   --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --font-title:   var(--font-display);  /* 兼容老界面 */
 
   --text-xs:   0.72rem;   /* 11.5px */
   --text-sm:   0.82rem;   /* 13px */
@@ -136,6 +161,9 @@
   --radius-xl:   28px;
   --radius-full: 9999px;
 
+  /* 老界面兼容别名 */
+  --radius: var(--radius-lg);  /* 兼容老界面 */
+
   /* ── 阴影 ── */
   --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.05);
   --shadow-sm: 0 1px 4px oklch(0 0 0 / 0.06), 0 2px 8px oklch(0 0 0 / 0.04);
@@ -144,6 +172,10 @@
   --shadow-xl: 0 16px 40px oklch(0 0 0 / 0.12), 0 8px 16px oklch(0 0 0 / 0.06);
   --shadow-pink: 0 4px 16px oklch(0.53 0.19 10 / 0.20);
   --shadow-blue: 0 4px 16px oklch(0.48 0.17 225 / 0.20);
+
+  /* 老界面兼容别名 */
+  --shadow-btn:    var(--shadow-md);
+  --shadow-bubble: var(--shadow-sm);
 
   /* ── 动效 ── */
   --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -157,9 +189,80 @@
   --dur-slow:   380ms;
   --dur-slower: 560ms;
 
+  /* 过渡时间兼容别名（老界面使用 --transition-*） */
+  --transition-fast:   var(--dur-fast);
+  --transition-normal: var(--dur-normal);
+  --transition-slow:   var(--dur-slow);
+
+  /* 状态点颜色（老界面使用 --dot-*） */
+  --dot-local:    oklch(0.52 0.14 150);
+  --dot-online:  var(--color-primary);
+  --dot-pending: var(--color-info);
+
+  /* 品牌透明度（老界面使用 --brand-alpha-*） */
+  --brand-alpha-04: color-mix(in oklch, var(--color-primary) 4%, transparent);
+  --brand-alpha-06: color-mix(in oklch, var(--color-primary) 6%, transparent);
+  --brand-alpha-08: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  --brand-alpha-10: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  --brand-alpha-12: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  --brand-alpha-15: color-mix(in oklch, var(--color-primary) 15%, transparent);
+  --brand-alpha-20: color-mix(in oklch, var(--color-primary) 20%, transparent);
+
+  /* 品牌RGB（用于 rgba(var(--brand-deep-rgb), x) 格式） */
+  --brand-deep-rgb: 223, 107, 135;
+
+  /* ── 消息气泡 ── */
+  --bubble-padding-x: 16px;
+  --bubble-padding-y: 11px;
+  --bubble-radius: var(--radius-lg);
+  --bubble-radius-corner: 6px;
+  --bubble-max-width: 560px;
+  --bubble-max-width-pct: 72%;
+
+  /* ── 打字动画 ── */
+  --typing-dot-size: 7px;
+  --typing-dot-gap: 5px;
+  --typing-bubble-padding: 14px 18px;
+
+  /* ── 思考链折叠 ── */
+  --think-block-border-left: 2px solid var(--pink-200);
+  --think-block-padding: 6px 12px;
+  --think-block-font-size: var(--text-sm);
+  --think-block-border-radius: 0 4px 4px 0;
+
+  /* ── 时间戳分隔线 ── */
+  --time-divider-font-size: 0.75rem;
+  --time-divider-gap: 12px;
+  --time-divider-margin: 12px 0 8px;
+
+  /* ── 消息时间 ── */
+  --msg-time-font-size: 0.72rem;
+
+  /* ── 头像 ── */
+  --avatar-size: 32px;
+  --avatar-font-size: 14px;
+  --avatar-margin-top: 2px;
+
+  /* ── 消息行动画 ── */
+  --msg-in-duration: 280ms;
+
+  /* ── 错误气泡 ── */
+  --error-bg: oklch(0.97 0.02 25);
+  --error-border: oklch(0.85 0.08 25);
+  --error-text: oklch(0.44 0.18 20);
+
+  /* ── 历史对话分隔 ── */
+  --history-block-bg: var(--bg-subtle);
+  --history-divider-color: var(--text-3);
+
+  /* ── 加载指示器 ── */
+  --loading-spinner-size: 14px;
+
   /* ── 尺寸 ── */
   --sidebar-width: 280px;
+  --sidebar-w:     300px;      /* 兼容 index.html */
   --header-height: 60px;
+  --header-h:      62px;       /* 兼容 index.html */
   --max-content:   760px;
   --z-base:    0;
   --z-above:   10;
@@ -178,15 +281,29 @@
     --bg-card-blue:   oklch(0.18 0.015 225);
     --bg-subtle:      oklch(0.16 0.004 25);
     --assistant-bg:   oklch(0.20 0.006 25);
+    --overlay-bg:     oklch(0.10 0 0 / 0.6);
 
     --text-primary:   oklch(0.94 0 0);
     --text-secondary: oklch(0.70 0 0);
     --text-tertiary:  oklch(0.52 0 0);
+    --text-1:        oklch(0.94 0 0);
+    --text-2:        oklch(0.70 0 0);
+    --text-3:        oklch(0.52 0 0);
 
     --border-default: oklch(0.28 0.005 25);
     --border-strong:  oklch(0.35 0.005 25);
+    --border-md:      oklch(0.35 0.005 25);
     --border-pink:    oklch(0.35 0.04 15);
     --border-blue:    oklch(0.32 0.04 225);
+
+    /* 品牌透明度暗色适配 */
+    --brand-alpha-04: color-mix(in oklch, var(--color-primary) 8%, transparent);
+    --brand-alpha-06: color-mix(in oklch, var(--color-primary) 10%, transparent);
+    --brand-alpha-08: color-mix(in oklch, var(--color-primary) 12%, transparent);
+    --brand-alpha-10: color-mix(in oklch, var(--color-primary) 15%, transparent);
+    --brand-alpha-12: color-mix(in oklch, var(--color-primary) 18%, transparent);
+    --brand-alpha-15: color-mix(in oklch, var(--color-primary) 22%, transparent);
+    --brand-alpha-20: color-mix(in oklch, var(--color-primary) 30%, transparent);
   }
 }
 

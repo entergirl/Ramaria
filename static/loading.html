@@ -218,16 +218,34 @@
     if (progressStatus) progressStatus.textContent = message;
   }
 
-  /** 跳转到目标页面 */
-  function redirectTo(url) {
-    if (window.pywebview && window.pywebview.api) {
-      try {
-        window.pywebview.api.navigate_to(url);
-        return;
-      } catch (e) {
-        console.log('[Loading] pywebview API 调用失败，使用浏览器跳转:', e);
-      }
+  /** 检查配置是否就绪，返回 true=可直接启动 false=需要配置向导 */
+  async function checkCanStart() {
+    try {
+      const resp = await fetch('/api/admin/status');
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      return data.can_start === true;
+    } catch (e) {
+      console.warn('[Loading] 检查 can_start 失败:', e);
+      return false;
     }
+  }
+
+  /** 初始化完成后，根据配置状态跳转到对应页面 */
+  async function checkCanStartAndRedirect() {
+    const canStart = await checkCanStart();
+    if (canStart) {
+      console.log('[Loading] 配置就绪，跳转到首页');
+      redirectTo('/');
+    } else {
+      console.log('[Loading] 配置未就绪，跳转到配置向导');
+      redirectTo('/api/admin/launcher/page');
+    }
+  }
+
+  /** 跳转到目标页面（loading.html 作为初始加载页，直接使用浏览器跳转） */
+  function redirectTo(url) {
+    console.log('[Loading] 跳转到:', url);
     window.location.href = url;
   }
 
@@ -261,11 +279,9 @@
       lastStep = step;
 
       if (done) {
-        // 初始化完成 → 跳转
-        console.log('[Loading] 初始化完成，即将跳转');
-        setTimeout(function() {
-          redirectTo('/');
-        }, 500);
+        // 初始化完成 → 检查配置是否就绪，决定跳转目标
+        console.log('[Loading] 初始化完成，检查配置状态…');
+        checkCanStartAndRedirect();
         return;
       }
 
@@ -286,6 +302,22 @@
 
   /** 触发后端初始化，然后开始轮询 */
   async function start() {
+    // 先检查是否已初始化完成（避免重复调用 init）
+    try {
+      const checkResp = await fetch('/api/admin/init-progress');
+      if (checkResp.ok) {
+        const checkData = await checkResp.json();
+        if (checkData.done && !checkData.error) {
+          console.log('[Loading] 初始化已完成，检查配置状态…');
+          checkCanStartAndRedirect();
+          return;
+        }
+      }
+    } catch (e) {
+      // 检查失败，继续正常初始化流程
+      console.log('[Loading] 检查初始化状态失败，继续初始化:', e);
+    }
+
     console.log('[Loading] 触发初始化…');
     try {
       const resp = await fetch('/api/admin/init', { method: 'POST' });

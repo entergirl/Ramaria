@@ -31,7 +31,14 @@ import platform
 import sys
 import threading
 import time
+import uvicorn
+import warnings
 from pathlib import Path
+
+# 抑制 requests 库的 urllib3/charset_normalizer 版本警告（需在最早入口设置）
+warnings.filterwarnings("ignore", message=".*urllib3.*")
+warnings.filterwarnings("ignore", message=".*chardet.*")
+warnings.filterwarnings("ignore", message=".*charset_normalizer.*")
 
 # =============================================================================
 # 步骤 0：路径修复（PyInstaller 打包时资源在 _MEIPASS 目录）

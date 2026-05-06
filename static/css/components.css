@@ -1811,3 +1811,260 @@
     animation: none;
   }
 }
+
+
+/* =============================================================================
+   19. index.html 消息结构样式（新设计）
+   与 index.html 内联样式保持一致
+   ============================================================================= */
+
+/* ── 消息行容器 ── */
+.msg-row {
+  display: flex;
+  gap: 10px;
+  max-width: 100%;
+  animation: msg-in 0.28s var(--ease-smooth) both;
+}
+
+.msg-row.user {
+  flex-direction: row-reverse;
+}
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 头像 ── */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.avatar.ai-avatar {
+  background: linear-gradient(135deg, var(--pink-200), var(--pink-400));
+}
+
+.avatar.user-avatar {
+  background: linear-gradient(135deg, var(--blue-200), var(--blue-400));
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  font-family: var(--font-mono);
+}
+
+/* ── 消息内容容器 ── */
+.msg-content {
+  max-width: min(72%, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.msg-row.user .msg-content {
+  align-items: flex-end;
+}
+
+/* ── 消息气泡 ── */
+.bubble {
+  padding: 11px 16px;
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  position: relative;
+  word-break: break-word;
+}
+
+.bubble.ai {
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
+  color: var(--text-1);
+  box-shadow: var(--shadow-sm);
+}
+
+.bubble.user {
+  background: linear-gradient(135deg, var(--pink-400), var(--pink-500));
+  color: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 6px var(--radius-lg);
+  box-shadow: var(--shadow-pink);
+}
+
+/* ── 思考链折叠（新样式） ── */
+.think-block {
+  border-left: 2px solid var(--pink-200);
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  color: var(--text-3);
+  font-style: italic;
+  cursor: pointer;
+  border-radius: 0 4px 4px 0;
+  transition: background 0.12s;
+}
+
+.think-block:hover {
+  background: var(--pink-50);
+}
+
+.think-content {
+  display: none;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.think-block.open .think-content {
+  display: block;
+}
+
+/* ── 消息时间 ── */
+.msg-time {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  padding: 0 4px;
+}
+
+/* ── 打字动画（新样式） ── */
+.typing-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
+  padding: 14px 18px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pink-300);
+  animation: typing-bounce 1.2s ease infinite;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.30s;
+}
+
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+.typing-text {
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+
+/* ── 时间戳分隔线 ── */
+.time-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 8px;
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+
+.time-divider::before,
+.time-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-default);
+}
+
+/* ── 系统通知 ── */
+.sys-notice {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  padding: 6px 16px;
+  margin: 8px 0;
+}
+
+.sys-notice span {
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  padding: 4px 14px;
+  display: inline-block;
+}
+
+/* ── 错误气泡 ── */
+.bubble.error,
+.msg-row.error .bubble {
+  background: var(--error-bg, var(--pink-50));
+  border-color: var(--error-border, var(--pink-200));
+}
+
+.error-message {
+  color: var(--error-text, oklch(0.44 0.18 20));
+  font-weight: 500;
+}
+
+.error-details {
+  font-size: 0.82rem;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.error-context {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin-top: 6px;
+  font-style: italic;
+}
+
+/* ── 线上来源标记 ── */
+.msg-source {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin-left: 6px;
+}
+
+/* ── 加载指示器 ── */
+.loading-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--pink-400);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 历史对话块 ── */
+.history-block {
+  padding: 12px 0;
+  margin-bottom: 8px;
+}

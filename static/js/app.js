@@ -155,6 +155,9 @@ async function sendMessage() {
   // 清空输入框
   textarea.value = '';
   textarea.style.height = 'auto';
+  
+  // 清除已保存的草稿
+  clearSavedInput();
 
   // 立即渲染用户气泡（即时反馈）
   UI.appendBubble(content, 'user', false, false, new Date().toISOString());
@@ -296,11 +299,20 @@ async function recoverCurrentSession() {
       const messages = await API.getSessionMessages(activeSession.id);
       
       if (messages && messages.length > 0) {
-        // 渲染所有消息（不是历史，直接用 appendBubble）
-        // 注意：这里不能使用 loadHistorySession，因为那是显示历史块
+        // 渲染所有消息
         messages.forEach(msg => {
           const isOnlineMsg = msg.source === 'online';
-          UI.appendBubble(msg.content, msg.role, isOnlineMsg, false, msg.created_at);
+          
+          // 助手消息需要按 || 拆分，与 renderAssistantReply 保持一致
+          if (msg.role === 'assistant') {
+            const parts = msg.content.split('||').map(s => s.trim()).filter(Boolean);
+            parts.forEach((part, i) => {
+              const isLast = i === parts.length - 1;
+              UI.appendBubble(part, 'assistant', isLast && isOnlineMsg, false, msg.created_at);
+            });
+          } else {
+            UI.appendBubble(msg.content, msg.role, false, false, msg.created_at);
+          }
         });
         
         console.log(`已恢复 session #${activeSession.id} 的 ${messages.length} 条消息`);
@@ -620,6 +632,52 @@ const LoadingScreen = {
 
 
 /* =============================================================================
+   输入框内容持久化（跨页面跳转）
+   ============================================================================= */
+
+/**
+ * 保存输入框内容到 sessionStorage。
+ * 在跳转到其他页面之前调用。
+ */
+function saveInputToStorage() {
+  const textarea = document.getElementById('user-input');
+  if (textarea && textarea.value.trim()) {
+    try {
+      sessionStorage.setItem('ramaria_draft', textarea.value);
+    } catch (_) {}
+  }
+}
+
+/**
+ * 从 sessionStorage 恢复输入框内容。
+ * 在页面加载时调用。
+ */
+function restoreInputFromStorage() {
+  try {
+    const draft = sessionStorage.getItem('ramaria_draft');
+    if (draft) {
+      const textarea = document.getElementById('user-input');
+      if (textarea) {
+        textarea.value = draft;
+        // 触发一次高度自适应
+        UI.autoResizeTextarea(textarea);
+      }
+    }
+  } catch (_) {}
+}
+
+/**
+ * 清除已保存的输入框内容。
+ * 在消息发送成功后调用。
+ */
+function clearSavedInput() {
+  try {
+    sessionStorage.removeItem('ramaria_draft');
+  } catch (_) {}
+}
+
+
+/* =============================================================================
    事件绑定与初始化（DOMContentLoaded）
    ============================================================================= */
 
@@ -805,12 +863,20 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // T6：恢复当前活跃 session 的消息
   recoverCurrentSession();
+  
+  // 恢复输入框草稿（跨页面跳转场景）
+  restoreInputFromStorage();
 
   // ── 建立 WebSocket 连接 ──
   connectWebSocket();
 
   // ── 设置面板初始化 ──
   initSettingsPanel();
+
+  // ── 侧边栏导航链接：跳转前保存输入框内容 ──
+  document.querySelectorAll('.sidebar-nav-item').forEach(link => {
+    link.addEventListener('click', saveInputToStorage);
+  });
 
   // ── 初始化完成后，聚焦到输入框（桌面端体验） ──
   // 移动端不自动聚焦，避免键盘弹出遮挡内容

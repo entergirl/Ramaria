@@ -1,149 +1,219 @@
 /* =============================================================================
-   variables.css — 设计变量与主题定义
-   -----------------------------------------------------------------------------
-   所有颜色、字体、圆角、间距等设计 token 集中在此文件管理。
-   需要调整视觉风格时，只改这一个文件，其他 CSS 文件自动跟随。
+  variables.css — Ramaria 新设计令牌系统
+  粉蓝双色系 · 2026
 
-   品牌色 #ffd1cc（浅樱粉）色阶体系：
-     --brand         #ffd1cc  品牌色本体 — 大面积装饰、助手气泡
-     --brand-light   #ffe8e5  极浅 — 微妙高亮
-     --brand-mid     #e6b5b5  中间 — 边框、分割线
-     --brand-dim     #da9a9a  中深 — hover 态背景
-     --brand-deep    #cc7a7a  深色 — 按钮、链接文字
-     --brand-surface #faf2ef  卡片/面板着色背景
+  浏览器兼容性说明:
+  · oklch()       — Chrome 111+, Firefox 113+, Safari 15.4+
+  · color-mix()   — Chrome 111+, Firefox 113+, Safari 16.2+
+  · CSS变量       — 全平台现代浏览器 (Chrome 49+, Firefox 31+)
+  ============================================================================= */
 
-   主题切换原理：
-     默认（亮色）：变量定义在 :root
-     暗色模式：    变量定义在 :root[data-theme="dark"]，覆盖同名亮色变量
-     切换方式：    app.js 中的 toggleTheme() 修改 <html data-theme="dark">
-   ============================================================================= */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
 
-:root {
-    /* ── 背景层 ── */
-    --bg:            #faf5f3;
-    --surface:       #f5eeea;
-    --surface-alt:   #f8f0ec;
-    --assistant-bg:  #ffd1cc;   /* 品牌色直接用作助手气泡背景 */
-    /* ── 边框 ── */
-    --border:        #e8dbd5;
-    --border-light:  #efe4de;
-    /* ── 文字 ── */
-    --text:          #2d2724;
-    --text-mid:      #7a6e68;
-    --text-dim:      #b0a49e;
-
-    /* ═══════════════════════════════════════════════════════════
-       品牌色阶 — 围绕 #ffd1cc 构建
-       ═══════════════════════════════════════════════════════════ */
-    --brand:         #ffd1cc;   /* 品牌色本体 — 大面积装饰、卡片 */
-    --brand-light:   #ffe8e5;   /* 极浅 — 微妙高亮、hover 背景 */
-    --brand-mid:     #e6b5b5;   /* 中间色 — 边框、分割线、focus ring */
-    --brand-dim:     #da9a9a;   /* 中深色 — hover/active 态背景 */
-    --brand-deep:    #cc7a7a;   /* 深色 — 按钮背景、链接文字、品牌强调 */
-    --brand-surface: #faf2ef;   /* 卡片/面板着色背景 */
-
-    /* RGB 分量（供 rgba(var(...), alpha) 使用） */
-    --brand-rgb:      255, 209, 204;
-    --brand-deep-rgb: 204, 122, 122;
-    --brand-dim-rgb:  218, 154, 154;
-
-    /* 品牌色半透明预设（统一管理所有透明度级别） */
-    --brand-alpha-03: rgba(var(--brand-deep-rgb), .03);
-    --brand-alpha-04: rgba(var(--brand-deep-rgb), .04);
-    --brand-alpha-06: rgba(var(--brand-deep-rgb), .06);
-    --brand-alpha-08: rgba(var(--brand-deep-rgb), .08);
-    --brand-alpha-10: rgba(var(--brand-deep-rgb), .10);
-    --brand-alpha-12: rgba(var(--brand-deep-rgb), .12);
-    --brand-alpha-15: rgba(var(--brand-deep-rgb), .15);
-    --brand-alpha-20: rgba(var(--brand-deep-rgb), .20);
-    --brand-alpha-30: rgba(var(--brand-deep-rgb), .30);
-    --brand-alpha-35: rgba(var(--brand-deep-rgb), .35);
-    --brand-alpha-40: rgba(var(--brand-deep-rgb), .40);
-    --brand-alpha-45: rgba(var(--brand-deep-rgb), .45);
-
-    /* ── 兼容旧变量名（映射到新色阶）── */
-    --coral:       var(--brand-deep);
-    --coral-light: var(--brand-mid);
-    --coral-dim:   var(--brand-dim);
-
-    /* ── 状态指示点颜色 ── */
-    --dot-local:   #7cad7c;
-    --dot-online:  var(--brand-deep);
-    --dot-pending: #7fafd4;
-
-    /* ── 字体族 ── */
-    --font-title: 'Noto Serif SC', Georgia, serif;
-    --font-body:  'Noto Serif SC', Georgia, serif;
-    --font-mono:  'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
-
-    /* ── 圆角 ── */
-    --radius:    20px;
-    --radius-sm: 10px;
-
-    /* ── 阴影 ── */
-    --shadow-bubble:      0 1px 4px rgba(0, 0, 0, .05);
-    --shadow-btn:         0 2px 8px var(--brand-alpha-35);
-    --shadow-btn-hover:   0 3px 12px var(--brand-alpha-45);
-
-    /* ── 过渡 ── */
-    --transition-fast:   .15s ease;
-    --transition-normal: .25s ease;
-    --transition-slow:   .4s ease;
+/* ── 兼容性回退色 (oklch/color-mix 不支持时) ── */
+@supports not (color: oklch(0 0 0)) {
+  :root {
+    --pink-50:  #fdf7f8; --pink-100: #fce8ec; --pink-200: #f8d0da; --pink-300: #f2acc1;
+    --pink-400: #ea8fa6; --pink-500: #df6b87; --pink-600: #c04f6b; --pink-700: #96384f;
+    --blue-50:  #f0f7ff; --blue-100: #e0edff; --blue-200: #c2dbff; --blue-300: #99c2ff;
+    --blue-400: #6ba3ff; --blue-500: #4d7fd9; --blue-600: #3d63b3; --blue-700: #2d4a85;
+  }
 }
 
-    :root[data-theme="dark"] {
-        /* ── 背景层 ── */
-        --bg:            #1c1917;
-        --surface:       #28231f;
-        --surface-alt:   #292522;
-        --assistant-bg:  #4a3535;
-        /* ── 边框 ── */
-        --border:        #3d3530;
-        --border-light:  #473e39;
-        /* ── 文字 ── */
-        --text:          #e8e0d4;
-        --text-mid:      #9e9087;
-        --text-dim:      #5e5650;
+:root {
+  /* ── 色阶原始令牌 ── */
+  --pink-50:  oklch(0.97 0.008 25);
+  --pink-100: oklch(0.90 0.045 25);
+  --pink-200: oklch(0.83 0.075 20);
+  --pink-300: oklch(0.74 0.12 15);
+  --pink-400: oklch(0.63 0.17 12);
+  --pink-500: oklch(0.53 0.19 10);
+  --pink-600: oklch(0.42 0.14 10);
+  --pink-700: oklch(0.30 0.10 10);
 
-        /* ── 品牌色阶（暗色主题适配：加深以保持视觉重量）── */
-        --brand:         #ffd1cc;   /* 品牌色本身在暗色下仍然醒目 */
-        --brand-light:   #3d2020;
-        --brand-mid:     #9a6060;
-        --brand-dim:     #d09090;
-        --brand-deep:    #e8b0b0;
-        --brand-surface: #2d1f1f;
+  --blue-50:  oklch(0.97 0.02 225);
+  --blue-100: oklch(0.85 0.08 225);
+  --blue-200: oklch(0.77 0.10 225);
+  --blue-300: oklch(0.67 0.14 225);
+  --blue-400: oklch(0.57 0.17 225);
+  --blue-500: oklch(0.48 0.17 225);
+  --blue-600: oklch(0.38 0.13 228);
+  --blue-700: oklch(0.26 0.08 228);
 
-        /* RGB 分量（暗色主题覆盖） */
-        --brand-rgb:      255, 209, 204;
-        --brand-deep-rgb: 232, 176, 176;
-        --brand-dim-rgb:  208, 144, 144;
+  --gray-0:   oklch(1 0 0);
+  --gray-50:  oklch(0.97 0 0);
+  --gray-100: oklch(0.92 0 0);
+  --gray-200: oklch(0.85 0 0);
+  --gray-300: oklch(0.72 0 0);
+  --gray-400: oklch(0.58 0 0);
+  --gray-500: oklch(0.45 0 0);
+  --gray-600: oklch(0.32 0 0);
+  --gray-700: oklch(0.20 0 0);
+  --gray-800: oklch(0.12 0 0);
 
-        /* 半透明预设自动重新计算（因为引用了 --brand-deep-rgb） */
-        --brand-alpha-03: rgba(var(--brand-deep-rgb), .03);
-        --brand-alpha-04: rgba(var(--brand-deep-rgb), .04);
-        --brand-alpha-06: rgba(var(--brand-deep-rgb), .06);
-        --brand-alpha-08: rgba(var(--brand-deep-rgb), .08);
-        --brand-alpha-10: rgba(var(--brand-deep-rgb), .10);
-        --brand-alpha-12: rgba(var(--brand-deep-rgb), .12);
-        --brand-alpha-15: rgba(var(--brand-deep-rgb), .15);
-        --brand-alpha-20: rgba(var(--brand-deep-rgb), .20);
-        --brand-alpha-30: rgba(var(--brand-deep-rgb), .30);
-        --brand-alpha-35: rgba(var(--brand-deep-rgb), .35);
-        --brand-alpha-40: rgba(var(--brand-deep-rgb), .40);
-        --brand-alpha-45: rgba(var(--brand-deep-rgb), .45);
+  /* ── 语义色 ── */
+  --bg-page:         var(--pink-50);
+  --bg-card:         var(--gray-0);
+  --bg-card-pink:    var(--pink-100);
+  --bg-card-blue:    var(--blue-50);
+  --bg-subtle:       var(--gray-50);
+  --bg-overlay:      oklch(0.12 0 0 / 0.45);
 
-        /* ── 兼容旧变量名 ── */
-        --coral:       var(--brand-deep);
-        --coral-light: #6b4040;
-        --coral-dim:   var(--brand-dim);
+  --text-primary:    var(--gray-700);
+  --text-secondary:  var(--gray-500);
+  --text-tertiary:   var(--gray-400);
+  --text-inverse:    var(--gray-0);
+  --text-pink:       var(--pink-500);
+  --text-blue:       var(--blue-500);
 
-        /* ── 状态指示点 ── */
-        --dot-local:   #8fc48f;
-        --dot-online:  var(--brand-deep);
-        --dot-pending: #8fc0d8;
+  /* ── 功能性背景 ── */
+  --assistant-bg: oklch(0.97 0.005 25);  /* 助手消息背景：微微暖灰 */
 
-        /* ── 阴影 ── */
-        --shadow-bubble:      0 1px 6px rgba(0, 0, 0, .25);
-        --shadow-btn:         0 2px 8px var(--brand-alpha-30);
-        --shadow-btn-hover:   0 3px 12px var(--brand-alpha-40);
-    }
+  --border-default:  var(--gray-200);
+  --border-strong:   var(--gray-300);
+  --border-pink:     var(--pink-200);
+  --border-blue:     var(--blue-200);
+
+  --color-primary:        var(--pink-500);
+  --color-primary-hover:  var(--pink-400);
+  --color-primary-active: var(--pink-600);
+  --color-primary-subtle: var(--pink-100);
+
+  --color-secondary:        var(--blue-500);
+  --color-secondary-hover:  var(--blue-400);
+  --color-secondary-active: var(--blue-600);
+  --color-secondary-subtle: var(--blue-50);
+
+  --color-success: oklch(0.52 0.14 150);
+  --color-warning: oklch(0.70 0.16 75);
+  --color-error:   oklch(0.52 0.20 25);
+  --color-info:    var(--blue-500);
+
+  /* ── 字体 ── */
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body:    'DM Sans', -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+
+  --text-xs:   0.72rem;   /* 11.5px */
+  --text-sm:   0.82rem;   /* 13px */
+  --text-base: 0.94rem;   /* 15px */
+  --text-md:   1.0rem;    /* 16px */
+  --text-lg:   1.125rem;  /* 18px */
+  --text-xl:   1.375rem;  /* 22px */
+  --text-2xl:  1.75rem;   /* 28px */
+  --text-3xl:  2.25rem;   /* 36px */
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semi:    600;
+
+  --leading-tight:  1.25;
+  --leading-snug:   1.4;
+  --leading-normal: 1.6;
+  --leading-loose:  1.8;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide:  0.04em;
+  --tracking-wider: 0.08em;
+
+  /* ── 间距 ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── 圆角 ── */
+  --radius-sm:   6px;
+  --radius-md:   12px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+  --radius-full: 9999px;
+
+  /* ── 阴影 ── */
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 4px oklch(0 0 0 / 0.06), 0 2px 8px oklch(0 0 0 / 0.04);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+  --shadow-lg: 0 8px 24px oklch(0 0 0 / 0.10), 0 4px 8px oklch(0 0 0 / 0.06);
+  --shadow-xl: 0 16px 40px oklch(0 0 0 / 0.12), 0 8px 16px oklch(0 0 0 / 0.06);
+  --shadow-pink: 0 4px 16px oklch(0.53 0.19 10 / 0.20);
+  --shadow-blue: 0 4px 16px oklch(0.48 0.17 225 / 0.20);
+
+  /* ── 动效 ── */
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth:  cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-sharp:   cubic-bezier(0.12, 0, 0.39, 0);
+  --ease-out:     cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-in-out:  cubic-bezier(0.4, 0, 0.2, 1);
+
+  --dur-fast:   120ms;
+  --dur-normal: 220ms;
+  --dur-slow:   380ms;
+  --dur-slower: 560ms;
+
+  /* ── 尺寸 ── */
+  --sidebar-width: 280px;
+  --header-height: 60px;
+  --max-content:   760px;
+  --z-base:    0;
+  --z-above:   10;
+  --z-sticky:  20;
+  --z-overlay: 30;
+  --z-modal:   40;
+  --z-toast:   50;
+}
+
+/* ── 暗色模式 ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-page:        oklch(0.14 0.008 25);
+    --bg-card:        oklch(0.18 0.006 25);
+    --bg-card-pink:   oklch(0.20 0.015 25);
+    --bg-card-blue:   oklch(0.18 0.015 225);
+    --bg-subtle:      oklch(0.16 0.004 25);
+    --assistant-bg:   oklch(0.20 0.006 25);
+
+    --text-primary:   oklch(0.94 0 0);
+    --text-secondary: oklch(0.70 0 0);
+    --text-tertiary:  oklch(0.52 0 0);
+
+    --border-default: oklch(0.28 0.005 25);
+    --border-strong:  oklch(0.35 0.005 25);
+    --border-pink:    oklch(0.35 0.04 15);
+    --border-blue:    oklch(0.32 0.04 225);
+  }
+}
+
+/* ── 全局重置 ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  background: var(--bg-page);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea, select { font-family: inherit; }
+img, svg { display: block; max-width: 100%; }

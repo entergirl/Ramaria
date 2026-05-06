@@ -1,425 +1,1079 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#fdf2f0">
+<title>珊瑚菌 · Ramaria</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─── 设计令牌 ─────────────────────────────────────────────── */
+:root {
+  --pink-50:  oklch(0.97 0.008 25);
+  --pink-100: oklch(0.93 0.030 22);
+  --pink-200: oklch(0.87 0.060 18);
+  --pink-300: oklch(0.76 0.10 14);
+  --pink-400: oklch(0.65 0.15 12);
+  --pink-500: oklch(0.55 0.18 10);
+  --pink-600: oklch(0.44 0.14 10);
 
-  <!--
-    视口配置说明：
-    · width=device-width：使用设备实际宽度，不缩放
-    · initial-scale=1.0：初始缩放比例 1:1
-    · maximum-scale=1.0, user-scalable=no：禁止用户手动缩放，
-      防止双击/捏合导致布局错乱（移动端聊天应用的常见做法）
-    · viewport-fit=cover：适配 iPhone 的刘海/安全区域（iOS 11+）
-  -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  --blue-50:  oklch(0.97 0.015 225);
+  --blue-100: oklch(0.88 0.055 225);
+  --blue-200: oklch(0.78 0.09 225);
+  --blue-300: oklch(0.67 0.13 225);
+  --blue-400: oklch(0.57 0.16 225);
+  --blue-500: oklch(0.48 0.16 225);
 
-  <!-- PWA 相关 meta，让页面在移动端"添加到主屏幕"时表现更像原生 App -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="珊瑚菌">
-  <meta name="theme-color" content="#faf5f3">
+  --gray-0:   #ffffff;
+  --gray-50:  oklch(0.975 0.002 25);
+  --gray-100: oklch(0.94 0.003 25);
+  --gray-200: oklch(0.88 0.004 25);
+  --gray-300: oklch(0.76 0.005 25);
+  --gray-400: oklch(0.60 0.005 25);
+  --gray-500: oklch(0.46 0.004 25);
+  --gray-600: oklch(0.30 0.004 25);
+  --gray-700: oklch(0.18 0.003 25);
 
-  <title>珊瑚菌 · 个人 AI 陪伴助手</title>
+  --bg:           var(--gray-50);
+  --surface:      var(--gray-0);
+  --surface-2:    var(--gray-50);
+  --overlay-bg:   oklch(0.14 0.01 25 / 0.5);
 
-  <!--
-    字体加载策略：
-    1. preconnect：提前与 Google Fonts 建立连接，减少 DNS + TCP 延迟
-    2. 主字体 link：实际加载 Noto Serif SC（300/400/500 三个字重）
-    如需离线使用，将字体文件下载到 static/fonts/ 并在 variables.css 中
-    改为 @font-face 本地引用，同时删除这两个 link 标签。
-  -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  --text-1: var(--gray-700);
+  --text-2: var(--gray-500);
+  --text-3: var(--gray-400);
 
-  <!--
-    CSS 加载顺序（有依赖关系，顺序不可调换）：
-    1. variables.css  — CSS 变量定义，其余文件通过 var() 引用
-    2. layout.css     — 页面整体结构（依赖变量）
-    3. components.css — 各 UI 组件（依赖变量）
-    4. animations.css — 动画帧定义（依赖组件类名）
-  -->
-  <link rel="stylesheet" href="/static/css/variables.css">
-  <link rel="stylesheet" href="/static/css/layout.css">
-  <link rel="stylesheet" href="/static/css/components.css">
-  <link rel="stylesheet" href="/static/css/animations.css">
+  --border:    var(--gray-200);
+  --border-md: var(--gray-300);
+
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 32px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / .06), 0 1px 2px oklch(0 0 0 / .04);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / .08), 0 2px 4px oklch(0 0 0 / .04);
+  --shadow-lg: 0 12px 32px oklch(0 0 0 / .10), 0 4px 8px oklch(0 0 0 / .05);
+  --shadow-pink: 0 4px 20px oklch(0.55 0.18 10 / .22);
+  --shadow-blue: 0 4px 20px oklch(0.48 0.16 225 / .22);
+
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out:    cubic-bezier(0.0, 0.0, 0.2, 1);
+
+  --sidebar-w: 300px;
+  --header-h:  62px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text-1);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── 侧边栏 ─────────────────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  transform: translateX(-100%);
+  transition: transform 0.32s var(--ease-smooth), box-shadow 0.32s;
+}
+.sidebar.open {
+  transform: translateX(0);
+  box-shadow: var(--shadow-lg);
+}
+
+.sidebar-header {
+  height: var(--header-h);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-icon {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--pink-300), var(--pink-500));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  box-shadow: var(--shadow-pink);
+  flex-shrink: 0;
+}
+.logo-text {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+}
+
+.icon-btn {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3);
+  transition: background 0.15s, color 0.15s;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--gray-100); color: var(--text-1); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+/* 新对话按钮 */
+.new-chat-btn {
+  margin: 16px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--pink-400), var(--pink-500));
+  color: white;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-spring), box-shadow 0.15s, opacity 0.15s;
+  box-shadow: var(--shadow-pink);
+  flex-shrink: 0;
+}
+.new-chat-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px oklch(0.55 0.18 10 / .30); }
+.new-chat-btn:active { transform: translateY(0); }
+.new-chat-btn svg { width: 16px; height: 16px; }
+
+/* 会话列表 */
+.session-list-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+.session-list-wrap::-webkit-scrollbar { width: 4px; }
+.session-list-wrap::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 4px; }
+
+.session-group-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 16px 10px 6px;
+}
+
+.session-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.session-item:hover { background: var(--gray-100); }
+.session-item.active {
+  background: var(--pink-50);
+  border: 1px solid var(--pink-100);
+}
+.session-item.active .session-title { color: var(--pink-500); }
+
+.session-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.session-meta {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  display: flex; gap: 6px;
+}
+
+/* 侧边栏底部 */
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  text-decoration: none;
+}
+.sidebar-nav-item:hover { background: var(--gray-100); color: var(--text-1); }
+.sidebar-nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* ─── 覆盖层 ─────────────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0;
+  background: var(--overlay-bg);
+  z-index: 15;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s;
+  backdrop-filter: blur(2px);
+}
+.overlay.show { opacity: 1; pointer-events: auto; }
+
+/* ─── 主区域 ─────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ─── Header ─────────────────────────────────────────────────── */
+.header {
+  height: var(--header-h);
+  padding: 0 20px;
+  background: oklch(0.975 0.002 25 / 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  position: sticky; top: 0;
+  z-index: 10;
+}
+
+.header-title {
+  flex: 1;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 模式徽章 */
+.mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 500;
+  background: var(--blue-50);
+  color: var(--blue-500);
+  border: 1px solid var(--blue-100);
+  transition: all 0.2s;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.mode-badge.online {
+  background: oklch(0.95 0.06 150);
+  color: oklch(0.40 0.14 150);
+  border-color: oklch(0.85 0.08 150);
+}
+.mode-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.mode-badge.online .mode-dot { animation: pulse-dot 2s ease infinite; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ─── 消息区 ─────────────────────────────────────────────────── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.messages::-webkit-scrollbar { width: 4px; }
+.messages::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 4px; }
+
+/* 空状态 */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 40px 20px;
+  text-align: center;
+}
+.empty-hero {
+  width: 80px; height: 80px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--pink-200), var(--pink-400));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px;
+  box-shadow: var(--shadow-pink);
+  animation: float 4s ease-in-out infinite;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: var(--text-1);
+}
+.empty-desc {
+  font-size: 0.9rem;
+  color: var(--text-2);
+  line-height: 1.7;
+  max-width: 300px;
+}
+.empty-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+}
+.suggestion-chip {
+  padding: 11px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.18s var(--ease-smooth);
+  text-align: left;
+  display: flex; align-items: center; gap: 10px;
+}
+.suggestion-chip:hover {
+  border-color: var(--pink-200);
+  background: var(--pink-50);
+  color: var(--pink-500);
+  transform: translateX(4px);
+}
+.suggestion-chip span { font-size: 1rem; }
+
+/* 时间戳分隔 */
+.time-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 8px;
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+.time-divider::before, .time-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* 消息行 */
+.msg-row {
+  display: flex;
+  gap: 10px;
+  max-width: 100%;
+  animation: msg-in 0.28s var(--ease-smooth) both;
+}
+.msg-row.user { flex-direction: row-reverse; }
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.avatar {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  margin-top: 2px;
+}
+.avatar.ai-avatar {
+  background: linear-gradient(135deg, var(--pink-200), var(--pink-400));
+}
+.avatar.user-avatar {
+  background: linear-gradient(135deg, var(--blue-200), var(--blue-400));
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  font-family: var(--font-mono);
+}
+
+.msg-content { max-width: min(72%, 560px); display: flex; flex-direction: column; gap: 4px; }
+.msg-row.user .msg-content { align-items: flex-end; }
+
+.bubble {
+  padding: 11px 16px;
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  position: relative;
+  word-break: break-word;
+}
+
+.bubble.ai {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
+  color: var(--text-1);
+  box-shadow: var(--shadow-sm);
+}
+.bubble.user {
+  background: linear-gradient(135deg, var(--pink-400), var(--pink-500));
+  color: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 6px var(--radius-lg);
+  box-shadow: var(--shadow-pink);
+}
+
+/* 思考链折叠 */
+.think-block {
+  border-left: 2px solid var(--pink-200);
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  color: var(--text-3);
+  font-style: italic;
+  cursor: pointer;
+  border-radius: 0 4px 4px 0;
+  transition: background 0.12s;
+}
+.think-block:hover { background: var(--pink-50); }
+.think-content { display: none; margin-top: 4px; white-space: pre-wrap; }
+.think-block.open .think-content { display: block; }
+
+.msg-time {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  padding: 0 4px;
+}
+
+/* 打字动画 */
+.typing-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 6px;
+  padding: 14px 18px;
+  display: flex; gap: 5px; align-items: center;
+  box-shadow: var(--shadow-sm);
+}
+.typing-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--pink-300);
+  animation: typing-bounce 1.2s ease infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.30s; }
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+  40%           { transform: translateY(-6px); opacity: 1; }
+}
+
+/* 系统通知 */
+.sys-notice {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-3);
+  padding: 6px 16px;
+  margin: 8px 0;
+}
+.sys-notice span {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 4px 14px;
+  display: inline-block;
+}
+
+/* ─── 输入区 ─────────────────────────────────────────────────── */
+.input-wrap {
+  padding: 12px 16px 16px;
+  background: oklch(0.975 0.002 25 / 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.input-box {
+  max-width: var(--max-content, 760px);
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 8px 8px 8px 16px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  box-shadow: var(--shadow-sm);
+}
+.input-box:focus-within {
+  border-color: var(--pink-300);
+  box-shadow: 0 0 0 4px oklch(0.55 0.18 10 / 0.08), var(--shadow-sm);
+}
+
+textarea#user-input {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--text-1);
+  line-height: 1.55;
+  min-height: 24px;
+  max-height: 160px;
+  padding: 6px 0;
+}
+textarea#user-input::placeholder { color: var(--text-3); }
+
+/* 附件按钮 */
+.attach-btn {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.attach-btn:hover { background: var(--gray-100); color: var(--text-2); }
+.attach-btn svg { width: 18px; height: 18px; }
+
+/* 发送按钮 */
+.send-btn {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--pink-400), var(--pink-500));
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s, opacity 0.18s;
+  box-shadow: var(--shadow-pink);
+}
+.send-btn:hover { transform: scale(1.06); box-shadow: 0 6px 20px oklch(0.55 0.18 10 / .30); }
+.send-btn:active { transform: scale(0.95); }
+.send-btn:disabled { opacity: 0.4; transform: none; cursor: not-allowed; box-shadow: none; }
+.send-btn svg { width: 18px; height: 18px; }
+
+/* 输入工具栏 */
+.input-toolbar {
+  max-width: var(--max-content, 760px);
+  margin: 8px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.toolbar-left { display: flex; align-items: center; gap: 4px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
+
+.tool-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  color: var(--text-2);
+  background: var(--gray-100);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tool-chip:hover { background: var(--pink-50); border-color: var(--pink-200); color: var(--pink-500); }
+.tool-chip svg { width: 13px; height: 13px; }
+
+.char-count { font-size: 0.75rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* ─── Toast ─────────────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 90px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 20px;
+  background: var(--gray-700);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: 0.875rem;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.3s var(--ease-spring) both;
+  pointer-events: auto;
+}
+.toast.success { background: oklch(0.40 0.14 150); }
+.toast.error   { background: oklch(0.44 0.18 20); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── 响应式 ─────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .sidebar {
+    transform: translateX(0);
+    box-shadow: none;
+  }
+  .main { margin-left: var(--sidebar-w); }
+  .overlay { display: none !important; }
+  .header .icon-btn[aria-label="菜单"] { display: none; }
+}
+
+@media (max-width: 480px) {
+  .messages { padding: 20px 14px 12px; }
+  .input-wrap { padding: 10px 12px 14px; }
+  .bubble { padding: 10px 14px; font-size: 0.9rem; }
+  .msg-content { max-width: 84%; }
+}
+
+/* ─── 美化 messages 最大宽 ─────────────────────────────────────── */
+.messages-inner {
+  width: 100%;
+  max-width: var(--max-content, 760px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─── 保存按钮提示 ───────────────────────────────────────────── */
+.save-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--blue-500);
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.save-chip:hover {
+  background: var(--blue-100);
+  border-color: var(--blue-200);
+}
+.save-chip svg { width: 13px; height: 13px; }
+</style>
 </head>
 <body>
 
-<!-- ============================================================
-     加载界面（应用初始化时显示）
-     ============================================================ -->
-<div id="loading-screen" class="loading-screen">
-  <div class="loading-content">
-    <!-- 品牌 Logo 动画 -->
-    <div class="loading-logo">
-      <svg viewBox="0 0 64 64" class="logo-svg">
-        <defs>
-          <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style="stop-color:#ffd1cc;stop-opacity:1" />
-            <stop offset="100%" style="stop-color:#cc7a7a;stop-opacity:1" />
-          </linearGradient>
-        </defs>
-        <circle cx="32" cy="32" r="28" fill="none" stroke="url(#logoGradient)" stroke-width="3" class="logo-circle"/>
-        <path d="M20 32c0-6.6 5.4-12 12-12s12 5.4 12 12-5.4 12-12 12" fill="none" stroke="url(#logoGradient)" stroke-width="3" stroke-linecap="round" class="logo-path"/>
-        <circle cx="26" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
-        <circle cx="38" cy="28" r="3" fill="#cc7a7a" class="logo-dot"/>
-        <path d="M28 38c2 2 6 2 8 0" fill="none" stroke="#cc7a7a" stroke-width="2" stroke-linecap="round" class="logo-smile"/>
-      </svg>
-    </div>
-    <!-- 品牌名称 -->
-    <div class="loading-brand">珊瑚菌</div>
-    <div class="loading-tagline">正在唤醒你的 AI 陪伴助手...</div>
-    <!-- 进度条 -->
-    <div class="loading-progress-container">
-      <div class="loading-progress-bar" id="loading-progress-bar"></div>
-    </div>
-    <!-- 进度百分比 -->
-    <div class="loading-percentage" id="loading-percentage">0%</div>
-    <!-- 加载状态文字 -->
-    <div class="loading-status" id="loading-status">正在初始化...</div>
-  </div>
-</div>
+<!-- ── 侧边栏遮罩 ── -->
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
-<!-- ============================================================
-     顶部导航栏
-     sticky 定位，始终固定在视口顶部。
-     ============================================================ -->
-<header role="banner">
-
-  <!-- 汉堡按钮：打开侧边栏 -->
-  <button id="sidebar-toggle" aria-label="打开侧边栏" title="打开侧边栏">☰</button>
-
-  <!-- 左侧：项目名（已简化） -->
-  <div class="header-title">
-    <span class="title-main">珊瑚菌</span>
-  </div>
-
-  <!-- 右侧控件区（已瘦身） -->
-  <div id="controls" role="toolbar" aria-label="工具栏">
-
-    <!-- 模式状态徽章（本地 / 线上 / 等待确认） -->
-    <div id="mode-badge" role="status" aria-live="polite" aria-label="当前模式">
-      <div id="mode-dot" aria-hidden="true"></div>
-      <span id="mode-text">本地</span>
-    </div>
-
-    <!-- 线上/本地 Toggle 开关 -->
-    <label class="toggle-wrap" title="切换本地 / 线上模式">
-      <span class="toggle-label-text">线上模式</span>
-      <input
-        type="checkbox"
-        id="mode-toggle"
-        class="toggle-input"
-        onchange="onToggleChange(this.checked)"
-        aria-label="切换线上模式"
-        role="switch"
-      >
-      <div class="toggle-track" aria-hidden="true"></div>
-    </label>
-
-    <!-- 主题切换按钮（亮色/暗色） -->
-    <button
-      id="theme-btn"
-      title="切换到暗色模式"
-      aria-label="切换到暗色模式"
-    >🌙</button>
-
-  </div><!-- /#controls -->
-</header>
-
-
-<!-- ============================================================
-     侧边栏导航（T4）
-     ============================================================ -->
-
-<!-- 侧边栏遮罩 -->
-<div id="sidebar-overlay" aria-hidden="true"></div>
-
-<!-- 侧边栏 -->
-<aside id="sidebar" role="navigation" aria-label="侧边导航">
+<!-- ── 侧边栏 ── -->
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <span class="sidebar-title">历史对话</span>
-    <button id="sidebar-close" aria-label="关闭侧边栏">✕</button>
+    <div class="logo">
+      <div class="logo-icon">🪸</div>
+      <span class="logo-text">珊瑚菌</span>
+    </div>
+    <button class="icon-btn" onclick="closeSidebar()" aria-label="关闭侧边栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
   </div>
-  
-  <div id="session-list" class="sidebar-body">
-    <!-- 由 JS 动态填充 -->
-    <div class="session-item empty-state">
-      <div class="session-title">暂无历史对话</div>
-      <div class="session-preview">开始与珊瑚菌对话后，对话记录会显示在这里</div>
+
+  <button class="new-chat-btn" onclick="newChat()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+    新建对话
+  </button>
+
+  <div class="session-list-wrap">
+    <div class="session-group-label">今天</div>
+    <div class="session-item active" onclick="loadSession(1)">
+      <div class="session-title">关于记忆系统设计的讨论</div>
+      <div class="session-meta"><span>刚刚</span></div>
+    </div>
+    <div class="session-item" onclick="loadSession(2)">
+      <div class="session-title">Hybrid Search 验证测试</div>
+      <div class="session-meta"><span>2小时前</span></div>
+    </div>
+
+    <div class="session-group-label">昨天</div>
+    <div class="session-item" onclick="loadSession(3)">
+      <div class="session-title">RAG 检索链路端到端验证</div>
+      <div class="session-meta"><span>昨天 22:14</span></div>
+    </div>
+    <div class="session-item" onclick="loadSession(4)">
+      <div class="session-title">向量数据库接入测试</div>
+      <div class="session-meta"><span>昨天 18:30</span></div>
+    </div>
+    <div class="session-item" onclick="loadSession(5)">
+      <div class="session-title">summarizer 模块验证</div>
+      <div class="session-meta"><span>昨天 14:05</span></div>
+    </div>
+
+    <div class="session-group-label">本周</div>
+    <div class="session-item" onclick="loadSession(6)">
+      <div class="session-title">系统架构树状关联网络</div>
+      <div class="session-meta"><span>周二</span></div>
     </div>
   </div>
-  
+
   <div class="sidebar-footer">
-    <button id="save-btn"      class="sidebar-action">💾 保存对话</button>
-    <a href="/static/import.html" class="sidebar-action">📥 导入对话</a>
-    <a href="/static/memory.html" class="sidebar-action">🧠 记忆查看</a>
-    <a href="/dashboard" class="sidebar-action">📊 系统总览</a>
-    <button id="settings-btn"  class="sidebar-action">⚙️ 设置</button>
+    <a class="sidebar-nav-item" href="/static/memory.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/>
+      </svg>
+      记忆查看器
+    </a>
+    <a class="sidebar-nav-item" href="/static/import.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+      </svg>
+      导入记录
+    </a>
+    <a class="sidebar-nav-item" href="/static/settings.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+      设置
+    </a>
   </div>
 </aside>
 
+<!-- ── 主区域 ── -->
+<main class="main">
 
-<!-- ============================================================
-     消息列表区
-     role="log"：告知屏幕阅读器这是一个实时更新的日志区域。
-     aria-live="polite"：新消息插入时，屏幕阅读器在用户闲置时读出。
-     ============================================================ -->
+  <!-- Header -->
+  <header class="header">
+    <button class="icon-btn" onclick="toggleSidebar()" aria-label="菜单" id="menu-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 6h16M4 12h16M4 18h16"/>
+      </svg>
+    </button>
 
-<main
-  id="messages"
-  role="log"
-  aria-live="polite"
-  aria-label="对话内容"
-  aria-relevant="additions"
->
- <div class="empty-state">
-    <div class="empty-icon">
-          <span></span>
-          <span></span>
-     </div>
-     <div class="empty-title">我是珊瑚菌</div>
-     <div class="empty-desc">
-          记录你的点滴日常，留存专属记忆<br>
-          每一次交谈，都在构筑独属于你的世界<br>
+    <div class="header-title" id="header-title">关于记忆系统设计的讨论</div>
+
+    <button class="mode-badge" id="mode-badge" onclick="toggleMode()" title="切换模式">
+      <span class="mode-dot"></span>
+      <span id="mode-text">本地</span>
+    </button>
+
+    <button class="icon-btn save-icon" onclick="saveSession()" title="保存对话" id="save-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+        <polyline points="17 21 17 13 7 13 7 21"/>
+        <polyline points="7 3 7 8 15 8"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- 消息区 -->
+  <div class="messages" id="messages" role="log" aria-live="polite">
+    <div class="messages-inner" id="messages-inner">
+
+      <!-- 空状态 -->
+      <div class="empty-state" id="empty-state">
+        <div class="empty-hero">🪸</div>
+        <div class="empty-title">我是珊瑚菌</div>
+        <div class="empty-desc">记住你的点滴，陪你思考与成长。<br>有什么想聊的？</div>
+        <div class="empty-suggestions">
+          <button class="suggestion-chip" onclick="sendSuggestion(this)">
+            <span>📝</span> 帮我整理今天的思路
+          </button>
+          <button class="suggestion-chip" onclick="sendSuggestion(this)">
+            <span>🔍</span> 我之前聊过什么关于架构设计？
+          </button>
+          <button class="suggestion-chip" onclick="sendSuggestion(this)">
+            <span>💡</span> 有什么值得关注的近期动态？
+          </button>
+        </div>
       </div>
+
+    </div>
   </div>
+
+  <!-- 输入区 -->
+  <div class="input-wrap">
+    <div class="input-box" id="input-box">
+      <textarea
+        id="user-input"
+        placeholder="和珊瑚菌说点什么…"
+        rows="1"
+        aria-label="消息输入框"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      ></textarea>
+      <button class="attach-btn" title="附件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()" title="发送（Enter）" aria-label="发送">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="input-toolbar">
+      <div class="toolbar-left">
+        <button class="tool-chip" title="记忆检索">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          记忆
+        </button>
+        <button class="tool-chip" title="工具">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+          </svg>
+          工具
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <span class="char-count" id="char-count"></span>
+        <button class="save-chip" onclick="saveSession()" id="save-chip" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+          </svg>
+          保存对话
+        </button>
+      </div>
+    </div>
+  </div>
+
 </main>
 
-<!-- ============================================================
-     底部输入区
-     ============================================================ -->
-<div id="input-area" role="form" aria-label="消息输入区">
-
-  <!--
-    屏幕阅读器说明文字，视觉上不可见（.sr-only），但会被读出。
-    id 与 textarea 的 aria-describedby 关联。
-  -->
-  <span id="input-hint" class="sr-only">
-    输入消息后按 Enter 键发送，Shift+Enter 换行
-  </span>
-
-  <textarea
-    id="user-input"
-    placeholder=""
-    rows="1"
-    aria-label="消息输入框"
-    aria-describedby="input-hint"
-    autocomplete="off"
-    autocorrect="off"
-    autocapitalize="sentences"
-    spellcheck="true"
-  ></textarea>
-
-  <button
-    id="send-btn"
-    aria-label="发送消息"
-    title="发送（Enter）"
-  >↑</button>
-
-</div><!-- /#input-area -->
-
-
-<!--
-  JavaScript 加载顺序（有依赖关系，顺序不可调换）：
-  1. state.js — AppState，全局状态（无依赖）
-  2. api.js   — API 封装（无依赖）
-  3. ui.js    — UI 渲染（依赖 AppState）
-  4. app.js   — 应用入口（依赖以上全部）
-
-  放在 </body> 前：确保 DOM 已经构建完毕，
-  DOMContentLoaded 事件可以正常触发。
--->
-<script src="/static/js/state.js"></script>
-<script src="/static/js/api.js"></script>
-<script src="/static/js/ui.js"></script>
-<script src="/static/js/app.js"></script>
-
-<!-- ============================================================
-     设置面板（浮层，点击设置按钮时显示）
-     ============================================================ -->
-<div id="settings-overlay" aria-hidden="true"></div>
-
-<div id="settings-panel" role="dialog" aria-label="设置" aria-modal="true">
-  <div class="settings-header">
-    <span class="settings-title">设置</span>
-    <button id="settings-close" aria-label="关闭设置">✕</button>
-  </div>
-
-  <div class="settings-body">
-
-    <!-- 防抖等待时长 -->
-    <div class="settings-section">
-      <div class="settings-section-title">消息等待时长</div>
-      <div class="settings-section-desc">
-        连续发消息时，等待多少秒后再回复。调大可以让你把话说完再收到回复。
-      </div>
-      <div class="settings-row">
-        <span class="settings-label">等待时长</span>
-        <div class="settings-control">
-          <input
-            type="range"
-            id="debounce-slider"
-            min="1" max="10" step="0.5"
-            aria-label="防抖等待时长（秒）"
-          >
-          <span class="settings-value" id="debounce-value">3秒</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-divider"></div>
-
-    <!-- 主动推送 -->
-    <div class="settings-section">
-      <div class="settings-section-title">主动消息</div>
-      <div class="settings-section-desc">
-        开启后，黎杋枫会在你设定的时间段内主动发消息。
-      </div>
-
-      <!-- 总开关 -->
-      <div class="settings-row">
-        <span class="settings-label">主动消息</span>
-        <label class="toggle-wrap" title="开启或关闭主动消息">
-          <input
-            type="checkbox"
-            id="push-enabled-toggle"
-            class="toggle-input"
-            aria-label="主动消息开关"
-            role="switch"
-          >
-          <div class="toggle-track" aria-hidden="true"></div>
-        </label>
-      </div>
-
-      <!-- 时间窗口 -->
-      <div class="settings-row" id="push-detail" style="display:none; flex-direction:column; gap:10px;">
-
-        <div class="settings-row">
-          <span class="settings-label">开始时间</span>
-          <div class="settings-control">
-            <input
-              type="range"
-              id="push-start-slider"
-              min="0" max="23" step="1"
-              aria-label="推送开始时间"
-            >
-            <span class="settings-value" id="push-start-value">8:00</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">结束时间</span>
-          <div class="settings-control">
-            <input
-              type="range"
-              id="push-end-slider"
-              min="1" max="24" step="1"
-              aria-label="推送结束时间"
-            >
-            <span class="settings-value" id="push-end-value">24:00</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">每日上限</span>
-          <div class="settings-control">
-            <input
-              type="range"
-              id="push-limit-slider"
-              min="1" max="10" step="1"
-              aria-label="每日推送上限"
-            >
-            <span class="settings-value" id="push-limit-value">4条</span>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-  </div><!-- /.settings-body -->
-
-  <div class="settings-footer">
-    <button id="settings-save" class="settings-save-btn">保存</button>
-  </div>
-</div>
+<!-- Toast -->
+<div class="toast-container" id="toasts"></div>
 
 <script>
-// 珊瑚菌随机 placeholder 文案
-const placeholderList = [
-  "和珊瑚菌说点什么吧，我也会主动找你~",
-  "今天过得怎么样？和我聊聊吧^^",
-  "随时聊天，我会认真听你说话><",
-  "把今天的心情说给珊瑚菌听吧？",
-  "想聊什么都可以，我一直都在",
-  "今天一切都还顺利吗？"
-];
-
-// 随机选一句
-const randomMsg = placeholderList[Math.floor(Math.random() * placeholderList.length)];
-
-// 设置到输入框
-document.getElementById("user-input").placeholder = randomMsg;
-</script>
-
-<script>
-// 自动隐藏空白页（终极版，永远生效）
-const emptyState = document.querySelector('.empty-state');
-
-function checkEmpty() {
-  const msgCount = document.querySelectorAll('.msg-bubble').length;
-  emptyState.style.display = msgCount > 0 ? 'none' : 'flex';
+// ─── 侧边栏 ─────────────────────────────────────────────────────
+function toggleSidebar() {
+  const s = document.getElementById('sidebar');
+  const o = document.getElementById('overlay');
+  const open = s.classList.contains('open');
+  s.classList.toggle('open', !open);
+  o.classList.toggle('show', !open);
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
 }
 
-// 页面加载检查
-window.addEventListener('DOMContentLoaded', checkEmpty);
+// ─── 模式切换 ────────────────────────────────────────────────────
+let isOnline = false;
+function toggleMode() {
+  isOnline = !isOnline;
+  const badge = document.getElementById('mode-badge');
+  const text  = document.getElementById('mode-text');
+  badge.classList.toggle('online', isOnline);
+  text.textContent = isOnline ? '线上' : '本地';
+  showToast(isOnline ? '已切换到线上模式' : '已切换到本地模式');
+}
 
-// 监听消息区域变化 → 只要有新消息 → 立刻隐藏空白页
-const msgWrap = document.getElementById('messages');
-const observer = new MutationObserver(checkEmpty);
-observer.observe(msgWrap, { childList: true, subtree: true });
-</script>
+// ─── 新建对话 ────────────────────────────────────────────────────
+function newChat() {
+  document.getElementById('messages-inner').innerHTML = `
+    <div class="empty-state" id="empty-state">
+      <div class="empty-hero">🪸</div>
+      <div class="empty-title">我是珊瑚菌</div>
+      <div class="empty-desc">记住你的点滴，陪你思考与成长。<br>有什么想聊的？</div>
+      <div class="empty-suggestions">
+        <button class="suggestion-chip" onclick="sendSuggestion(this)"><span>📝</span> 帮我整理今天的思路</button>
+        <button class="suggestion-chip" onclick="sendSuggestion(this)"><span>🔍</span> 我之前聊过什么关于架构设计？</button>
+        <button class="suggestion-chip" onclick="sendSuggestion(this)"><span>💡</span> 有什么值得关注的近期动态？</button>
+      </div>
+    </div>`;
+  document.getElementById('header-title').textContent = '新对话';
+  closeSidebar();
+}
 
+function loadSession(id) {
+  closeSidebar();
+  showToast('对话加载中…');
+}
 
+// ─── 发送消息 ────────────────────────────────────────────────────
+function sendSuggestion(el) {
+  const text = el.textContent.trim().replace(/^[^\s]+ /, '');
+  document.getElementById('user-input').value = text;
+  sendMessage();
+}
 
-<script>
-// ==============================================
-// 珊瑚菌 电脑桌面系统级消息通知（后台网页也弹窗）
-// ==============================================
+function sendMessage() {
+  const input = document.getElementById('user-input');
+  const content = input.value.trim();
+  if (!content) return;
 
-// 1. 页面打开时，自动请求桌面通知权限（仅首次授权一次）
-window.addEventListener('DOMContentLoaded', async () => {
-  // 检测浏览器是否支持桌面通知
-  if (window.Notification) {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') {
-      console.log('桌面通知权限已开启');
-    }
+  // 清除空状态
+  const emptyState = document.getElementById('empty-state');
+  if (emptyState) emptyState.remove();
+
+  // 渲染用户消息
+  appendMessage('user', content);
+  input.value = '';
+  autoResize(input);
+
+  // 显示打字动画
+  showTyping();
+
+  // 模拟回复（实际接入 API）
+  setTimeout(() => {
+    hideTyping();
+    const replies = [
+      '我记得你之前讨论过这个问题。根据你的对话历史，我发现你在记忆系统设计方面有深入的思考。',
+      '这是个很有意思的问题。从你的描述来看，混合检索路径（向量 + BM25 + 图谱）是目前最有效的方案之一。',
+      '我刚刚从你的记忆库里检索到相关内容。你上次提到过类似的想法，要结合一下吗？'
+    ];
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    appendMessage('ai', reply);
+    document.getElementById('save-chip').style.display = 'flex';
+  }, 1400);
+}
+
+function appendMessage(role, content) {
+  const container = document.getElementById('messages-inner');
+  const now = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+
+  const row = document.createElement('div');
+  row.className = `msg-row ${role}`;
+
+  if (role === 'ai') {
+    row.innerHTML = `
+      <div class="avatar ai-avatar">🪸</div>
+      <div class="msg-content">
+        <div class="bubble ai">${content}</div>
+        <div class="msg-time">${now}</div>
+      </div>`;
+  } else {
+    row.innerHTML = `
+      <div class="msg-content">
+        <div class="bubble user">${content}</div>
+        <div class="msg-time">${now}</div>
+      </div>
+      <div class="avatar user-avatar">烧</div>`;
+  }
+
+  container.appendChild(row);
+  scrollToBottom();
+}
+
+let typingEl = null;
+function showTyping() {
+  const container = document.getElementById('messages-inner');
+  const row = document.createElement('div');
+  row.className = 'msg-row';
+  row.id = 'typing-row';
+  row.innerHTML = `
+    <div class="avatar ai-avatar">🪸</div>
+    <div class="msg-content">
+      <div class="typing-bubble">
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+        <div class="typing-dot"></div>
+      </div>
+    </div>`;
+  container.appendChild(row);
+  scrollToBottom();
+}
+function hideTyping() {
+  const el = document.getElementById('typing-row');
+  if (el) el.remove();
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById('messages');
+  msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
+}
+
+// ─── 保存 ────────────────────────────────────────────────────────
+function saveSession() {
+  showToast('对话已保存 ✓', 'success');
+  document.getElementById('save-chip').style.display = 'none';
+}
+
+// ─── Toast ───────────────────────────────────────────────────────
+function showToast(msg, type = '') {
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'none';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(8px)';
+    el.style.transition = 'all 0.25s';
+    setTimeout(() => el.remove(), 300);
+  }, 2500);
+}
+
+// ─── 输入框自适应高度 ─────────────────────────────────────────────
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+
+const textarea = document.getElementById('user-input');
+textarea.addEventListener('input', function() {
+  autoResize(this);
+  const count = this.value.length;
+  const el = document.getElementById('char-count');
+  el.textContent = count > 0 ? `${count}` : '';
+});
+textarea.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
   }
 });
-
-// 2. 核心函数：弹出电脑桌面系统通知
-function showDesktopNotify(messageText) {
-  // 权限未开启直接不执行
-  if (!window.Notification || Notification.permission !== 'granted') return;
-
-  // 系统桌面弹窗配置（头像、标题、内容全部自定义）
-  const notify = new Notification('珊瑚菌', {
-    body: messageText,
-    icon: '/static/avatar/normal.png', // 你的珊瑚菌虚拟形象作为通知图标
-    tag: 'coral-notify', // 消息分组，同来源消息不重复狂跳
-    renotify: false
-  });
-
-  // 点击桌面弹窗：自动切回网页窗口 + 滚动到最新消息
-  notify.onclick = () => {
-    window.focus(); // 浏览器窗口前置弹出
-    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-    notify.close();
-  };
-}
 </script>
-
 </body>
 </html>

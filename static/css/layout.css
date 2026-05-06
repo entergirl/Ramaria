@@ -29,21 +29,21 @@ body {
 
 /* ── body：纵向 flex，内容居中，纸张背景纹理 ── */
 body {
-  background-color: var(--bg);
+  background-color: var(--bg-page);
   /*
    * SVG 噪点纹理：纯 CSS 实现，不依赖外部图片。
    * fractalNoise + saturate(0) = 灰色颗粒感 + opacity 0.03 几乎看不见，
    * 只是让背景有轻微纸张质感，避免纯色过于单调。
    */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  color: var(--text);
+  color: var(--text-primary);
   font-family: var(--font-body);
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 0 16px;
   /* 暗色主题背景色过渡，让切换时不那么突兀 */
-  transition: background-color var(--transition-slow), color var(--transition-slow);
+  transition: background-color var(--dur-slow), color var(--dur-slow);
 }
 
 /* ========== 空白初始页 无消息引导界面 ========== */
@@ -68,10 +68,10 @@ body {
 
 /* 主标题：珊瑚菌 */
 .empty-title {
-    font-family: var(--font-title);
+    font-family: var(--font-display);
     font-size: 1.25rem;
     font-weight: 600;
-    color: var(--coral);
+    color: var(--pink-500);
     letter-spacing: 1px;
 }
 
@@ -79,7 +79,7 @@ body {
 .empty-desc {
     font-family: var(--font-body);
     font-size: 0.9rem;
-    color: var(--text-mid);
+    color: var(--text-secondary);
     text-align: center;
     line-height: 1.8;
 }
@@ -92,17 +92,19 @@ header {
     display: flex;
     align-items: center;
     gap: 10px;
-    border-bottom: 1px solid var(--border-light);
+    border-bottom: 1px solid var(--border-default);
     position: sticky;
     top: 0;
-    background-color: var(--bg);
+    background-color: var(--bg-page);
+    /* 模糊效果：现代浏览器支持 */
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    /* 不支持 backdrop-filter 时的回退 */
+    @supports not (backdrop-filter: blur(1px)) {
+        background-color: var(--bg-card);
+    }
     z-index: 10;
-    transition: all var(--transition-slow);
-}
-:root[data-theme="dark"] header {
-    background-color: #1c1917;
+    transition: all var(--dur-slow);
 }
 
 
@@ -122,7 +124,7 @@ header {
   gap: 12px;
   /* 细滚动条，不喧宾夺主 */
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--border-default) transparent;
   /* CSS Containment：告诉浏览器消息区是独立渲染单元，提升滚动性能 */
   contain: layout style;
 }
@@ -135,7 +137,7 @@ header {
   background: transparent;
 }
 #messages::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-default);
   border-radius: 2px;
 }
 

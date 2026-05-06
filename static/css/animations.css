@@ -78,9 +78,9 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--coral-light);
+  background: var(--pink-300);
   animation: breathe 1.4s ease-in-out infinite;
-  transition: background var(--transition-slow);
+  transition: background var(--dur-slow);
 }
 
 /* 三个点的动画延迟，制造柔和的波浪感 */
@@ -163,10 +163,10 @@
 
 @keyframes pulse-subtle {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--pink-500) 0%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 4px var(--brand-alpha-15);
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--pink-500) 12%, transparent);
   }
 }
 
@@ -178,9 +178,9 @@
    ============================================================================= */
 
 @keyframes mode-glow {
-  0% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
-  30% { box-shadow: 0 0 12px 3px var(--brand-alpha-20); }
-  100% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--pink-500) 0%, transparent); }
+  30% { box-shadow: 0 0 12px 3px color-mix(in oklch, var(--pink-500) 16%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--pink-500) 0%, transparent); }
 }
 
 
@@ -189,9 +189,9 @@
    ============================================================================= */
 
 @keyframes focus-glow {
-  0% { box-shadow: 0 0 0 0 rgba(var(--brand-deep-rgb), 0); }
-  50% { box-shadow: 0 0 0 3px var(--brand-alpha-12); }
-  100% { box-shadow: 0 0 0 3px var(--brand-alpha-08); }
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--pink-500) 0%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--pink-500) 10%, transparent); }
+  100% { box-shadow: 0 0 0 3px color-mix(in oklch, var(--pink-500) 6%, transparent); }
 }
 
 

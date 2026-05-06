@@ -479,9 +479,74 @@ async def admin_diagnostic():
         diagnostics["system"]["cpu_percent"] = psutil.cpu_percent()
     except:
         pass
-    
+
     return JSONResponse({
         "ok": True,
         "message": "诊断信息",
         "data": diagnostics,
     })
+
+
+# =============================================================================
+# 懒加载初始化接口
+# =============================================================================
+
+@router.post("/api/admin/init")
+async def admin_init():
+    """
+    触发完整初始化（init_app）。
+
+    后台线程执行，接口立刻返回。前端轮询 init-progress 获取进度。
+    """
+    import threading
+    from app.main import init_app, get_init_progress
+
+    progress = get_init_progress()
+
+    # 已初始化完成 → 幂等返回
+    if progress.done:
+        return JSONResponse({
+            "ok":      True,
+            "message": "已初始化完成，无需重复执行",
+            "already": True,
+            "data":    progress.to_dict(),
+        })
+
+    # 正在初始化中 → 返回当前进度
+    if progress.started:
+        return JSONResponse({
+            "ok":      True,
+            "message": "初始化进行中…",
+            "already": False,
+            "data":    progress.to_dict(),
+        })
+
+    # 首次调用 → 后台线程执行
+    def _run_init():
+        result = init_app()
+        if not result.get("ok"):
+            logger.error(f"后台初始化失败: {result}")
+
+    threading.Thread(
+        target=_run_init,
+        name="InitApp",
+        daemon=True,
+    ).start()
+
+    return JSONResponse({
+        "ok":      True,
+        "message": "初始化已开始",
+        "already": False,
+        "data":    {"step": 0, "total": 6, "step_name": "正在启动…"},
+    })
+
+
+@router.get("/api/admin/init-progress")
+async def admin_init_progress():
+    """
+    查询当前初始化进度。
+
+    前端每 500ms 轮询一次，根据返回值更新进度条。
+    """
+    from app.main import get_init_progress
+    return JSONResponse(get_init_progress().to_dict())

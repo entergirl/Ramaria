@@ -193,150 +193,111 @@
 <script>
 /**
  * 加载页面进度管理器
- * 轮询后端服务状态，实时更新加载进度
+ * 调用 POST /api/admin/init 触发后端初始化，然后轮询 GET /api/admin/init-progress 获取进度
  */
 
 (function() {
   'use strict';
 
-  // 配置
   const POLL_INTERVAL = 500;      // 轮询间隔 (ms)
-  const MAX_WAIT_TIME = 120000;   // 最大等待时间 (ms)
-  const STATUS_URL = '/api/admin/status';
+  const MAX_WAIT_TIME = 300000;   // 最大等待时间 (ms) — 5 分钟
 
-  // 加载阶段配置（与服务启动进度对应）
-  const stages = [
-    { progress: 10, message: '正在初始化...',      checkReady: false },
-    { progress: 25, message: '加载核心模块...',     checkReady: false },
-    { progress: 40, message: '连接数据库...',        checkReady: false },
-    { progress: 55, message: '初始化向量存储...',   checkReady: false },
-    { progress: 70, message: '加载语言模型...',     checkReady: false },
-    { progress: 85, message: '启动服务...',         checkReady: true  },
-    { progress: 100, message: '准备就绪!',          done: true }
-  ];
-
-  let currentStage = 0;
   let startTime = Date.now();
   let pollTimer = null;
+  let lastStep = 0;
 
   // DOM 元素
   const progressBar = document.getElementById('progress-bar');
   const progressPercent = document.getElementById('progress-percent');
   const progressStatus = document.getElementById('progress-status');
 
-  /**
-   * 更新进度显示
-   */
-  function updateProgress(progress, message) {
-    if (progressBar) progressBar.style.width = progress + '%';
-    if (progressPercent) progressPercent.textContent = progress + '%';
+  /** 更新进度条和状态文字 */
+  function updateProgress(pct, message) {
+    if (progressBar) progressBar.style.width = pct + '%';
+    if (progressPercent) progressPercent.textContent = pct + '%';
     if (progressStatus) progressStatus.textContent = message;
   }
 
-  /**
-   * 跳转到目标页面
-   */
+  /** 跳转到目标页面 */
   function redirectTo(url) {
-    // 使用 pywebview 的 load_url 或浏览器跳转
-    // pywebview 环境检测
     if (window.pywebview && window.pywebview.api) {
-      // pywebview 环境：调用 Python 暴露的 API
       try {
         window.pywebview.api.navigate_to(url);
         return;
       } catch (e) {
-        console.log('[Loading] pywebview API 调用失败，尝试备用方案:', e);
+        console.log('[Loading] pywebview API 调用失败，使用浏览器跳转:', e);
       }
     }
-    // 浏览器或备用方案：使用标准跳转
     window.location.href = url;
   }
 
-  /**
-   * 检查服务是否就绪
-   */
-  async function checkServiceReady() {
-    try {
-      const response = await fetch(STATUS_URL, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.ok) {
-        return true;
-      }
-    } catch (e) {
-      // 服务未就绪，继续等待
-    }
-    return false;
-  }
-
-  /**
-   * 执行轮询
-   */
+  /** 轮询初始化进度 */
   async function poll() {
-    const elapsed = Date.now() - startTime;
+    try {
+      const resp = await fetch('/api/admin/init-progress');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
 
-    // 超时处理
-    if (elapsed >= MAX_WAIT_TIME) {
-      updateProgress(100, '启动超时，请检查配置...');
-      console.error('服务启动超时');
-      return;
-    }
+      const step     = data.step     || 0;
+      const total    = data.total    || 6;
+      const name     = data.step_name || '正在初始化…';
+      const elapsed  = data.elapsed_ms || 0;
+      const done     = data.done     || false;
+      const error    = data.error    || '';
 
-    // 更新到下一阶段
-    if (currentStage < stages.length) {
-      const stage = stages[currentStage];
-      updateProgress(stage.progress, stage.message);
+      // 进度百分比
+      const pct = total > 0 ? Math.round((step / total) * 100) : 0;
 
-      if (stage.done) {
-        // 所有阶段完成，异步获取目标URL后跳转
-        setTimeout(async () => {
-          const targetUrl = await determineTargetUrl();
-          redirectTo(targetUrl);
-        }, 300);
+      // 状态文字：步骤名 + 耗时
+      let statusText = name;
+      if (step > 0 && elapsed > 0) {
+        statusText += ' (' + (elapsed / 1000).toFixed(2) + 's)';
+      }
+      if (error) {
+        statusText = '❌ ' + error;
+      }
+
+      updateProgress(pct, statusText);
+      lastStep = step;
+
+      if (done) {
+        // 初始化完成 → 跳转
+        console.log('[Loading] 初始化完成，即将跳转');
+        setTimeout(function() {
+          redirectTo('/');
+        }, 500);
         return;
       }
 
-      // 需要检查服务就绪
-      if (stage.checkReady) {
-        const ready = await checkServiceReady();
-        if (ready) {
-          currentStage++;
-        }
-      } else {
-        currentStage++;
+      // 超时检查
+      if (Date.now() - startTime >= MAX_WAIT_TIME) {
+        updateProgress(100, '启动超时，请检查配置…');
+        console.error('[Loading] 初始化超时');
+        return;
       }
+    } catch (e) {
+      console.warn('[Loading] 轮询失败，重试中:', e);
+      updateProgress(lastStep > 0 ? Math.round((lastStep / 6) * 100) : 0, '正在连接服务…');
     }
 
     // 继续轮询
     pollTimer = setTimeout(poll, POLL_INTERVAL);
   }
 
-  /**
-   * 根据环境决定跳转目标
-   */
-  async function determineTargetUrl() {
-    // 首先尝试从 pywebview API 获取正确的目标页面
-    if (window.pywebview && window.pywebview.api && window.pywebview.api.get_start_url) {
-      try {
-        const url = await window.pywebview.api.get_start_url();
-        if (url) return url;
-      } catch (e) {
-        console.log('[Loading] 获取目标URL失败，使用默认:', e);
-      }
+  /** 触发后端初始化，然后开始轮询 */
+  async function start() {
+    console.log('[Loading] 触发初始化…');
+    try {
+      const resp = await fetch('/api/admin/init', { method: 'POST' });
+      const data = await resp.json();
+      console.log('[Loading] init 响应:', data);
+    } catch (e) {
+      console.warn('[Loading] 触发 init 失败，仍尝试轮询:', e);
+      // 即使触发失败也继续轮询（服务可能已在初始化中）
     }
-    // 默认跳转到首页，由 index.html 处理首次运行逻辑
-    return '/';
-  }
 
-  /**
-   * 启动加载流程
-   */
-  function start() {
-    console.log('[Loading] 启动进度轮询...');
-    updateProgress(stages[0].progress, stages[0].message);
-    currentStage = 1;
+    updateProgress(0, '正在启动…');
+    lastStep = 0;
     poll();
   }
 

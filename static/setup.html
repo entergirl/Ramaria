@@ -1032,25 +1032,11 @@ async function finishSetup() {
     } catch (_) { /* 静默，不阻断 */ }
   }
 
-  // Step C：初始化数据库
-  document.getElementById('init-db').style.display = 'flex';
-  updateInitLine('init-db', 'wait', '初始化数据库…');
-  try {
-    const resp = await fetch('/api/admin/init_db', { method: 'POST' });
-    const data = await resp.json();
-    if (!data.ok) throw new Error(data.message);
-    updateInitLine('init-db', 'ok', '数据库就绪');
-  } catch (e) {
-    updateInitLine('init-db', 'fail', '数据库初始化失败：' + e.message);
-    showToast('数据库初始化失败，请查看日志', 'error');
-    btn.disabled = false;
-    return;
-  }
-
-  // Step D：完成，跳转
+  // Step C：保存配置完成，跳转到加载页面
+  // 后续的数据库初始化等重量级操作由 loading.html 触发 POST /api/admin/init 来执行
   document.getElementById('init-done').style.display = 'flex';
-  updateInitLine('init-done', 'ok', '完成，正在进入聊天界面…');
-  setTimeout(() => { window.location.href = '/'; }, 1200);
+  updateInitLine('init-done', 'ok', '配置已保存，即将进入启动界面…');
+  setTimeout(() => { window.location.href = '/static/loading.html'; }, 1200);
 }
 
 function updateInitLine(id, state, text) {

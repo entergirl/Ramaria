@@ -123,6 +123,19 @@ def _reload_config_values(values: dict[str, str]) -> None:
                     continue
             setattr(config, config_attr, new_value)
 
+    # 如果更新了 EMBEDDING_MODEL，重置 vector_store 的缓存状态
+    # 否则新模型路径不会生效（vector_store 模块级变量仍是旧值）
+    if "EMBEDDING_MODEL" in values:
+        import ramaria.storage.vector_store as vector_store
+        with vector_store._model_state_lock:
+            vector_store._model_load_error = None
+            vector_store._model_load_error_time = 0.0
+            vector_store._current_model_path = None
+        # 重置 Chroma 客户端，强制重新初始化
+        with vector_store._client_lock:
+            vector_store._client = None
+        logger.info("EMBEDDING_MODEL 已更新，vector_store 缓存已重置")
+
 
 def _ok(message: str = "ok", data: dict | None = None) -> JSONResponse:
     return JSONResponse({"ok": True, "message": message, "data": data or {}})

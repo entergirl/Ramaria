@@ -461,6 +461,27 @@ body {
   40%           { transform: translateY(-6px); opacity: 1; }
 }
 
+/* 历史聊天返回按钮 */
+.history-back-btn {
+  text-align: center;
+  padding: 8px 0 12px;
+  cursor: pointer;
+}
+.history-back-btn span {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  font-size: 0.8rem;
+  color: var(--pink-500);
+  background: var(--pink-50);
+  border: 1px solid var(--pink-100);
+  transition: all 0.18s;
+}
+.history-back-btn span:hover {
+  background: var(--pink-100);
+  border-color: var(--pink-200);
+}
+
 /* 系统通知 */
 .sys-notice {
   text-align: center;
@@ -697,7 +718,7 @@ textarea#user-input::placeholder { color: var(--text-3); }
       </svg>
       导入记录
     </a>
-    <a class="sidebar-nav-item" href="/static/settings.html">
+    <a class="sidebar-nav-item" href="/static/dashboard.html">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
@@ -840,14 +861,11 @@ function closeSidebar() {
 }
 
 // ─── 模式切换 ────────────────────────────────────────────────────
-let isOnline = false;
 function toggleMode() {
-  isOnline = !isOnline;
   const badge = document.getElementById('mode-badge');
-  const text  = document.getElementById('mode-text');
-  badge.classList.toggle('online', isOnline);
-  text.textContent = isOnline ? '线上' : '本地';
-  showToast(isOnline ? '已切换到线上模式' : '已切换到本地模式');
+  const currentlyOnline = badge.classList.contains('online');
+  // 调用 app.js 中的 onToggleChange，它会通过 API.toggleRouter() 通知后端
+  onToggleChange(!currentlyOnline);
 }
 
 // ─── 新建对话 ────────────────────────────────────────────────────

@@ -271,9 +271,10 @@ class PushScheduler:
             return
 
         # ── 为今天计划一个随机触发时刻 ────────────────────────────────────────
+        # 有效窗口起点取 max(window_start, cur_hour)，确保随机时刻始终在未来
         if self._scheduled_time is None or self._scheduled_time.date() != today:
             self._scheduled_time = self._pick_random_time(
-                today, window_start, window_end
+                today, max(window_start, cur_hour), window_end
             )
             logger.info(
                 f"今日推送计划时刻：{self._scheduled_time.strftime('%H:%M:%S')}"

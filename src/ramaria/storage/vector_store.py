@@ -575,6 +575,7 @@ _client_lock = threading.Lock()
 # 模型状态跟踪：记录当前加载的模型路径和错误状态
 _current_model_path = None
 _model_load_error = None  # 如果模型加载失败，存储错误信息
+_model_load_error_time = 0.0  # 错误发生的时间戳，用于定期重试
 _model_state_lock = threading.Lock()  # 保护模型状态变量
 
 
@@ -609,11 +610,12 @@ def _validate_model_path(model_path: str) -> tuple[bool, str]:
     
     # 检查必要的模型文件
     has_onnx = any(path.glob("**/*.onnx"))
+    has_safetensors = any(path.glob("**/*.safetensors"))
     has_config = (path / "config.json").exists()
     has_model = (path / "pytorch_model.bin").exists()
     
-    if not (has_config and (has_onnx or has_model)):
-        return False, f"模型目录结构不完整，缺少必要的模型文件（config.json 或 .onnx/.bin）：{display_path}"
+    if not (has_config and (has_onnx or has_model or has_safetensors)):
+        return False, f"模型目录结构不完整，缺少必要的模型文件（config.json 或 .onnx/.bin/.safetensors）：{display_path}"
     
     return True, "模型路径有效"
 
@@ -638,11 +640,18 @@ def _get_client():
             if current_model != _current_model_path:
                 logger.info(f"检测到模型路径变更，从 {_current_model_path} 到 {current_model}，尝试重新初始化")
                 _model_load_error = None
+                _model_load_error_time = 0.0
                 _client = None
                 _current_model_path = current_model
             else:
-                # 模型路径未变，保持错误状态
-                return None
+                import time
+                # 路径未变，但超过 60 秒后重试（处理 onnxruntime 延迟就绪等暂态问题）
+                if time.time() - _model_load_error_time > 60:
+                    logger.info("模型加载错误已缓存超过 60 秒，清除错误状态以重新尝试")
+                    _model_load_error = None
+                    _model_load_error_time = 0.0
+                else:
+                    return None
     
     if _client is not None:
         return _client
@@ -655,8 +664,10 @@ def _get_client():
             # 验证模型路径
             is_valid, msg = _validate_model_path(EMBEDDING_MODEL)
             if not is_valid:
+                import time
                 with _model_state_lock:
                     _model_load_error = msg
+                    _model_load_error_time = time.time()
                     _current_model_path = EMBEDDING_MODEL
                 logger.error(f"模型验证失败：{msg}")
                 return None
@@ -670,8 +681,10 @@ def _get_client():
             
             logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}，模型路径：{EMBEDDING_MODEL}")
         except Exception as e:
+            import time
             with _model_state_lock:
                 _model_load_error = str(e)
+                _model_load_error_time = time.time()
                 _current_model_path = EMBEDDING_MODEL
             logger.error(f"Chroma 客户端初始化失败：{e}")
             return None

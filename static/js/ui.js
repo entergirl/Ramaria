@@ -66,9 +66,10 @@ const UI = (() => {
    * @param {'user'|'assistant'} role - 发言方
    * @param {boolean} isOnlineMsg - 是否是线上回复
    * @param {boolean} isConfirm - 是否是等待确认消息（蓝色虚线边框）
+   * @param {string} [created_at] - 可选，消息时间戳（ISO 8601），用于时间显示
    * @returns {HTMLElement}
    */
-  function _createBubbleElement(text, role, isOnlineMsg, isConfirm) {
+  function _createBubbleElement(text, role, isOnlineMsg, isConfirm, created_at) {
     const div = document.createElement('div');
     // 使用 index.html 的样式类名结构
     div.className = `msg-row${role === 'user' ? ' user' : ''}`;
@@ -127,10 +128,11 @@ const UI = (() => {
       bubble.appendChild(sourceTag);
     }
 
-    // 消息时间
+    // 消息时间：优先使用传入的时间戳，否则用当前时间
     const time = document.createElement('div');
     time.className = 'msg-time';
-    time.textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const displayDate = created_at ? new Date(created_at) : new Date();
+    time.textContent = displayDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
     // 组装结构
     content.appendChild(bubble);
@@ -165,7 +167,7 @@ const UI = (() => {
       container.appendChild(timeStampEl);
     }
 
-    const bubbleEl = _createBubbleElement(text, role, isOnlineMsg, isConfirm);
+    const bubbleEl = _createBubbleElement(text, role, isOnlineMsg, isConfirm, created_at);
     container.appendChild(bubbleEl);
 
     // 更新上一条消息时间
@@ -694,8 +696,17 @@ const UI = (() => {
             historyBlock.appendChild(timeStampEl);
           }
 
-          const bubbleEl = _createBubbleElement(msg.content, msg.role, false, false);
-          historyBlock.appendChild(bubbleEl);
+          // 助手消息需要按 || 拆分，与 renderAssistantReply 保持一致
+          if (msg.role === 'assistant') {
+            const parts = msg.content.split('||').map(s => s.trim()).filter(Boolean);
+            parts.forEach(part => {
+              const bubbleEl = _createBubbleElement(part, 'assistant', false, false, msg.created_at);
+              historyBlock.appendChild(bubbleEl);
+            });
+          } else {
+            const bubbleEl = _createBubbleElement(msg.content, msg.role, false, false, msg.created_at);
+            historyBlock.appendChild(bubbleEl);
+          }
 
           prevMessageTime = msg.created_at;
         });
@@ -703,7 +714,14 @@ const UI = (() => {
         const bottomDivider = document.createElement('div');
         bottomDivider.className = 'history-divider bottom';
         bottomDivider.innerHTML = '<span>以上是历史聊天</span>';
+
+        // 添加"返回当前对话"按钮
+        const backBtn = document.createElement('div');
+        backBtn.className = 'history-back-btn';
+        backBtn.innerHTML = '<span>返回当前对话 ↑</span>';
+        backBtn.addEventListener('click', () => clearHistory());
         historyBlock.appendChild(bottomDivider);
+        historyBlock.appendChild(backBtn);
 
         if (container.firstChild) {
           container.insertBefore(historyBlock, container.firstChild);
@@ -729,6 +747,21 @@ const UI = (() => {
   function closeAndLoadHistory(sessionId) {
     hideSidebar();
     loadHistorySession(sessionId);
+  }
+
+  /**
+   * 清除历史对话块，返回当前对话窗口。
+   */
+  function clearHistory() {
+    const historyBlock = document.getElementById('history-block');
+    if (historyBlock) {
+      historyBlock.remove();
+    }
+    _loadedHistorySessionId = null;
+    const container = document.getElementById('messages-inner') || document.getElementById('messages');
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }
 
   /**
@@ -1013,6 +1046,7 @@ const UI = (() => {
     highlightActiveSession,
     loadHistorySession,
     closeAndLoadHistory,
+    clearHistory,
     renderMemorySlider,
     checkAndShowMemorySlider,
     setUserDisplayName,

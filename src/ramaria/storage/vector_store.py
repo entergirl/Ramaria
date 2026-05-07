@@ -631,12 +631,14 @@ def _get_client():
     """
     global _client, _model_load_error, _current_model_path
     
+    # 每次调用都从 ramaria.config 重新读取，确保配置更新后能立即生效
+    from ramaria.config import EMBEDDING_MODEL as current_model
+
     with _model_state_lock:
         # 检查当前模型状态
         if _model_load_error:
             logger.debug(f"模型加载失败，当前错误：{_model_load_error}")
             # 验证是否已修复（重新读取 EMBEDDING_MODEL）
-            from ramaria.config import EMBEDDING_MODEL as current_model
             if current_model != _current_model_path:
                 logger.info(f"检测到模型路径变更，从 {_current_model_path} 到 {current_model}，尝试重新初始化")
                 _model_load_error = None
@@ -652,76 +654,78 @@ def _get_client():
                     _model_load_error_time = 0.0
                 else:
                     return None
-    
+
     if _client is not None:
         return _client
-    
+
     with _client_lock:
         if _client is not None:
             return _client
-        
+
         try:
-            # 验证模型路径
-            is_valid, msg = _validate_model_path(EMBEDDING_MODEL)
+            # 验证模型路径（使用 freshly-read current_model）
+            is_valid, msg = _validate_model_path(current_model)
             if not is_valid:
                 import time
                 with _model_state_lock:
                     _model_load_error = msg
                     _model_load_error_time = time.time()
-                    _current_model_path = EMBEDDING_MODEL
+                    _current_model_path = current_model
                 logger.error(f"模型验证失败：{msg}")
                 return None
-            
+
             os.makedirs(CHROMA_DIR, exist_ok=True)
             _client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-            
+
             with _model_state_lock:
                 _model_load_error = None
-                _current_model_path = EMBEDDING_MODEL
-            
-            logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}，模型路径：{EMBEDDING_MODEL}")
+                _current_model_path = current_model
+
+            logger.info(f"Chroma 客户端已初始化，索引目录：{CHROMA_DIR}，模型路径：{current_model}")
         except Exception as e:
             import time
             with _model_state_lock:
                 _model_load_error = str(e)
                 _model_load_error_time = time.time()
-                _current_model_path = EMBEDDING_MODEL
+                _current_model_path = current_model
             logger.error(f"Chroma 客户端初始化失败：{e}")
             return None
-    
+
     return _client
 
 
 def _get_embedding_function():
     """
     根据 config.EMBEDDING_MODEL 返回对应的嵌入函数。
-    
+
     支持三种模式：
         1. "default" - 使用 chromadb 内置默认嵌入（需要 onnxruntime）
         2. 本地模型路径 - 使用 SentenceTransformerEmbeddingFunction 加载
         3. 模型路径无效 - 返回 None（优雅降级）
-    
+
     返回：
         嵌入函数对象或 None（如果模型加载失败）
     """
+    # 每次调用都从 ramaria.config 重新读取，确保配置更新后能立即生效
+    from ramaria.config import EMBEDDING_MODEL as current_model
     try:
-        if not EMBEDDING_MODEL or not str(EMBEDDING_MODEL).strip():
+        if not current_model or not str(current_model).strip():
             logger.error("嵌入模型路径未配置")
             return None
-        
-        if EMBEDDING_MODEL == "default":
+
+        if current_model == "default":
             logger.debug("使用默认嵌入函数（onnxruntime）")
             return DefaultEmbeddingFunction()
-        
+
         # 验证模型路径
-        is_valid, msg = _validate_model_path(EMBEDDING_MODEL)
+        is_valid, msg = _validate_model_path(current_model)
         if not is_valid:
             logger.error(f"模型路径无效：{msg}")
             return None
-        
-        logger.debug(f"使用 SentenceTransformerEmbeddingFunction，模型路径：{EMBEDDING_MODEL}")
-        return SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
-    
+
+        logger.debug(f"使用 SentenceTransformerEmbeddingFunction，模型路径：{current_model}")
+        return SentenceTransformerEmbeddingFunction(model_name=current_model)
+
     except Exception as e:
         logger.error(f"嵌入函数初始化失败：{e}")
         return None

@@ -257,6 +257,11 @@ body {
   color: oklch(0.40 0.14 150);
   border-color: oklch(0.85 0.08 150);
 }
+.mode-badge.pending {
+  background: oklch(0.95 0.06 80);
+  color: oklch(0.45 0.10 80);
+  border-color: oklch(0.85 0.08 80);
+}
 .mode-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
@@ -862,10 +867,8 @@ function closeSidebar() {
 
 // ─── 模式切换 ────────────────────────────────────────────────────
 function toggleMode() {
-  const badge = document.getElementById('mode-badge');
-  const currentlyOnline = badge.classList.contains('online');
-  // 调用 app.js 中的 onToggleChange，它会通过 API.toggleRouter() 通知后端
-  onToggleChange(!currentlyOnline);
+  // 使用 AppState 追踪真实状态，而非 badge CSS 类（切换后 badge 显示 pending 而非 online）
+  onToggleChange(!AppState.isOnline);
 }
 
 // ─── 新建对话 ────────────────────────────────────────────────────
@@ -1117,9 +1120,8 @@ textarea.addEventListener('keydown', function(e) {
 });
 
 // ─── 页面初始化 ────────────────────────────────────────────────────
-// 页面加载完成后建立 WebSocket 连接并加载会话列表
+// 页面加载完成后加载会话列表（WebSocket 连接由 app.js 统一管理，避免重复连接）
 document.addEventListener('DOMContentLoaded', () => {
-  connectWebSocket();
   loadSessionList();
 });
 </script>

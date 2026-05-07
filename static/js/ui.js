@@ -266,12 +266,20 @@ const UI = (() => {
    * @param {'local'|'online'|'pending'} mode
    */
   function updateModeUI(mode) {
-    const dot  = document.getElementById('mode-dot');
-    const text = document.getElementById('mode-text');
+    const badge = document.getElementById('mode-badge');
+    const dot   = document.getElementById('mode-dot');
+    const text  = document.getElementById('mode-text');
     if (!dot || !text) return;
 
-    // 先清空所有状态类，再按 mode 添加对应类
-    dot.className = '';
+    // 更新外层徽章样式（背景/边框颜色）
+    if (badge) {
+      badge.classList.remove('online', 'pending');
+      if (mode === 'online') badge.classList.add('online');
+      if (mode === 'pending') badge.classList.add('pending');
+    }
+
+    // 更新圆点动画和文字
+    dot.className = 'mode-dot';
 
     switch (mode) {
       case 'online':
@@ -283,7 +291,7 @@ const UI = (() => {
         text.textContent = '等待确认';
         break;
       default:
-        // 'local' 或未知值，保持默认（绿点，无额外类）
+        // 'local' 或未知值，保持默认样式
         text.textContent = '本地';
     }
   }

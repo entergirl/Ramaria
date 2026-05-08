@@ -828,11 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 按 'M' 键切换模式
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
-        const toggle = document.getElementById('mode-toggle');
-        if (toggle) {
-          toggle.checked = !toggle.checked;
-          onToggleChange(toggle.checked);
-        }
+        toggleMode();
         return;
       }
       

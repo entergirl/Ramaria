@@ -50,13 +50,17 @@ const AppState = (() => {
 
     /**
      * 设置线上模式状态。
-     * 同步更新 header 中的 toggle checkbox 位置。
+     * 同步更新 mode-badge 的 class 来反映当前状态。
      * @param {boolean} online
      */
     setOnline(online) {
       _isOnline = online;
-      const toggle = document.getElementById('mode-toggle');
-      if (toggle) toggle.checked = online;
+      // 同步更新 mode-badge 的 class，移除旧的 online/pending 状态
+      const badge = document.getElementById('mode-badge');
+      if (badge) {
+        badge.classList.remove('online', 'pending');
+        if (online) badge.classList.add('online');
+      }
     },
 
     /**

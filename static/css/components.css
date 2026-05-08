@@ -107,7 +107,7 @@
    4. 模式状态徽章（本地 / 线上 / 等待确认）
    ============================================================================= */
 
-#mode-badge {
+.mode-badge {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -118,16 +118,32 @@
   transition: color var(--dur-slow);
   padding: 4px 8px;
   border-radius: 10px;
-  background: transparent;
+  background: var(--blue-50);
+  color: var(--blue-500);
+  border: 1px solid var(--blue-100);
+}
+
+/* 线上模式 */
+.mode-badge.online {
+  background: oklch(0.95 0.06 150);
+  color: oklch(0.40 0.14 150);
+  border-color: oklch(0.85 0.08 150);
+}
+
+/* 等待确认 */
+.mode-badge.pending {
+  background: oklch(0.95 0.06 80);
+  color: oklch(0.45 0.10 80);
+  border-color: oklch(0.85 0.08 80);
 }
 
 /* 沉稳设计：切换时有微光效果 */
-#mode-badge.switching {
+.mode-badge.switching {
   animation: mode-glow 0.5s ease-out;
 }
 
 /* 状态圆点 */
-#mode-dot {
+.mode-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -138,13 +154,19 @@
   flex-shrink: 0;
 }
 
-/* 线上模式：珊瑚色 */
-#mode-dot.online {
+/* 线上模式：珊瑚色 + 脉冲动画 */
+.mode-badge.online .mode-dot {
   background: var(--dot-online);
+  animation: pulse-dot 2s ease infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
 }
 
 /* 等待确认：蓝色 + 缓慢闪烁 */
-#mode-dot.pending {
+.mode-badge.pending .mode-dot {
   background: var(--dot-pending);
   animation: blink 1.8s ease-in-out infinite;
 }

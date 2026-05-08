@@ -36,6 +36,7 @@ Python   ：3.10+
 
 import asyncio
 import sys
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -43,6 +44,19 @@ import mcp.types as types
 
 from ramaria.adapters.mcp.permissions import EFFECTIVE_PERMISSIONS, get_permission_summary
 from ramaria.adapters.mcp.tools import read_tools, write_tools
+from ramaria.logger import get_logger, init_logging, generate_trace_id, set_trace_id
+
+
+# 初始化日志（尽早初始化以便捕获所有日志）
+_log_dir = Path.home() / ".ramaria" / "logs"
+_init_logging_done = False
+
+
+def _ensure_logging():
+    global _init_logging_done
+    if not _init_logging_done:
+        init_logging(log_dir=str(_log_dir), log_file="mcp_server.log")
+        _init_logging_done = True
 
 
 # =============================================================================
@@ -364,15 +378,29 @@ async def main():
     MCP Server 主协程。
     使用 stdio_server 作为传输层，接收来自 Claude Desktop 的连接。
     """
+    # 确保日志已初始化
+    _ensure_logging()
+    logger = get_logger("ramaria.adapters.mcp.server")
+    trace_id = generate_trace_id()
+    set_trace_id(trace_id)
+
     summary  = get_permission_summary()
     enabled  = [name for name, info in summary.items() if info["enabled"]]
     disabled = [name for name, info in summary.items() if not info["enabled"]]
 
-    print("珊瑚菌 MCP Server 启动中…", file=sys.stderr)
-    print(f"  已启用工具（{len(enabled)} 个）：{', '.join(enabled)}", file=sys.stderr)
-    if disabled:
-        print(f"  已禁用工具（{len(disabled)} 个）：{', '.join(disabled)}", file=sys.stderr)
-    print("等待 MCP 客户端连接（stdio）…", file=sys.stderr)
+    logger.info(
+        "MCP Server 启动中",
+        enabled_count=len(enabled),
+        enabled_tools=list(enabled),
+        disabled_count=len(disabled) if disabled else 0,
+        disabled_tools=list(disabled) if disabled else [],
+        trace_id=trace_id,
+    )
+    logger.info(
+        "等待 MCP 客户端连接",
+        transport="stdio",
+        trace_id=trace_id,
+    )
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(

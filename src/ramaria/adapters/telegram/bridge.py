@@ -22,7 +22,6 @@ src/ramaria/adapters/telegram/bridge.py — RAMARIA × Telegram Bot 桥接服务
 """
 
 import os
-import logging
 import asyncio
 import requests
 from telegram import Update
@@ -33,6 +32,10 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+
+# 导入统一日志模块
+from ramaria.logger import get_logger, init_logging, set_trace_id, generate_trace_id, get_trace_id
+from ramaria.exceptions import AdapterSendError, AdapterReceiveError, ErrorCode
 
 # =============================================================================
 # 配置
@@ -48,12 +51,9 @@ ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
 # 本地 RAMARIA 服务地址
 RAMARIA_API_URL = "http://localhost:8000"
 
-# 日志配置
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger("telegram_bridge")
+# 初始化日志系统并获取 logger
+init_logging(log_dir="logs", log_file="telegram_bridge.log")
+logger = get_logger(__name__)
 
 
 # =============================================================================
@@ -184,7 +184,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """全局错误处理。"""
-    logger.error(f"Telegram Bot 异常：{context.error}", exc_info=context.error)
+    user_id = update.effective_user.id if hasattr(update, 'effective_user') and update.effective_user else None
+    logger.exception(
+        "Telegram Bot 异常",
+        user_id=user_id,
+        error=str(context.error) if context.error else None,
+        error_code=ErrorCode.R080005.code,
+        trace_id=get_trace_id() or "-"
+    )
 
 
 # =============================================================================

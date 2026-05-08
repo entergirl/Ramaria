@@ -13,7 +13,8 @@ from ramaria.config import (
     MEMORY_DECAY_RECENT_BOOST_FLOOR,
     SALIENCE_DECAY_MULTIPLIER,
 )
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import ErrorCode
 
 logger = get_logger(__name__)
 
@@ -33,7 +34,11 @@ def calc_decay_r(
             created_at = created_at.replace(tzinfo=timezone.utc)
         t_days = max((now - created_at).total_seconds() / 86400, 0)
     except (ValueError, TypeError):
-        logger.warning(f"无法解析 created_at={created_at_str!r}，衰减跳过（R=1.0）")
+        logger.warning(
+            "无法解析 created_at，衰减跳过",
+            created_at=created_at_str,
+            trace_id=get_trace_id() or "-"
+        )
         return 1.0
 
     s_val = salience if salience is not None else 0.5

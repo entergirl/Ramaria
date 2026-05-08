@@ -65,6 +65,7 @@ hiddenimports = [
     "ramaria",
     "ramaria.config",
     "ramaria.logger",
+    "ramaria.exceptions",
     "ramaria.storage.database",
     "ramaria.storage.vector_store",
     "ramaria.memory.summarizer",

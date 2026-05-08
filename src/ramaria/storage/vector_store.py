@@ -39,8 +39,12 @@ try:
     from sentence_transformers import SentenceTransformer
     from sentence_transformers.models import Transformer
 except ImportError as e:
-    logger_temp = __import__('logging').getLogger(__name__)
-    logger_temp.warning(f"SentenceTransformer 导入失败，动态加载可能失效：{e}")
+    # 使用延迟导入避免循环依赖
+    _temp_logger = __import__('ramaria', fromlist=['logger']).logger
+    _temp_logger.warning(
+        f"SentenceTransformer 导入失败，动态加载可能失效",
+        import_error=str(e)
+    )
     SentenceTransformer = None
 
 from ramaria.config import (

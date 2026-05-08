@@ -34,7 +34,8 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import ErrorCode
 
 logger = get_logger(__name__)
 
@@ -134,6 +135,7 @@ def _get_city() -> Optional[str]:
     结果在进程生命周期内缓存，不重复请求。
     """
     global _cached_city, _city_resolved
+    trace_id = get_trace_id() or "-"
 
     # 已尝试过定位，直接返回缓存结果（即使是 None）
     if _city_resolved:
@@ -146,7 +148,11 @@ def _get_city() -> Optional[str]:
         from ramaria.config import WEATHER_CITY
         if WEATHER_CITY and WEATHER_CITY.strip():
             _cached_city = WEATHER_CITY.strip()
-            logger.info(f"天气城市使用配置值：{_cached_city}")
+            logger.info(
+                f"天气城市使用配置值",
+                city=_cached_city,
+                trace_id=trace_id
+            )
             return _cached_city
     except (ImportError, AttributeError):
         pass
@@ -160,17 +166,40 @@ def _get_city() -> Optional[str]:
             city = data.get("city", "")
             if city:
                 _cached_city = city
-                logger.info(f"IP 定位城市：{city}（{data.get('country', '')}）")
+                logger.info(
+                    f"IP 定位城市",
+                    city=city,
+                    country=data.get('country', ''),
+                    trace_id=trace_id
+                )
                 return _cached_city
             else:
-                logger.warning("ip-api 返回成功但城市字段为空")
+                logger.warning(
+                    f"ip-api 返回成功但城市字段为空",
+                    api_response=data,
+                    error_code=ErrorCode.R030003.code,
+                    trace_id=trace_id
+                )
         else:
-            logger.warning(f"ip-api 定位失败：{data}")
+            logger.warning(
+                f"ip-api 定位失败",
+                api_response=str(data)[:200],
+                error_code=ErrorCode.R030003.code,
+                trace_id=trace_id
+            )
 
     except Exception as e:
-        logger.warning(f"IP 定位时发生异常 — {e}")
+        logger.warning(
+            f"IP 定位时发生异常",
+            error=str(e),
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
 
-    logger.warning("城市定位失败，天气功能将不可用")
+    logger.warning(
+        f"城市定位失败，天气功能将不可用",
+        trace_id=trace_id
+    )
     return None
 
 
@@ -326,6 +355,10 @@ def get_weather() -> str:
     if text:
         _cached_weather_text = text
         _weather_cache_time  = time.time()
-        logger.info(f"天气数据已更新：{city}")
+        logger.info(
+            f"天气数据已更新",
+            city=city,
+            trace_id=get_trace_id() or "-"
+        )
 
     return text or ""

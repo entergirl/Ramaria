@@ -48,10 +48,17 @@ def get_hardware_stats() -> str:
         str — 格式化后的硬件状态文本
         ""  — psutil 未安装或采集失败时返回空字符串
     """
+    trace_id = get_trace_id() or "-"
     try:
         import psutil
     except ImportError:
-        logger.warning("psutil 未安装，硬件感知不可用。请执行：pip install psutil")
+        logger.warning(
+            "psutil 未安装，硬件感知不可用",
+            action="install_hint",
+            install_command="pip install psutil",
+            error_code=ErrorCode.R060005.code,
+            trace_id=trace_id
+        )
         return ""
 
     lines: list[str] = []
@@ -70,7 +77,12 @@ def get_hardware_stats() -> str:
             f"内存使用 {used_gb:.1f} GB / {mem_gb:.1f} GB（{mem.percent:.1f}%）"
         )
     except Exception as e:
-        logger.warning(f"CPU/内存采集失败 — {e}")
+        logger.warning(
+            "CPU/内存采集失败",
+            error=str(e),
+            error_code=ErrorCode.R060002.code,
+            trace_id=trace_id
+        )
 
     # ── 电池状态（笔记本场景，无电池时跳过）────────────────────────────────
     try:
@@ -103,7 +115,12 @@ def get_hardware_stats() -> str:
             lines.append(f"活跃进程（CPU 占用前{_TOP_PROCESS_COUNT}）：{proc_str}")
 
     except Exception as e:
-        logger.warning(f"进程列表采集失败 — {e}")
+        logger.warning(
+            "进程列表采集失败",
+            error=str(e),
+            error_code=ErrorCode.R060002.code,
+            trace_id=trace_id
+        )
 
     if not lines:
         return ""

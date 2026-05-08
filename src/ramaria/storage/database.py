@@ -18,7 +18,15 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from ramaria.config import DB_PATH, TIME_PERIOD_OPTIONS
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import (
+    DBConnectionError,
+    DBQueryError,
+    DBIntegrityError,
+    DBMigrationError,
+    DBCorruptedError,
+    ErrorCode,
+)
 
 logger = get_logger(__name__)
 
@@ -480,10 +488,31 @@ def save_l2_summary(
             )
 
             conn.commit()
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            logger.exception(
+                f"L2 摘要保存失败（数据完整性错误）",
+                session_count=len(l1_ids),
+                error_code=ErrorCode.R020006.code,
+                trace_id=get_trace_id() or "-"
+            )
+            raise DBIntegrityError(
+                message=f"save_l2_summary 数据完整性错误: {e}",
+                cause=e,
+                context={"l1_ids": l1_ids}
+            )
         except Exception as e:
             conn.rollback()
-            logger.error(f"save_l2_summary 事务失败，已回滚 — {e}")
-            raise
+            logger.exception(
+                f"L2 摘要保存事务失败",
+                session_count=len(l1_ids),
+                error_code=ErrorCode.R020002.code,
+                trace_id=get_trace_id() or "-"
+            )
+            raise DBQueryError(
+                message=f"save_l2_summary 事务失败: {e}",
+                cause=e
+            )
 
     return l2_id
 
@@ -557,6 +586,24 @@ def get_setting(key: str, default: str | None = None) -> str | None:
         cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
         row = cursor.fetchone()
     return row["value"] if row else default
+
+
+def has_any_session() -> bool:
+    """
+    检查数据库中是否存在任何会话记录。
+
+    用途：
+        PushScheduler 使用此函数判断用户是否已开始使用应用。
+        如果没有会话记录，说明用户还在配置阶段，不应执行主动推送。
+
+    返回：
+        True  — 存在至少一个会话记录
+        False — 没有任何会话记录
+    """
+    with _db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM sessions LIMIT 1")
+        return cursor.fetchone() is not None
 
 
 def get_all_sessions_with_stats() -> list[dict]:

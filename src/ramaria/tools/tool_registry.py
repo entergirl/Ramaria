@@ -36,7 +36,8 @@ from typing import Optional
 
 import numpy as np
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import EmbeddingModelError, ToolExecutionError, ErrorCode
 
 logger = get_logger(__name__)
 
@@ -128,22 +129,34 @@ _vectors_initialized = False
 
 def _get_embedding_model():
     """直接加载 SentenceTransformer 模型，不走 chromadb 封装。"""
+    trace_id = get_trace_id() or "-"
     try:
         from sentence_transformers import SentenceTransformer
         from ramaria.config import EMBEDDING_MODEL
         return SentenceTransformer(EMBEDDING_MODEL)
     except Exception as e:
-        logger.warning(f"嵌入模型加载失败，将使用关键词兜底 — {e}")
+        logger.warning(
+            f"嵌入模型加载失败，将使用关键词兜底",
+            error=str(e),
+            error_code=ErrorCode.R020104.code,
+            trace_id=trace_id
+        )
         return None
 
 
 def _encode_text(text: str, model) -> Optional[np.ndarray]:
     """用 SentenceTransformer 直接编码，归一化后返回。"""
+    trace_id = get_trace_id() or "-"
     try:
         vec = model.encode(text, normalize_embeddings=True)
         return np.array(vec, dtype=np.float32)
     except Exception as e:
-        logger.warning(f"文本编码失败：{text[:30]}… — {e}")
+        logger.warning(
+            f"文本编码失败",
+            text_preview=text[:30] + "..." if len(text) > 30 else text,
+            error=str(e),
+            trace_id=trace_id
+        )
         return None
 
 
@@ -353,6 +366,7 @@ def resolve_tool_results(user_message: str) -> dict:
         _build_intent_vectors()
 
     # ── 硬件感知 ──────────────────────────────────────────────────────────
+    trace_id = get_trace_id() or "-"
     try:
         if _should_trigger_hardware(user_message) and _hardware_debounce_ok():
             from ramaria.tools.hardware_monitor import get_hardware_stats
@@ -360,9 +374,17 @@ def resolve_tool_results(user_message: str) -> dict:
             if stats:
                 results["hardware"] = stats
                 _update_hardware_trigger_time()
-                logger.info("硬件感知工具已触发")
+                logger.info(
+                    "硬件感知工具已触发",
+                    trace_id=trace_id
+                )
     except Exception as e:
-        logger.warning(f"硬件感知工具调用失败 — {e}")
+        logger.warning(
+            f"硬件感知工具调用失败",
+            error=str(e),
+            error_code=ErrorCode.R060002.code,
+            trace_id=trace_id
+        )
 
     # ── 文件系统扫描 ──────────────────────────────────────────────────────
     try:
@@ -375,16 +397,28 @@ def resolve_tool_results(user_message: str) -> dict:
             if path:
                 scan_result = scan_directory(path)
                 results["fs_scan"] = scan_result
-                logger.info(f"文件扫描工具已触发，路径：{path}")
+                logger.info(
+                    "文件扫描工具已触发",
+                    path=path,
+                    trace_id=trace_id
+                )
             else:
                 # 检测到扫描意图但没有路径，返回提示信息
                 results["fs_scan"] = (
                     "[提示] 用户似乎想扫描某个目录，但我没能提取到路径。"
                     "请回复：你可以把路径用引号括起来告诉我，比如扫描 \"F:\\你的路径\""
                 )
-                logger.debug("文件扫描意图命中但未找到路径，已添加提示信息")
+                logger.debug(
+                    "文件扫描意图命中但未找到路径，已添加提示信息",
+                    trace_id=trace_id
+                )
     except Exception as e:
-        logger.warning(f"文件扫描工具调用失败 — {e}")
+        logger.warning(
+            f"文件扫描工具调用失败",
+            error=str(e),
+            error_code=ErrorCode.R060002.code,
+            trace_id=trace_id
+        )
 
     # ── 天气查询 ──────────────────────────────────────────────────────────
     try:
@@ -393,8 +427,13 @@ def resolve_tool_results(user_message: str) -> dict:
             weather_text = get_weather()
             if weather_text:
                 results["weather"] = weather_text
-                logger.info("天气查询工具已触发")
+                logger.info("天气查询工具已触发", trace_id=trace_id)
     except Exception as e:
-        logger.warning(f"天气查询工具调用失败 — {e}")
+        logger.warning(
+            f"天气查询工具调用失败",
+            error=str(e),
+            error_code=ErrorCode.R060002.code,
+            trace_id=trace_id
+        )
         
     return results

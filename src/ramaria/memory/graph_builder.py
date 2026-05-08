@@ -35,7 +35,13 @@ from ramaria.storage.database import (
     save_keyword_with_alias,
 )
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import (
+    EmbeddingModelError,
+    GraphBuildError,
+    LLMResponseParseError,
+    ErrorCode,
+)
 
 logger = get_logger(__name__)
 
@@ -196,29 +202,51 @@ def _get_embedding_model():
     双重检查锁保证线程安全，懒加载避免启动时拖慢服务。
     """
     global _embedding_model
+    trace_id = get_trace_id() or "-"
     if _embedding_model is None:
         with _embedding_lock:
             if _embedding_model is None:
                 try:
                     from sentence_transformers import SentenceTransformer
-                    logger.info(f"正在加载嵌入模型：{EMBEDDING_MODEL}")
+                    logger.info(
+                        "正在加载嵌入模型",
+                        model=EMBEDDING_MODEL,
+                        trace_id=trace_id
+                    )
                     _embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-                    logger.info("嵌入模型加载完成")
+                    logger.info(
+                        "嵌入模型加载完成",
+                        model=EMBEDDING_MODEL,
+                        trace_id=trace_id
+                    )
                 except Exception as e:
-                    logger.error(f"嵌入模型加载失败 — {e}")
+                    logger.error(
+                        "嵌入模型加载失败",
+                        model=EMBEDDING_MODEL,
+                        error=str(e),
+                        error_code=ErrorCode.R020105.code,
+                        trace_id=trace_id
+                    )
                     return None
     return _embedding_model
 
 
 def _encode(text: str) -> Optional[np.ndarray]:
     """将文本编码为归一化向量。失败时返回 None。"""
+    trace_id = get_trace_id() or "-"
     model = _get_embedding_model()
     if model is None:
         return None
     try:
         return model.encode(text, normalize_embeddings=True)
     except Exception as e:
-        logger.warning(f"向量编码失败：{text[:30]}… — {e}")
+        logger.warning(
+            "向量编码失败",
+            text_preview=text[:30] + "..." if len(text) > 30 else text,
+            error=str(e),
+            error_code=ErrorCode.R020105.code,
+            trace_id=trace_id
+        )
         return None
 
 
@@ -249,7 +277,11 @@ def _normalize_entity(raw_name: str, source_l1_id: int) -> str:
     vec_new = _encode(raw_name)
 
     if vec_new is None:
-        logger.warning(f"嵌入模型不可用，{raw_name!r} 跳过归一化")
+        logger.warning(
+            "嵌入模型不可用，跳过归一化",
+            raw_name=raw_name,
+            trace_id=get_trace_id() or "-"
+        )
         save_keyword_with_alias(raw_name, canonical_id=None, alias_status="confirmed")
         return raw_name
 
@@ -277,18 +309,25 @@ def _normalize_entity(raw_name: str, source_l1_id: int) -> str:
             best_word = kw["keyword"]
             best_id   = kw["id"]
 
+    trace_id = get_trace_id() or "-"
     if best_sim >= ALIAS_HIGH_THRESHOLD:
         logger.info(
-            f"实体归一化（自动）：'{raw_name}' → '{best_word}'"
-            f"（相似度 {best_sim:.3f}）"
+            "实体归一化（自动）",
+            raw_name=raw_name,
+            canonical_name=best_word,
+            similarity=best_sim,
+            trace_id=trace_id
         )
         save_keyword_with_alias(raw_name, canonical_id=best_id, alias_status="confirmed")
         return best_word
 
     elif best_sim >= ALIAS_LOW_THRESHOLD:
         logger.info(
-            f"实体归一化（待确认）：'{raw_name}' vs '{best_word}'"
-            f"（相似度 {best_sim:.3f}）"
+            "实体归一化（待确认）",
+            raw_name=raw_name,
+            candidate_name=best_word,
+            similarity=best_sim,
+            trace_id=trace_id
         )
         new_kp_id = save_keyword_with_alias(
             raw_name, canonical_id=best_id, alias_status="pending"
@@ -305,8 +344,10 @@ def _normalize_entity(raw_name: str, source_l1_id: int) -> str:
 
     else:
         logger.debug(
-            f"实体归一化（新词）：'{raw_name}'"
-            f"（与最近规范词相似度 {best_sim:.3f}，低于阈值）"
+            "实体归一化（新词）",
+            raw_name=raw_name,
+            best_similarity=best_sim,
+            trace_id=trace_id
         )
         save_keyword_with_alias(raw_name, canonical_id=None, alias_status="confirmed")
         return raw_name
@@ -352,7 +393,11 @@ def _parse_triples(raw_text: str) -> list[dict] | None:
         except json.JSONDecodeError:
             pass
 
-    logger.warning(f"三元组解析失败，原始输出：{raw_text[:200]}")
+    logger.warning(
+        "三元组解析失败",
+        raw_output=raw_text[:200],
+        trace_id=get_trace_id() or "-"
+    )
     return None
 
 
@@ -366,25 +411,46 @@ def _validate_triple(triple: dict) -> bool:
         "subject", "subject_type", "relation_type",
         "relation_detail", "object", "object_type"
     )
+    trace_id = get_trace_id() or "-"
     for f in required_fields:
         if not str(triple.get(f, "")).strip():
-            logger.debug(f"三元组缺少字段 {f!r}，已丢弃：{triple}")
+            logger.debug(
+                f"三元组缺少字段 {f!r}，已丢弃",
+                triple=triple,
+                trace_id=trace_id
+            )
             return False
 
     if triple["relation_type"] not in VALID_RELATION_TYPES:
-        logger.debug(f"relation_type {triple['relation_type']!r} 不合法，已丢弃")
+        logger.debug(
+            f"relation_type 不合法，已丢弃",
+            relation_type=triple['relation_type'],
+            trace_id=trace_id
+        )
         return False
 
     if triple["subject_type"] not in VALID_ENTITY_TYPES:
-        logger.debug(f"subject_type {triple['subject_type']!r} 不合法，已丢弃")
+        logger.debug(
+            f"subject_type 不合法，已丢弃",
+            subject_type=triple['subject_type'],
+            trace_id=trace_id
+        )
         return False
 
     if triple["object_type"] not in VALID_ENTITY_TYPES:
-        logger.debug(f"object_type {triple['object_type']!r} 不合法，已丢弃")
+        logger.debug(
+            f"object_type 不合法，已丢弃",
+            object_type=triple['object_type'],
+            trace_id=trace_id
+        )
         return False
 
     if triple["subject"].strip() == triple["object"].strip():
-        logger.debug(f"主语和宾语相同，已丢弃：{triple['subject']}")
+        logger.debug(
+            f"主语和宾语相同，已丢弃",
+            subject=triple['subject'],
+            trace_id=trace_id
+        )
         return False
 
     return True
@@ -398,16 +464,24 @@ def _extract_triples_for_l1(l1_id: int) -> int | None:
         int  — 成功写入的三元组数量（0 表示跳过或无有效三元组）
         None — 模型调用失败时返回 None
     """
+    trace_id = get_trace_id() or "-"
     l1_row = get_l1_by_id(l1_id)
     if l1_row is None:
-        logger.warning(f"找不到 L1 id={l1_id}，跳过")
+        logger.warning(
+            "找不到 L1，跳过",
+            l1_id=l1_id,
+            trace_id=trace_id
+        )
         return 0
 
     salience = l1_row["salience"] if l1_row["salience"] is not None else 0.5
     if salience < MIN_SALIENCE:
         logger.debug(
-            f"L1 {l1_id} salience={salience:.2f} < {MIN_SALIENCE}，"
-            f"跳过图谱提取"
+            "L1 salience 低于阈值，跳过图谱提取",
+            l1_id=l1_id,
+            salience=salience,
+            min_salience=MIN_SALIENCE,
+            trace_id=trace_id
         )
         return 0
 
@@ -425,23 +499,42 @@ def _extract_triples_for_l1(l1_id: int) -> int | None:
         caller="graph_builder",
     )
     if raw_output is None:
-        logger.error(f"L1 {l1_id} 模型调用失败")
+        logger.error(
+            "L1 模型调用失败",
+            l1_id=l1_id,
+            error_code=ErrorCode.R010005.code,
+            trace_id=trace_id
+        )
         return None
 
     triples = _parse_triples(raw_output)
     if triples is None:
-        logger.error(f"L1 {l1_id} 三元组解析失败，原始输出：{raw_output[:200]}")
+        logger.error(
+            "L1 三元组解析失败",
+            l1_id=l1_id,
+            raw_output=raw_output[:200],
+            error_code=ErrorCode.R010003.code,
+            trace_id=trace_id
+        )
         return None
 
     if not triples:
-        logger.debug(f"L1 {l1_id} 无有效三元组")
+        logger.debug(
+            "L1 无有效三元组",
+            l1_id=l1_id,
+            trace_id=trace_id
+        )
         return 0
 
     valid_triples = [t for t in triples if _validate_triple(t)]
     valid_triples = valid_triples[:MAX_TRIPLES_PER_L1]
 
     if not valid_triples:
-        logger.debug(f"L1 {l1_id} 校验后无合法三元组")
+        logger.debug(
+            "L1 校验后无合法三元组",
+            l1_id=l1_id,
+            trace_id=trace_id
+        )
         return 0
 
     written = 0
@@ -467,60 +560,45 @@ def _extract_triples_for_l1(l1_id: int) -> int | None:
                 relation_detail = triple["relation_detail"].strip(),
                 source_l1_id    = l1_id,
             )
-            for triple in valid_triples:
-                try:
-                    subject_name = _normalize_entity(triple["subject"].strip(), l1_id)
-                    object_name  = _normalize_entity(triple["object"].strip(),  l1_id)
 
-                    source_node_id = get_or_create_node(
-                        entity_name  = subject_name,
-                        entity_type  = triple["subject_type"],
-                        source_l1_id = l1_id,
-                    )
-                    target_node_id = get_or_create_node(
-                        entity_name  = object_name,
-                        entity_type  = triple["object_type"],
-                        source_l1_id = l1_id,
-                    )
-                    save_edge(
-                        source_node_id  = source_node_id,
-                        target_node_id  = target_node_id,
-                        relation_type   = triple["relation_type"],
-                        relation_detail = triple["relation_detail"].strip(),
-                        source_l1_id    = l1_id,
-                    )
+            # v0.4.0：增量更新内存图谱，无需全量重载
+            _add_edge_to_graph(
+                source_node_id  = source_node_id,
+                source_name     = subject_name,
+                source_type     = triple["subject_type"],
+                target_node_id  = target_node_id,
+                target_name     = object_name,
+                target_type     = triple["object_type"],
+                relation_type   = triple["relation_type"],
+                relation_detail = triple["relation_detail"].strip(),
+                source_l1_id    = l1_id,
+            )
 
-                    # v0.4.0：增量更新内存图谱，无需全量重载
-                    _add_edge_to_graph(
-                        source_node_id  = source_node_id,
-                        source_name     = subject_name,
-                        source_type     = triple["subject_type"],
-                        target_node_id  = target_node_id,
-                        target_name     = object_name,
-                        target_type     = triple["object_type"],
-                        relation_type   = triple["relation_type"],
-                        relation_detail = triple["relation_detail"].strip(),
-                        source_l1_id    = l1_id,
-                    )
-
-                    written += 1
-                    logger.debug(
-                        f"三元组写入：{subject_name} "
-                        f"—[{triple['relation_type']}]→ {object_name}"
-                    )
-                except Exception as e:
-                    logger.warning(f"L1 {l1_id} 单条三元组写入失败 — {e}")
-                    continue
             written += 1
             logger.debug(
-                f"三元组写入：{subject_name} "
-                f"—[{triple['relation_type']}]→ {object_name}"
+                "三元组写入",
+                l1_id=l1_id,
+                subject=subject_name,
+                relation_type=triple['relation_type'],
+                object=object_name,
+                trace_id=trace_id
             )
         except Exception as e:
-            logger.warning(f"L1 {l1_id} 单条三元组写入失败 — {e}")
+            logger.warning(
+                "L1 单条三元组写入失败",
+                l1_id=l1_id,
+                error=str(e),
+                error_code=ErrorCode.R050003.code,
+                trace_id=trace_id
+            )
             continue
 
-    logger.info(f"L1 {l1_id} 图谱提取完成，写入 {written} 条三元组")
+    logger.info(
+        "L1 图谱提取完成",
+        l1_id=l1_id,
+        written_count=written,
+        trace_id=trace_id
+    )
     return written
 
 
@@ -563,14 +641,22 @@ def _build_worker(pending_ids: list[int]) -> None:
     逐个处理 pending_ids 中的 L1。
     """
     global _state
-    logger.info(f"图谱构建线程启动，共 {len(pending_ids)} 条 L1 待处理")
+    trace_id = get_trace_id() or "-"
+    logger.info(
+        "图谱构建线程启动",
+        pending_count=len(pending_ids),
+        trace_id=trace_id
+    )
 
     for l1_id in pending_ids:
         with _state_lock:
             if _state.stop_requested:
                 _state.status      = "stopped"
                 _state.finished_at = _now_iso()
-                logger.info("图谱构建已停止（用户请求）")
+                logger.info(
+                    "图谱构建已停止（用户请求）",
+                    trace_id=trace_id
+                )
                 return
 
         with _state_lock:
@@ -589,7 +675,11 @@ def _build_worker(pending_ids: list[int]) -> None:
                 _state.succeeded += 1
 
         logger.info(
-            f"L1 {l1_id} 处理完成（{_state.done}/{_state.total}）"
+            "L1 处理完成",
+            l1_id=l1_id,
+            done=_state.done,
+            total=_state.total,
+            trace_id=trace_id
         )
         time.sleep(BATCH_SLEEP_INTERVAL)
 
@@ -599,8 +689,11 @@ def _build_worker(pending_ids: list[int]) -> None:
         _state.current_l1_id = None
 
     logger.info(
-        f"图谱构建完成：成功 {_state.succeeded}，"
-        f"跳过 {_state.skipped}，失败 {_state.failed}"
+        "图谱构建完成",
+        succeeded=_state.succeeded,
+        skipped=_state.skipped,
+        failed=_state.failed,
+        trace_id=trace_id
     )
 
 
@@ -627,7 +720,12 @@ def start_graph_build() -> dict:
         try:
             pending_ids = _get_pending_l1_ids()
         except Exception as e:
-            logger.error(f"查询待处理 L1 失败 — {e}")
+            logger.exception(
+                "查询待处理 L1 失败",
+                error=str(e),
+                error_code=ErrorCode.R050004.code,
+                trace_id=get_trace_id() or "-"
+            )
             _state.status = "error"
             return _state.to_dict()
 
@@ -649,7 +747,11 @@ def start_graph_build() -> dict:
         daemon  = True,
     )
     _build_thread.start()
-    logger.info(f"图谱构建线程已启动，待处理 L1 数：{len(pending_ids)}")
+    logger.info(
+        "图谱构建线程已启动",
+        pending_count=len(pending_ids),
+        trace_id=get_trace_id() or "-"
+    )
 
     with _state_lock:
         return _state.to_dict()
@@ -664,7 +766,10 @@ def stop_graph_build() -> dict:
             return _state.to_dict()
         _state.stop_requested = True
 
-    logger.info("已发送停止请求，等待当前 L1 处理完毕")
+    logger.info(
+        "已发送停止请求，等待当前 L1 处理完毕",
+        trace_id=get_trace_id() or "-"
+    )
 
     with _state_lock:
         return _state.to_dict()
@@ -681,7 +786,12 @@ def get_graph_pending_count() -> int:
     try:
         return len(_get_pending_l1_ids())
     except Exception as e:
-        logger.error(f"查询待处理 L1 数量失败 — {e}")
+        logger.exception(
+            "查询待处理 L1 数量失败",
+            error=str(e),
+            error_code=ErrorCode.R050004.code,
+            trace_id=get_trace_id() or "-"
+        )
         return -1
 
 
@@ -817,8 +927,10 @@ def _add_edge_to_graph(
         # 下次 reload_graph() 会把这条边从数据库全量加载进来
         if _nx_graph is None:
             logger.debug(
-                f"_add_edge_to_graph: 图谱未初始化，跳过增量更新 "
-                f"({source_name} → {target_name})"
+                "图谱未初始化，跳过增量更新",
+                source=source_name,
+                target=target_name,
+                trace_id=get_trace_id() or "-"
             )
             return
 
@@ -868,8 +980,12 @@ def _add_edge_to_graph(
             )
 
     logger.debug(
-        f"图谱增量更新：{source_name} —[{relation_type}]→ {target_name}，"
-        f"L1 id={source_l1_id}"
+        "图谱增量更新",
+        source=source_name,
+        relation_type=relation_type,
+        target=target_name,
+        l1_id=source_l1_id,
+        trace_id=get_trace_id() or "-"
     )
 
 
@@ -880,7 +996,7 @@ def reload_graph() -> None:
     但数据库是权威来源，结果是一致的。
     """
     load_graph_to_memory()   # 内部已加锁
-    logger.info("图谱已重新加载")
+    logger.info("图谱已重新加载", trace_id=get_trace_id() or "-")
 
 
 # =============================================================================

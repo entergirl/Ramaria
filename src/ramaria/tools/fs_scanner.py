@@ -197,7 +197,13 @@ def scan_directory(path_str: str) -> str:
     footer = f"\n共 {counter[0]} 个条目"
 
     result = header + "\n".join(lines) + footer
-    logger.info(f"文件系统扫描完成：{path}，共 {counter[0]} 个条目")
+    logger.info(
+        "文件系统扫描完成",
+        path=str(path),
+        entry_count=counter[0],
+        max_depth=_MAX_DEPTH,
+        trace_id=get_trace_id() or "-"
+    )
     return result
 
 

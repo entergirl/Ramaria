@@ -37,7 +37,12 @@ from ramaria.storage.database import (
     upsert_keywords,
 )
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import (
+    SummarizeError,
+    MemoryRetrieveError,
+    ErrorCode,
+)
 
 logger = get_logger(__name__)
 
@@ -182,7 +187,12 @@ def _get_keyword_candidates() -> str:
         return "，".join(candidates)
 
     except Exception as e:
-        logger.warning(f"读取关键词词典失败，将使用无候选词版 Prompt — {e}")
+        logger.warning(
+            "读取关键词词典失败，将使用无候选词版 Prompt",
+            error=str(e),
+            error_code=ErrorCode.R050001.code,
+            trace_id=get_trace_id() or "-"
+        )
         return ""
 
 
@@ -230,7 +240,10 @@ def _parse_summary_json(raw_text: str) -> dict | None:
     # 第二步：剥离思考链后再次解析
     stripped = strip_thinking(raw_text)
     if stripped != raw_text:
-        logger.debug("检测到思考链输出，已自动剥离，重新解析")
+        logger.debug(
+            "检测到思考链输出，已自动剥离，重新解析",
+            trace_id=get_trace_id() or "-"
+        )
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
@@ -244,7 +257,12 @@ def _parse_summary_json(raw_text: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    logger.warning(f"无法从模型输出中解析 JSON，原始输出：{raw_text[:200]}")
+    logger.warning(
+        "无法从模型输出中解析 JSON",
+        raw_output=raw_text[:200],
+        error_code=ErrorCode.R010003.code,
+        trace_id=get_trace_id() or "-"
+    )
     return None
 
 
@@ -265,6 +283,7 @@ def _validate_and_fix(parsed: dict) -> dict:
         dict — 校验/修复后的字典，六个字段均有值（部分允许为 None）
     """
     result = {}
+    trace_id = get_trace_id() or "-"
 
     # summary：必填，缺失或为空时用占位文本替代
     result["summary"] = str(parsed.get("summary", "")).strip()
@@ -279,12 +298,20 @@ def _validate_and_fix(parsed: dict) -> dict:
     tp = str(parsed.get("time_period", "")).strip()
     result["time_period"] = tp if tp in TIME_PERIOD_OPTIONS else None
     if result["time_period"] is None and tp:
-        logger.warning(f"time_period 值 {tp!r} 不合法，已置为 None")
+        logger.warning(
+            "time_period 值不合法",
+            value=tp,
+            trace_id=trace_id
+        )
 
     # atmosphere：四字以内，超长时截断
     atm = str(parsed.get("atmosphere", "")).strip()
     if len(atm) > 4:
-        logger.warning(f"atmosphere 值 {atm!r} 超过四字，已截断")
+        logger.warning(
+            "atmosphere 值超过四字，已截断",
+            original=atm,
+            trace_id=trace_id
+        )
         atm = atm[:4]
     result["atmosphere"] = atm if atm else None
 
@@ -294,11 +321,17 @@ def _validate_and_fix(parsed: dict) -> dict:
         closest     = min(_VALID_VALENCE, key=lambda v: abs(v - raw_valence))
         if closest != raw_valence:
             logger.debug(
-                f"valence {raw_valence} 不在合法档位，自动对齐到 {closest}"
+                "valence 不在合法档位，自动对齐",
+                raw_value=raw_valence,
+                aligned_value=closest,
+                trace_id=trace_id
             )
         result["valence"] = closest
     except (ValueError, TypeError):
-        logger.warning("valence 解析失败，使用默认值 0.0")
+        logger.warning(
+            "valence 解析失败，使用默认值",
+            trace_id=trace_id
+        )
         result["valence"] = 0.0
 
     # salience：五档浮点校验，自动对齐到最近合法档位
@@ -307,11 +340,17 @@ def _validate_and_fix(parsed: dict) -> dict:
         closest      = min(_VALID_SALIENCE, key=lambda v: abs(v - raw_salience))
         if closest != raw_salience:
             logger.debug(
-                f"salience {raw_salience} 不在合法档位，自动对齐到 {closest}"
+                "salience 不在合法档位，自动对齐",
+                raw_value=raw_salience,
+                aligned_value=closest,
+                trace_id=trace_id
             )
         result["salience"] = closest
     except (ValueError, TypeError):
-        logger.warning("salience 解析失败，使用默认值 0.5")
+        logger.warning(
+            "salience 解析失败，使用默认值",
+            trace_id=trace_id
+        )
         result["salience"] = 0.5
 
     return result
@@ -346,25 +385,46 @@ def generate_l1_summary(session_id: int) -> int | None:
         int  — 成功时返回新写入的 L1 记录 id
         None — 任何步骤失败时返回 None（不抛出异常，不阻断主流程）
     """
-    logger.info(f"开始为 session {session_id} 生成 L1 摘要")
+    trace_id = get_trace_id() or "-"
+    logger.info(
+        "开始为 session 生成 L1 摘要",
+        session_id=session_id,
+        trace_id=trace_id
+    )
 
     # 第一步：读取消息
     messages = get_messages(session_id)
     if not messages:
-        logger.debug(f"session {session_id} 没有消息，跳过摘要生成")
+        logger.debug(
+            "session 没有消息，跳过摘要生成",
+            session_id=session_id,
+            trace_id=trace_id
+        )
         return None
 
-    logger.debug(f"读取到 {len(messages)} 条消息")
+    logger.debug(
+        "读取到消息",
+        session_id=session_id,
+        message_count=len(messages),
+        trace_id=trace_id
+    )
 
     # 第二步：读取关键词候选列表
     keyword_candidates = _get_keyword_candidates()
     if keyword_candidates:
+        kw_count = len(keyword_candidates.split('，'))
         logger.debug(
-            f"词典候选词已注入"
-            f"（共 {len(keyword_candidates.split('，'))} 个）"
+            "词典候选词已注入",
+            session_id=session_id,
+            keyword_count=kw_count,
+            trace_id=trace_id
         )
     else:
-        logger.debug("词典为空（冷启动阶段），使用基础 Prompt")
+        logger.debug(
+            "词典为空（冷启动阶段），使用基础 Prompt",
+            session_id=session_id,
+            trace_id=trace_id
+        )
 
     # 第三步：格式化对话文本，选择 Prompt 模板
     conversation_text = _format_conversation(messages)
@@ -385,15 +445,30 @@ def generate_l1_summary(session_id: int) -> int | None:
         caller="summarizer",
     )
     if raw_output is None:
-        logger.error(f"模型调用失败，session {session_id} 摘要生成中止")
+        logger.error(
+            "模型调用失败，session 摘要生成中止",
+            session_id=session_id,
+            error_code=ErrorCode.R010005.code,
+            trace_id=trace_id
+        )
         return None
 
-    logger.debug(f"模型原始输出：{raw_output[:200]}")
+    logger.debug(
+        "模型原始输出",
+        session_id=session_id,
+        output_preview=raw_output[:200],
+        trace_id=trace_id
+    )
 
     # 第五步：解析 JSON
     parsed = _parse_summary_json(raw_output)
     if parsed is None:
-        logger.error("JSON 解析失败，写入降级摘要")
+        logger.error(
+            "JSON 解析失败，写入降级摘要",
+            session_id=session_id,
+            error_code=ErrorCode.R010003.code,
+            trace_id=trace_id
+        )
         l1_id = save_l1_summary(
             session_id  = session_id,
             summary     = f"（自动摘要失败，原始输出已记录）{raw_output[:100]}",
@@ -435,12 +510,20 @@ def generate_l1_summary(session_id: int) -> int | None:
         created_at  = l1_created_at,   # 传入原始时间，None 时 database 层自动用 _now()
     )
 
-    logger.info(f"L1 摘要已写入，id = {l1_id}")
+    logger.info(
+        "L1 摘要已写入",
+        l1_id=l1_id,
+        session_id=session_id,
+        trace_id=trace_id
+    )
     logger.debug(
-        f"summary={validated['summary']} | "
-        f"keywords={validated['keywords']} | "
-        f"time_period={validated['time_period']} | "
-        f"atmosphere={validated['atmosphere']}"
+        "L1 摘要详情",
+        l1_id=l1_id,
+        summary=validated['summary'][:50] + "..." if len(validated['summary']) > 50 else validated['summary'],
+        keywords=validated['keywords'],
+        time_period=validated['time_period'],
+        atmosphere=validated['atmosphere'],
+        trace_id=trace_id
     )
 
     # 第七步：将本次关键词写回 keyword_pool 词典
@@ -448,9 +531,19 @@ def generate_l1_summary(session_id: int) -> int | None:
         try:
             kw_list = _extract_keywords_list(validated["keywords"])
             upsert_keywords(kw_list)
-            logger.debug(f"关键词已写回词典：{kw_list}")
+            logger.debug(
+                "关键词已写回词典",
+                l1_id=l1_id,
+                keywords=kw_list,
+                trace_id=trace_id
+            )
         except Exception as e:
-            logger.warning(f"关键词写回词典失败 — {e}")
+            logger.warning(
+                "关键词写回词典失败",
+                l1_id=l1_id,
+                error=str(e),
+                trace_id=trace_id
+            )
 
     # 第八步：将 L1 摘要写入向量索引
     try:
@@ -466,7 +559,12 @@ def generate_l1_summary(session_id: int) -> int | None:
             salience   = validated["salience"],
         )
     except Exception as e:
-        logger.warning(f"L1 向量索引写入失败 — {e}")
+        logger.warning(
+            "L1 向量索引写入失败",
+            l1_id=l1_id,
+            error=str(e),
+            trace_id=trace_id
+        )
 
     # 第九步：提取新信息，静默写入 L3 用户画像
     # 必须在 conflict_checker 之前执行，冲突检测需要拿最新的 L3 比对
@@ -474,14 +572,24 @@ def generate_l1_summary(session_id: int) -> int | None:
         from ramaria.memory.profile_manager import extract_and_update
         extract_and_update(l1_id)
     except Exception as e:
-        logger.warning(f"画像提取时出现异常 — {e}")
+        logger.warning(
+            "画像提取时出现异常",
+            l1_id=l1_id,
+            error=str(e),
+            trace_id=trace_id
+        )
 
     # 第十步：触发冲突检测
     try:
         from ramaria.memory.conflict_checker import check_conflicts
         check_conflicts(l1_id)
     except Exception as e:
-        logger.warning(f"冲突检测时出现异常 — {e}")
+        logger.warning(
+            "冲突检测时出现异常",
+            l1_id=l1_id,
+            error=str(e),
+            trace_id=trace_id
+        )
 
     # 第十一步：触发路径A — L2 条数检查
     # 使用懒加载 import 避免 summarizer ↔ merger 循环依赖
@@ -489,6 +597,10 @@ def generate_l1_summary(session_id: int) -> int | None:
         from ramaria.memory.merger import check_and_merge
         check_and_merge()
     except Exception as e:
-        logger.warning(f"L2 合并检查时出现异常 — {e}")
+        logger.warning(
+            "L2 合并检查时出现异常",
+            error=str(e),
+            trace_id=trace_id
+        )
 
     return l1_id

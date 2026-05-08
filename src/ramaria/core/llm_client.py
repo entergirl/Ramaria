@@ -19,7 +19,14 @@ import requests
 
 from ramaria import config as _config
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import (
+    LLMConnectionError,
+    LLMTimeoutError,
+    LLMAPIError,
+    LLMResponseParseError,
+    ErrorCode,
+)
 
 logger = get_logger(__name__)
 
@@ -172,6 +179,7 @@ def _call(
     }
 
     api_url = _config.LOCAL_API_URL
+    trace_id = get_trace_id() or "-"
 
     try:
         response = requests.post(api_url, json=payload, timeout=120)
@@ -186,25 +194,50 @@ def _call(
         # 注意：这里只做标签剥离，不做 JSON 截断。
         # 摘要类任务需要在拿到返回值后额外调用 strip_thinking() 处理。
         cleaned = _remove_think_tags(raw_content)
+        logger.debug(
+            f"LLM 调用成功",
+            caller=caller,
+            trace_id=trace_id,
+            content_length=len(cleaned)
+        )
         return cleaned
 
-    except requests.exceptions.ConnectionError:
-        logger.error(
-            f"[caller={caller}] 无法连接到本地模型（{api_url}），"
-            f"请确认服务已启动"
+    except requests.exceptions.ConnectionError as e:
+        logger.exception(
+            f"无法连接到本地模型",
+            caller=caller,
+            api_url=api_url,
+            error_code=ErrorCode.R010001.code,
+            trace_id=trace_id
         )
         return None
 
-    except requests.exceptions.Timeout:
-        logger.error(
-            f"[caller={caller}] 请求超时（超过 120 秒），模型响应过慢"
+    except requests.exceptions.Timeout as e:
+        logger.exception(
+            f"LLM 请求超时",
+            caller=caller,
+            timeout=120,
+            error_code=ErrorCode.R010002.code,
+            trace_id=trace_id
         )
         return None
 
     except requests.exceptions.HTTPError as e:
-        logger.error(f"[caller={caller}] HTTP 请求失败 — {e}")
+        status_code = e.response.status_code if e.response else None
+        logger.exception(
+            f"LLM HTTP 请求失败",
+            caller=caller,
+            status_code=status_code,
+            error_code=ErrorCode.R010005.code,
+            trace_id=trace_id
+        )
         return None
 
     except (KeyError, IndexError) as e:
-        logger.error(f"[caller={caller}] 解析模型响应结构失败 — {e}")
+        logger.exception(
+            f"解析模型响应结构失败",
+            caller=caller,
+            error_code=ErrorCode.R010003.code,
+            trace_id=trace_id
+        )
         return None

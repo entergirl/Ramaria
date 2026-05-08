@@ -26,7 +26,13 @@ from typing import Any
 
 import requests
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, get_trace_id
+from ramaria.exceptions import (
+    NetworkConnectionError,
+    NetworkTimeoutError,
+    HTTPError,
+    ErrorCode,
+)
 
 logger = get_logger(__name__)
 
@@ -52,24 +58,60 @@ def fetch_json(
         dict | list — 解析成功的 JSON 对象
         None        — 网络错误、超时、非 JSON 响应时返回 None
     """
+    trace_id = get_trace_id() or "-"
     try:
         resp = requests.get(url, params=params, timeout=timeout)
         resp.raise_for_status()
+        logger.debug(
+            f"fetch_json 成功",
+            url=url,
+            status_code=resp.status_code,
+            trace_id=trace_id
+        )
         return resp.json()
     except requests.exceptions.Timeout:
-        logger.warning(f"fetch_json 超时（>{timeout}s）：{url}")
+        logger.warning(
+            f"fetch_json 超时",
+            url=url,
+            timeout=timeout,
+            error_code=ErrorCode.R030002.code,
+            trace_id=trace_id
+        )
         return None
     except requests.exceptions.ConnectionError:
-        logger.warning(f"fetch_json 连接失败（无网络？）：{url}")
+        logger.warning(
+            f"fetch_json 连接失败（无网络）",
+            url=url,
+            error_code=ErrorCode.R030001.code,
+            trace_id=trace_id
+        )
         return None
     except requests.exceptions.HTTPError as e:
-        logger.warning(f"fetch_json HTTP 错误：{e}  url={url}")
+        status_code = e.response.status_code if e.response else None
+        logger.warning(
+            f"fetch_json HTTP 错误",
+            url=url,
+            status_code=status_code,
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
         return None
     except ValueError:
-        logger.warning(f"fetch_json 响应不是合法 JSON：{url}")
+        logger.warning(
+            f"fetch_json 响应不是合法 JSON",
+            url=url,
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
         return None
     except Exception as e:
-        logger.warning(f"fetch_json 未知错误：{e}  url={url}")
+        logger.exception(
+            f"fetch_json 未知错误",
+            url=url,
+            error=str(e),
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
         return None
 
 
@@ -90,19 +132,50 @@ def fetch_text(
         str  — 响应文本（已去除首尾空白）
         None — 任何错误时返回 None
     """
+    trace_id = get_trace_id() or "-"
     try:
         resp = requests.get(url, params=params, timeout=timeout)
         resp.raise_for_status()
+        logger.debug(
+            f"fetch_text 成功",
+            url=url,
+            status_code=resp.status_code,
+            trace_id=trace_id
+        )
         return resp.text.strip()
     except requests.exceptions.Timeout:
-        logger.warning(f"fetch_text 超时（>{timeout}s）：{url}")
+        logger.warning(
+            f"fetch_text 超时",
+            url=url,
+            timeout=timeout,
+            error_code=ErrorCode.R030002.code,
+            trace_id=trace_id
+        )
         return None
     except requests.exceptions.ConnectionError:
-        logger.warning(f"fetch_text 连接失败（无网络？）：{url}")
+        logger.warning(
+            f"fetch_text 连接失败（无网络）",
+            url=url,
+            error_code=ErrorCode.R030001.code,
+            trace_id=trace_id
+        )
         return None
     except requests.exceptions.HTTPError as e:
-        logger.warning(f"fetch_text HTTP 错误：{e}  url={url}")
+        status_code = e.response.status_code if e.response else None
+        logger.warning(
+            f"fetch_text HTTP 错误",
+            url=url,
+            status_code=status_code,
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
         return None
     except Exception as e:
-        logger.warning(f"fetch_text 未知错误：{e}  url={url}")
+        logger.exception(
+            f"fetch_text 未知错误",
+            url=url,
+            error=str(e),
+            error_code=ErrorCode.R030003.code,
+            trace_id=trace_id
+        )
         return None

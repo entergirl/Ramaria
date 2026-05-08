@@ -158,11 +158,26 @@ def _patch_config_paths() -> None:
       · config/   — 整个目录复制（仅当目录不存在时）
       · persona.toml — 只在不存在时从 example 复制，不覆盖用户已有配置
     """
+    import sys as _sys
+    _sys.stderr.write("[bundle] >>> _patch_config_paths() 开始\n")
+    _sys.stderr.flush()
+    
     if not getattr(sys, "frozen", False):
+        _sys.stderr.write("[bundle] >>> 非打包模式，直接返回\n")
+        _sys.stderr.flush()
         return  # 仅打包模式需要
 
+    _sys.stderr.write("[bundle] >>> 正在导入 ramaria.config...\n")
+    _sys.stderr.flush()
     import ramaria.config as config
+    _sys.stderr.write("[bundle] >>> ramaria.config 导入成功\n")
+    _sys.stderr.flush()
+    
+    _sys.stderr.write("[bundle] >>> 正在导入 ramaria.logger...\n")
+    _sys.stderr.flush()
     import ramaria.logger as logger_module
+    _sys.stderr.write("[bundle] >>> ramaria.logger 导入成功\n")
+    _sys.stderr.flush()
 
     # exe 同级目录（可写），用于存放用户数据
     exe_dir = Path(sys.executable).parent
@@ -176,7 +191,7 @@ def _patch_config_paths() -> None:
     config.CHROMA_DIR  = config.DATA_DIR    / "chroma_db"
     config.PERSONA_PATH = config.CONFIG_DIR / "persona.toml"
 
-    # 修复 logger 路径
+    # 修复 logger 路径变量（供旧代码兼容）
     logger_module._ROOT_DIR = exe_dir
     logger_module.LOG_DIR   = exe_dir / "logs"
     logger_module.LOG_FILE  = logger_module.LOG_DIR / "coral.log"
@@ -247,7 +262,8 @@ def _start_uvicorn() -> None:
         app       = "app.main:app",
         host      = "127.0.0.1",
         port      = _SERVER_PORT,
-        log_level = "warning",
+        log_level = "info",  # 改为 info 以显示 Ramaria 日志
+        log_config = None,   # 禁用 uvicorn 默认日志配置，使用 Ramaria 日志系统
     )
     global _uvicorn_server
     _uvicorn_server = uvicorn.Server(config)
@@ -456,15 +472,58 @@ def _quit_app() -> None:
 
 def main() -> None:
     """Ramaria 桌面版启动入口。"""
-    import webview
-    from ramaria.logger import get_logger
-
-    logger = get_logger("bundle")
-    logger.info(f"Ramaria 桌面版启动，根目录：{ROOT}")
+    # 打印到 stderr，确保立即输出（不受缓冲影响）
+    import sys as _sys
+    _sys.stderr.write("[bundle] >>> main() 开始执行\n")
+    _sys.stderr.flush()
 
     # 修复打包模式下的 config 路径（必须在导入 app.main 之前执行）
     _patch_config_paths()
-    logger.info("路径修复完成")
+    
+    _sys.stderr.write("[bundle] >>> _patch_config_paths() 完成\n")
+    _sys.stderr.flush()
+    
+    # 初始化日志系统（必须在获取任何 logger 之前）
+    from pathlib import Path
+    from ramaria.logger import get_logger, init_logging
+    
+    _sys.stderr.write("[bundle] >>> 正在初始化日志系统...\n")
+    _sys.stderr.flush()
+    
+    exe_dir = Path(sys.executable).parent
+    log_dir = exe_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    init_logging(log_dir=str(log_dir), log_file="coral.log")
+
+    logger = get_logger("bundle")
+    logger.info(f"Ramaria 桌面版启动，根目录：{ROOT}")
+    logger.info("日志系统初始化完成")
+    
+    # 导入 webview 前的日志
+    logger.info("准备导入 webview 库...")
+    _sys.stderr.write("[bundle] >>> 准备导入 webview...\n")
+    _sys.stderr.flush()
+    
+    # 导入 webview
+    try:
+        _sys.stderr.write("[bundle] >>> 正在执行 'import webview'...\n")
+        _sys.stderr.flush()
+        import webview
+        _sys.stderr.write("[bundle] >>> webview 导入完成\n")
+        _sys.stderr.flush()
+        logger.info("webview 库导入成功")
+    except ImportError as e:
+        _sys.stderr.write(f"[bundle] >>> webview 导入失败: {e}\n")
+        _sys.stderr.flush()
+        logger.error(f"webview 导入失败: {e}")
+        raise
+    except Exception as e:
+        _sys.stderr.write(f"[bundle] >>> webview 导入异常: {e}\n")
+        _sys.stderr.flush()
+        logger.error(f"webview 导入异常: {e}")
+        raise
+    
+    logger.info("开始创建 WebView 窗口...")
 
     # ── 步骤 1：立即创建 webview 窗口，显示加载页面 ──────────────────────────
     # 先打开窗口让用户看到加载动画，提升启动体验
@@ -521,13 +580,24 @@ def main() -> None:
 
         # ── 步骤 3：启动 WebView（主线程阻塞）───────────────────────────────────
         # 加载页面内部会轮询服务状态，就绪后自动跳转
-        logger.info("启动 WebView 主循环…")
+        logger.info("启动 WebView 主循环...")
+        logger.info(f"webview.start 参数: http_server=False, icon={bool(icon_arg)}")
 
-        webview.start(
-            func       = None,          # 不需要单独的 init 函数
-            http_server = False,
-            **icon_arg,
-        )
+        try:
+            webview.start(
+                func       = None,          # 不需要单独的 init 函数
+                http_server = False,
+                **icon_arg,
+            )
+            logger.info("webview.start() 已返回（窗口已关闭）")
+        except Exception as e:
+            logger.error(f"webview.start() 异常: {e}")
+            import traceback
+            logger.error(f"详细错误:\n{traceback.format_exc()}")
+            # 尝试降级到浏览器模式
+            logger.info("尝试降级到浏览器模式...")
+            _handle_webview_fallback(logger, "webview启动失败")
+            return
 
     except ImportError as e:
         logger.error(f"❌ WebView2 库缺失或加载失败: {e}")

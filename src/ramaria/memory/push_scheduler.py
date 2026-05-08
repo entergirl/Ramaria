@@ -220,13 +220,14 @@ class PushScheduler:
         执行流程：
             1. 读取推送配置（开关、时间窗口、每日上限）
             2. 检查推送开关
-            3. 检查当前时刻是否在推送窗口内
-            4. 检查今日是否已达上限
-            5. 若尚未为今天计划推送时刻，随机选取一个窗口内的时刻
-            6. 若当前时刻已过计划触发时刻，执行推送
+            3. 检查是否有会话记录（无会话说明用户还在配置阶段，跳过推送）
+            4. 检查当前时刻是否在推送窗口内
+            5. 检查今日是否已达上限
+            6. 若尚未为今天计划推送时刻，随机选取一个窗口内的时刻
+            7. 若当前时刻已过计划触发时刻，执行推送
         """
         # ── 读取配置 ──────────────────────────────────────────────────────────
-        from ramaria.storage.database import get_setting, get_push_count_today
+        from ramaria.storage.database import get_setting, get_push_count_today, has_any_session
 
         push_enabled    = int(get_setting("push_enabled")      or "1")
         window_start    = int(get_setting("push_window_start") or "8")
@@ -234,6 +235,12 @@ class PushScheduler:
         daily_limit     = int(get_setting("push_daily_limit")  or "4")
 
         if not push_enabled:
+            return
+
+        # ── 检查是否有会话记录 ────────────────────────────────────────────────
+        # 没有会话记录说明用户还在首次配置阶段，不应执行主动推送
+        if not has_any_session():
+            logger.debug("尚无会话记录，跳过推送")
             return
 
         # ── 当前时间信息 ──────────────────────────────────────────────────────

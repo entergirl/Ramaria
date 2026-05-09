@@ -8,12 +8,13 @@ app/routes/settings.py — 用户配置读写接口
     POST /api/model-path — 修改向量模型路径并重新加载
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import os
 from pathlib import Path
 
+from app.dependencies import verify_admin_key
 from ramaria.storage.database import get_setting, set_setting
 
 
@@ -47,7 +48,7 @@ async def api_get_settings():
     })
 
 
-@router.post("/api/settings")
+@router.post("/api/settings", dependencies=[Depends(verify_admin_key)])
 async def api_post_settings(req: SettingsRequest):
     """
     保存用户配置到 settings 表。
@@ -134,7 +135,7 @@ class ModelPathRequest(BaseModel):
     model_path: str
 
 
-@router.post("/api/model-path")
+@router.post("/api/model-path", dependencies=[Depends(verify_admin_key)])
 async def api_set_model_path(req: ModelPathRequest):
     """
     修改向量模型路径，验证有效性后热重载。

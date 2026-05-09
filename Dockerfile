@@ -22,12 +22,17 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HUB_OFFLINE=1 \
     PIP_NO_CACHE_DIR=1
 
-# 使用 pyproject.toml 安装依赖
+# 先复制构建依赖定义文件，利用 Docker 层缓存
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY app/ app/
+COPY static/ static/
+COPY config/ config/
+COPY scripts/ scripts/
+
+# 安装 Python 依赖
 RUN pip install --upgrade pip && \
     pip install -e .
-
-# 复制项目文件
-COPY . .
 
 # 创建必要目录
 RUN mkdir -p data logs config

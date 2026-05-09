@@ -589,8 +589,8 @@ const UI = (() => {
 
       sessionEl.innerHTML = `
         <div class="session-title">Session #${session.id}</div>
-        <div id="${previewId}" class="session-preview" title="${preview}">${preview}</div>
-        <div class="session-time">${timeStr}</div>
+        <div id="${previewId}" class="session-preview" title="${_esc(preview)}">${_esc(preview)}</div>
+        <div class="session-time">${_esc(timeStr)}</div>
       `;
 
       sessionListEl.appendChild(sessionEl);

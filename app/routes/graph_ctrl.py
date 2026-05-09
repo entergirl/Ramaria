@@ -8,9 +8,10 @@ app/routes/graph_ctrl.py — 图谱构建接口
     GET  /graph/status  — 查询图谱构建进度（前端轮询）
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from app.dependencies import verify_admin_key
 
 router = APIRouter()
 
@@ -23,7 +24,7 @@ async def graph_pending():
     return JSONResponse({"count": count})
 
 
-@router.post("/graph/start")
+@router.post("/graph/start", dependencies=[Depends(verify_admin_key)])
 async def graph_start():
     """启动图谱构建后台线程，非阻塞，立即返回当前状态。"""
     from ramaria.memory.graph_builder import start_graph_build, reload_graph
@@ -37,7 +38,7 @@ async def graph_start():
     return JSONResponse(status)
 
 
-@router.post("/graph/stop")
+@router.post("/graph/stop", dependencies=[Depends(verify_admin_key)])
 async def graph_stop():
     """请求停止图谱构建，等当前 L1 处理完后退出。"""
     from ramaria.memory.graph_builder import stop_graph_build

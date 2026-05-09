@@ -21,8 +21,18 @@
 const API = (() => {
 
   /**
+   * 从 HTML meta 标签读取 API key。
+   * 由服务端在返回 index.html 时注入到 <head> 中。
+   * @returns {string} API key，未找到时返回空字符串
+   */
+  function _getApiKey() {
+    const meta = document.querySelector('meta[name="api-key"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
+  /**
    * 内部通用 fetch 封装。
-   * 统一处理 JSON 序列化、HTTP 错误状态码解析。
+   * 统一处理 JSON 序列化、HTTP 错误状态码解析，自动附带 API key。
    *
    * @param {string} url        - 请求路径（相对路径）
    * @param {object} [options]  - fetch 选项，可覆盖默认值
@@ -30,9 +40,13 @@ const API = (() => {
    * @throws {Error}            - HTTP 错误或网络错误
    */
   async function _request(url, options = {}) {
+    const apiKey = _getApiKey();
     const defaultOptions = {
       headers: { 'Content-Type': 'application/json' },
     };
+    if (apiKey) {
+      defaultOptions.headers['X-API-Key'] = apiKey;
+    }
     // 合并选项，调用方传入的选项优先级更高
     const mergedOptions = { ...defaultOptions, ...options };
     if (options.headers) {
@@ -173,7 +187,9 @@ const API = (() => {
     connectWs({ onMessage, onOpen, onClose, onError }) {
       // 根据当前页面协议自动选择 ws:// 或 wss://
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url      = `${protocol}//${location.host}/ws`;
+      const apiKey   = _getApiKey();
+      const url      = `${protocol}//${location.host}/ws` +
+                       (apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : '');
 
       const ws = new WebSocket(url);
 

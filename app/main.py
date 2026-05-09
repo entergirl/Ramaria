@@ -180,6 +180,12 @@ async def lifespan(app: FastAPI):
     logger.info("应用启动中…（轻量模式，核心模块待配置后初始化）")
     logger.info("=" * 60)
 
+    # 保存主事件循环引用，供后台线程使用 run_coroutine_threadsafe
+    from app.dependencies import set_main_event_loop
+    loop = asyncio.get_running_loop()
+    set_main_event_loop(loop)
+    logger.debug("主事件循环引用已保存")
+
     # 验证静态资源存在（无前端则无法显示配置向导）
     if not _HTML_FILE.exists():
         logger.error(f"❌ 致命错误：前端文件缺失 — {_HTML_FILE}")
@@ -356,7 +362,7 @@ app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """返回前端对话页面（static/index.html）。"""
+    """返回前端对话页面（static/index.html），注入 API key 元标签。"""
     from fastapi import HTTPException
     if not _HTML_FILE.exists():
         raise HTTPException(
@@ -366,7 +372,12 @@ async def index():
                 "请确认 static/index.html 存在于项目根目录下。"
             ),
         )
-    return HTMLResponse(content=_HTML_FILE.read_text(encoding="utf-8"))
+    from app.dependencies import get_admin_api_key
+    html = _HTML_FILE.read_text(encoding="utf-8")
+    # 在 </head> 前注入 API key 元标签
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

@@ -29,7 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -39,6 +39,7 @@ from app.core.env_checker import (
     run_all_checks,
     write_env,
 )
+from app.dependencies import verify_admin_key
 
 from ramaria.logger import get_logger
 
@@ -180,7 +181,7 @@ async def admin_get_config():
     return JSONResponse({"ok": True, "values": values})
 
 
-@router.post("/api/admin/config")
+@router.post("/api/admin/config", dependencies=[Depends(verify_admin_key)])
 async def admin_save_config(payload: ConfigPayload):
     """
     接收前端提交的配置表单，写入 .env 文件。
@@ -214,7 +215,7 @@ async def admin_save_config(payload: ConfigPayload):
 # 数据库初始化接口
 # =============================================================================
 
-@router.post("/api/admin/init_db")
+@router.post("/api/admin/init_db", dependencies=[Depends(verify_admin_key)])
 async def admin_init_db():
     """
     初始化/迁移数据库。
@@ -383,7 +384,7 @@ async def get_persona():
     return Response(status_code=404, content="persona.toml 不存在")
 
 
-@router.post("/api/persona/save")
+@router.post("/api/persona/save", dependencies=[Depends(verify_admin_key)])
 async def save_persona(request: Request):
     """
     保存 persona.toml 内容。
@@ -504,7 +505,7 @@ async def admin_diagnostic():
 # 懒加载初始化接口
 # =============================================================================
 
-@router.post("/api/admin/init")
+@router.post("/api/admin/init", dependencies=[Depends(verify_admin_key)])
 async def admin_init():
     """
     触发完整初始化（init_app）。

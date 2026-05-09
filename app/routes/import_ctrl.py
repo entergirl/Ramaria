@@ -15,9 +15,10 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from app.dependencies import verify_admin_key
 from ramaria.logger import get_logger
 
 logger = get_logger(__name__)
@@ -87,7 +88,7 @@ async def import_qq_preview(
 # POST /import/qq/confirm — 确认导入 L0
 # =============================================================================
 
-@router.post("/import/qq/confirm")
+@router.post("/import/qq/confirm", dependencies=[Depends(verify_admin_key)])
 async def import_qq_confirm(
     file: UploadFile = File(...),
     gap: int = 10,
@@ -149,7 +150,7 @@ async def get_pending_l1():
 # POST /import/qq/start_l1 — 启动 L1 批量生成
 # =============================================================================
 
-@router.post("/import/qq/start_l1")
+@router.post("/import/qq/start_l1", dependencies=[Depends(verify_admin_key)])
 async def start_l1_batch():
     """启动后台批处理线程，非阻塞，立即返回当前状态。"""
     from ramaria.importer.batch import start_batch
@@ -173,7 +174,7 @@ async def get_l1_progress():
 # POST /import/qq/stop_l1 — 停止批处理
 # =============================================================================
 
-@router.post("/import/qq/stop_l1")
+@router.post("/import/qq/stop_l1", dependencies=[Depends(verify_admin_key)])
 async def stop_l1_batch():
     """请求停止批处理，等当前 session 处理完后退出。"""
     from ramaria.importer.batch import stop_batch

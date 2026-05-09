@@ -17,8 +17,10 @@ app/routes/memory.py — 记忆可视化接口
       避免索引抖动导致记忆数据无法删除
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+
+from app.dependencies import verify_admin_key
 
 from ramaria.config import (
     MEMORY_DECAY_S_L1,
@@ -425,7 +427,7 @@ async def api_get_memory_profile():
 # DELETE /api/memory/l1/{id} — 删除单条 L1
 # =============================================================================
 
-@router.delete("/api/memory/l1/{l1_id}")
+@router.delete("/api/memory/l1/{l1_id}", dependencies=[Depends(verify_admin_key)])
 async def api_delete_memory_l1(l1_id: int):
     """
     删除单条 L1 记忆（SQLite + Chroma 双向删除）。
@@ -456,7 +458,7 @@ async def api_delete_memory_l1(l1_id: int):
 # DELETE /api/memory/l2/{id} — 删除单条 L2
 # =============================================================================
 
-@router.delete("/api/memory/l2/{l2_id}")
+@router.delete("/api/memory/l2/{l2_id}", dependencies=[Depends(verify_admin_key)])
 async def api_delete_memory_l2(l2_id: int):
     """
     删除单条 L2 摘要（SQLite + Chroma 双向删除，同时清理 l2_sources 关联行）。

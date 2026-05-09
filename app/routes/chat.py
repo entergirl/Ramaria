@@ -532,7 +532,7 @@ async def websocket_endpoint(ws: WebSocket):
     WebSocket 主路由，处理客户端的实时双向通信。
 
     连接生命周期：
-        1. 握手建立 → 注册连接池 → 推送积压的 pending_push 消息
+        1. 握手建立 → 验证 API key → 注册连接池 → 推送积压的 pending_push 消息
         2. 消息循环 → 接收用户消息 → 存入缓冲区 → 防抖计时器到期 → 合并触发
         3. 连接断开 → 取消计时器 → 从连接池移除
 
@@ -541,12 +541,24 @@ async def websocket_endpoint(ws: WebSocket):
         每来一条消息：追加到 _buf，取消旧计时器，创建新的 debounce_seconds 秒计时器。
         计时器到期时：合并 _buf 里的所有消息 → 走路由 → 回复。
     """
-    from app.dependencies import session_manager, router as app_router, _ws_connections
+    from app.dependencies import (
+        session_manager, router as app_router,
+        _ws_connections, _ws_lock,
+        get_admin_api_key,
+    )
+
+    # 验证 API key（通过查询参数传递）
+    api_key = ws.query_params.get("api_key", "")
+    if not api_key or api_key != get_admin_api_key():
+        await ws.close(code=4001, reason="Unauthorized")
+        logger.warning("WebSocket 连接被拒绝：API key 无效或缺失")
+        return
 
     await ws.accept()
     logger.info("WebSocket 连接建立")
 
-    _ws_connections[ws] = None
+    with _ws_lock:
+        _ws_connections[ws] = None
 
     # 每个连接独立的防抖状态
     # 使用列表包装，便于在嵌套函数里修改
@@ -668,7 +680,8 @@ async def websocket_endpoint(ws: WebSocket):
 
             # Session 管理
             session_id = session_manager.on_message()
-            _ws_connections[ws] = session_id
+            with _ws_lock:
+                _ws_connections[ws] = session_id
 
             # 每条消息单独存入 L0（永久保留原始消息）
             save_message(session_id, "user", content, source="ws")
@@ -707,5 +720,6 @@ async def websocket_endpoint(ws: WebSocket):
         if _timer[0] is not None and not _timer[0].done():
             _timer[0].cancel()
             logger.debug("已取消未触发的防抖计时器")
-        _ws_connections.pop(ws, None)
+        with _ws_lock:
+            _ws_connections.pop(ws, None)
         logger.debug(f"当前在线连接数：{len(_ws_connections)}")

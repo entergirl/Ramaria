@@ -11,9 +11,11 @@ app/routes/router_ctrl.py — 路由控制接口
 
 from pathlib import Path
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from app.dependencies import verify_admin_key
 
 router = APIRouter()
 
@@ -34,7 +36,7 @@ async def get_router_status():
     return JSONResponse(app_router.get_status())
 
 
-@router.post("/router/toggle")
+@router.post("/router/toggle", dependencies=[Depends(verify_admin_key)])
 async def toggle_router(req: ToggleRequest):
     """Toggle 拨动时调用，切换线上/本地模式。"""
     from app.dependencies import router as app_router

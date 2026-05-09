@@ -365,12 +365,20 @@ class PushScheduler:
 
         if self._is_online_fn():
             # 用户在线：通过 WebSocket 直接广播
-            # ws_broadcast_fn 是异步函数，在同步线程中需要创建新事件循环执行
+            # 使用 run_coroutine_threadsafe 将协程调度到主事件循环，
+            # 避免跨事件循环操作 WebSocket 导致传输错误或 RuntimeError
             try:
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(self._ws_broadcast_fn(push_data))
-                loop.close()
-                logger.info(f"推送消息已实时发送：{content[:40]}…")
+                from app.dependencies import get_main_event_loop
+                main_loop = get_main_event_loop()
+                if main_loop and main_loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._ws_broadcast_fn(push_data), main_loop
+                    )
+                    future.result(timeout=10)
+                    logger.info(f"推送消息已实时发送：{content[:40]}…")
+                else:
+                    logger.warning("主事件循环不可用，降级写入 pending_push")
+                    self._save_to_pending(content)
             except Exception as e:
                 logger.error(f"WebSocket 推送失败，降级写入 pending_push — {e}")
                 self._save_to_pending(content)

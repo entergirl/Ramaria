@@ -45,6 +45,19 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
+# Sentinel 对象（用于标记 force_online 触发，避免魔法字符串被用户输入碰撞）
+# =============================================================================
+
+class _Sentinel:
+    """不可变的哨兵对象，仅用于身份比较（is），不用于值比较（==）。"""
+    __slots__ = ()
+    def __repr__(self) -> str:
+        return "<FORCE_ONLINE>"
+
+FORCE_ONLINE = _Sentinel()
+
+
+# =============================================================================
 # 路由配置常量
 # =============================================================================
 
@@ -167,7 +180,7 @@ class Router:
                 return "未检测到 ANTHROPIC_API_KEY，请先配置环境变量。"
 
             self._waiting_confirm   = True
-            self._pending_message   = "__FORCE_ONLINE__"
+            self._pending_message   = FORCE_ONLINE
             self._force_online_time = datetime.now(timezone.utc)
 
         logger.info(
@@ -388,7 +401,7 @@ class Router:
         cached        = self._pending_message
 
         # 手动 force_online：下一条真实消息就是要处理的内容
-        if cached == "__FORCE_ONLINE__":
+        if cached is FORCE_ONLINE:
             self._reset()
             return {"action": "online", "message": message}
 

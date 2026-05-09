@@ -114,10 +114,18 @@ def _load_dotenv() -> None:
                 continue
             k, _, v = line.partition("=")
             k = k.strip()
-            # 去除行尾注释（# 前面有空格才截断，避免误伤 URL 中的 # 字符）
-            if " #" in v:
-                v = v.split(" #")[0].strip()
-            v = v.strip().strip("'\"")
+            v = v.strip()
+
+            # 引号包裹的值：保留全部内容（包括 #），仅去除外层引号
+            if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1]
+            else:
+                # 未引号包裹的值：去除行尾注释（# 前面有空白字符才截断）
+                for i in range(1, len(v)):
+                    if v[i] == "#" and v[i - 1] in (" ", "\t"):
+                        v = v[:i].rstrip()
+                        break
+
             if k:
                 if k not in os.environ:
                     os.environ[k] = v
@@ -434,8 +442,8 @@ def _restart_service() -> None:
 # =============================================================================
 
 def _quit_app() -> None:
-    """彻底退出应用，先优雅关闭服务再退出进程。"""
-    global _webview_window, _uvicorn_server
+    """彻底退出应用：优雅关闭 uvicorn → 等待线程 → sys.exit，超时 os._exit 兜底。"""
+    global _webview_window, _uvicorn_server, _uvicorn_thread
     import webview
     from ramaria.logger import get_logger
 
@@ -445,11 +453,9 @@ def _quit_app() -> None:
     if _uvicorn_server is not None:
         try:
             logger.info("正在关闭后台服务…")
-            # 新版 uvicorn 使用 should_exit 代替 stop()
             if hasattr(_uvicorn_server, 'should_exit'):
                 _uvicorn_server.should_exit = True
             else:
-                # 旧版 fallback
                 _uvicorn_server.stop()
             logger.info("后台服务已关闭")
         except Exception as e:
@@ -462,8 +468,18 @@ def _quit_app() -> None:
     except Exception:
         pass
 
-    # 步骤3：安全退出进程
-    os._exit(0)
+    # 步骤3：等待后台线程结束（带超时），优雅释放资源
+    _SHUTDOWN_TIMEOUT = 5  # 秒
+    if _uvicorn_thread is not None and _uvicorn_thread.is_alive():
+        _uvicorn_thread.join(timeout=_SHUTDOWN_TIMEOUT)
+
+    # 步骤4：优雅退出（触发 finally/atexit），超时后 os._exit 兜底
+    try:
+        sys.exit(0)
+    finally:
+        # 如果 sys.exit 在 _SHUTDOWN_TIMEOUT 内未完成，强制退出
+        time.sleep(_SHUTDOWN_TIMEOUT)
+        os._exit(0)
 
 
 # =============================================================================

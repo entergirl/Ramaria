@@ -352,6 +352,36 @@ app = FastAPI(
     lifespan    = lifespan,
 )
 
+
+# =============================================================================
+# 安全响应头中间件
+# =============================================================================
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """为所有响应添加安全相关的 HTTP 头。"""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        # 本地桌面应用：放宽脚本/样式限制以支持 WebView 和 inline 代码
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self' ws: wss: http://localhost:*; "
+            "img-src 'self' data:"
+        )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # 挂载静态文件目录（配置向导、加载页、聊天界面等所有前端资源）
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 

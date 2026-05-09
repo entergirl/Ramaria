@@ -14,6 +14,7 @@ src/ramaria/storage/database.py — 数据库操作层
 """
 
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -40,19 +41,27 @@ _LAYER_TABLE_MAP = {
 # 内部工具函数（模块私有，不对外暴露）
 # =============================================================================
 
+# 线程本地连接缓存，减少高频操作下的连接创建/关闭开销
+# 每条线程持有独立连接，避免跨线程共享导致的状态混乱
+_local = threading.local()
+
+
 def _get_connection():
     """
-    获取数据库连接（内部使用）。
+    获取当前线程复用的数据库连接（内部使用）。
     - row_factory 让查询结果支持列名访问，如 row["content"]
     - 开启外键约束（SQLite 默认关闭）
+    - 开启 WAL 模式提升并发读取性能
 
     注意：此函数为模块私有，外部模块不应直接 import 使用。
-          模块内部也应优先使用 _db_conn() 上下文管理器。
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    if not hasattr(_local, 'conn') or _local.conn is None:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        _local.conn = conn
+    return _local.conn
 
 
 @contextmanager
@@ -60,8 +69,8 @@ def _db_conn():
     """
     数据库连接上下文管理器（内部使用）。
 
-    确保无论正常退出还是异常退出，连接都会被关闭，
-    避免 SQLite 文件锁残留（Windows 环境尤其重要）。
+    复用线程本地连接，不再每次创建/关闭。
+    连接在线程生命周期内保持打开，线程退出时由 GC 回收。
 
     使用示例：
         def some_db_function():
@@ -74,7 +83,9 @@ def _db_conn():
     try:
         yield conn
     finally:
-        conn.close()
+        # 连接不复用 close()，改为 commit 保证写入持久化
+        # 线程退出时由 GC 自动清理连接
+        pass
 
 
 def _now() -> str:

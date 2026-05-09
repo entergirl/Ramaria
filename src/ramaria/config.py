@@ -141,11 +141,27 @@ L2_TRIGGER_DAYS: int = 7
 # 本地模型（LM Studio / Ollama，兼容 OpenAI API 格式）
 # =============================================================================
 
+def _safe_float(env_key: str, default: float) -> float:
+    """安全地将环境变量转换为 float，非法值时返回默认值。"""
+    try:
+        return float(os.environ.get(env_key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_int(env_key: str, default: int) -> int:
+    """安全地将环境变量转换为 int，非法值时返回默认值。"""
+    try:
+        return int(os.environ.get(env_key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
 LOCAL_API_URL:             str   = os.environ.get("LOCAL_API_URL", "http://localhost:1234/v1/chat/completions")
 LOCAL_MODEL_NAME:          str   = os.environ.get("LOCAL_MODEL_NAME", "qwen/qwen3.5-9b")
-LOCAL_TEMPERATURE:         float = float(os.environ.get("LOCAL_TEMPERATURE", "0.3"))
-LOCAL_MAX_TOKENS_SUMMARY:  int   = int(os.environ.get("LOCAL_MAX_TOKENS_SUMMARY", "512"))
-LOCAL_MAX_TOKENS_CHAT:     int   = int(os.environ.get("LOCAL_MAX_TOKENS_CHAT", "1024"))
+LOCAL_TEMPERATURE:         float = _safe_float("LOCAL_TEMPERATURE", 0.3)
+LOCAL_MAX_TOKENS_SUMMARY:  int   = _safe_int("LOCAL_MAX_TOKENS_SUMMARY", 512)
+LOCAL_MAX_TOKENS_CHAT:     int   = _safe_int("LOCAL_MAX_TOKENS_CHAT", 1024)
 
 
 # =============================================================================

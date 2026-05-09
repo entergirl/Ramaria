@@ -13,7 +13,9 @@ src/ramaria/core/llm_client.py — 本地模型调用公共模块
     
 """
 
+import json
 import re
+import threading
 
 import requests
 
@@ -27,6 +29,16 @@ from ramaria.exceptions import (
     LLMResponseParseError,
     ErrorCode,
 )
+
+# 线程本地 Session 对象，复用 TCP 连接减少握手开销
+# 每个线程独立持有，避免跨线程共享导致连接状态混乱
+_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    if not hasattr(_local, 'session'):
+        _local.session = requests.Session()
+    return _local.session
 
 logger = get_logger(__name__)
 
@@ -182,7 +194,8 @@ def _call(
     trace_id = get_trace_id() or "-"
 
     try:
-        response = requests.post(api_url, json=payload, timeout=120)
+        session = _get_session()
+        response = session.post(api_url, json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
         raw_content = data["choices"][0]["message"]["content"].strip()
@@ -233,7 +246,7 @@ def _call(
         )
         return None
 
-    except (KeyError, IndexError) as e:
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
         logger.exception(
             f"解析模型响应结构失败",
             caller=caller,

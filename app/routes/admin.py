@@ -113,6 +113,8 @@ def _reload_config_values(values: dict[str, str]) -> None:
         "SERVER_PORT":              int,
     }
 
+    # 构造待更新的属性映射（含类型转换）
+    updates: dict = {}
     for env_key, config_attr in _CONFIG_KEY_MAP.items():
         if env_key in values:
             new_value = values[env_key]
@@ -122,7 +124,10 @@ def _reload_config_values(values: dict[str, str]) -> None:
                     new_value = converter(new_value)
                 except (ValueError, TypeError):
                     continue
-            setattr(config, config_attr, new_value)
+            updates[config_attr] = new_value
+
+    # 原子批量更新（避免并发读取线程看到新旧混合状态）
+    config.update_runtime_config(updates)
 
     # 如果更新了 EMBEDDING_MODEL，重置 vector_store 的缓存状态
     # 否则新模型路径不会生效（vector_store 模块级变量仍是旧值）

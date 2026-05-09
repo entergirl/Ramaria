@@ -27,6 +27,7 @@ src/ramaria/core/router.py — 任务路由层
 """
 
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -92,6 +93,7 @@ class Router:
     """
 
     def __init__(self):
+        self._lock = threading.RLock()
         self._api_enabled       = True
         self._waiting_confirm   = False
         self._pending_message   = None
@@ -127,12 +129,13 @@ class Router:
                 "mode":            str,   # "local" / "pending"
             }
         """
-        mode = "pending" if self._waiting_confirm else "local"
-        return {
-            "api_enabled":     self._api_enabled,
-            "waiting_confirm": self._waiting_confirm,
-            "mode":            mode,
-        }
+        with self._lock:
+            mode = "pending" if self._waiting_confirm else "local"
+            return {
+                "api_enabled":     self._api_enabled,
+                "waiting_confirm": self._waiting_confirm,
+                "mode":            mode,
+            }
 
     # -------------------------------------------------------------------------
     # 公开接口：状态控制
@@ -143,9 +146,10 @@ class Router:
         设置线上 API 开关（由前端 UI 的 toggle 调用）。
         关闭时同时清除等待确认状态，避免残留。
         """
-        self._api_enabled = enabled
-        if not enabled:
-            self._reset()
+        with self._lock:
+            self._api_enabled = enabled
+            if not enabled:
+                self._reset()
         logger.info(f"线上 API {'开启' if enabled else '关闭'}")
 
     def force_online(self) -> str:
@@ -156,14 +160,15 @@ class Router:
         返回：
             str — 提示文本，供 main.py 展示给用户
         """
-        if not self._api_enabled:
-            return "线上 API 当前已关闭，请先在面板中开启。"
-        if not ANTHROPIC_API_KEY:
-            return "未检测到 ANTHROPIC_API_KEY，请先配置环境变量。"
+        with self._lock:
+            if not self._api_enabled:
+                return "线上 API 当前已关闭，请先在面板中开启。"
+            if not ANTHROPIC_API_KEY:
+                return "未检测到 ANTHROPIC_API_KEY，请先配置环境变量。"
 
-        self._waiting_confirm   = True
-        self._pending_message   = "__FORCE_ONLINE__"
-        self._force_online_time = datetime.now(timezone.utc)
+            self._waiting_confirm   = True
+            self._pending_message   = "__FORCE_ONLINE__"
+            self._force_online_time = datetime.now(timezone.utc)
 
         logger.info(
             f"手动切换到线上模式，超时阈值 {FORCE_ONLINE_TIMEOUT_MINUTES} 分钟"
@@ -177,7 +182,8 @@ class Router:
         通过此公开方法暴露能力，而非直接调用 _reset()，
         语义更明确：「禁用线上模式」vs「内部重置状态」。
         """
-        self._reset()
+        with self._lock:
+            self._reset()
         logger.info("线上模式已手动关闭，回到本地模式")
 
     # -------------------------------------------------------------------------
@@ -205,27 +211,28 @@ class Router:
                 text    — 询问文本（仅 ask_confirm 时有值）
                 message — 实际需要处理的消息
         """
-        if self._waiting_confirm:
-            return self._handle_confirm_reply(message)
+        with self._lock:
+            if self._waiting_confirm:
+                return self._handle_confirm_reply(message)
 
-        if not self._api_enabled:
+            if not self._api_enabled:
+                return {"action": "local", "message": message}
+
+            if not ANTHROPIC_API_KEY:
+                return {"action": "local", "message": message}
+
+            if self._should_trigger(message):
+                self._pending_message   = message
+                self._waiting_confirm   = True
+                self._force_online_time = datetime.now(timezone.utc)
+                logger.info("自动检测触发，等待用户确认")
+                return {
+                    "action":  "ask_confirm",
+                    "text":    CONFIRM_ASK_TEXT,
+                    "message": message,
+                }
+
             return {"action": "local", "message": message}
-
-        if not ANTHROPIC_API_KEY:
-            return {"action": "local", "message": message}
-
-        if self._should_trigger(message):
-            self._pending_message   = message
-            self._waiting_confirm   = True
-            self._force_online_time = datetime.now(timezone.utc)
-            logger.info("自动检测触发，等待用户确认")
-            return {
-                "action":  "ask_confirm",
-                "text":    CONFIRM_ASK_TEXT,
-                "message": message,
-            }
-
-        return {"action": "local", "message": message}
 
     # -------------------------------------------------------------------------
     # 公开接口：调用云端模型API
@@ -239,6 +246,7 @@ class Router:
             · 不注入任何记忆上下文（隐私保护）
             · 只带一个简短的角色说明 system prompt
             · 处理完后路由自动回到本地模式（无论成功还是失败）
+            · 支持自动重试（最多2次，指数退避）
 
         参数：
             message — 需要云端模型处理的用户消息
@@ -246,6 +254,8 @@ class Router:
         返回：
             str —云端模型的回复文本；调用失败时返回括号包裹的错误信息
         """
+        import time
+
         logger.info(f"调用云端模型API，消息长度={len(message)}")
 
         system_prompt = (
@@ -267,32 +277,56 @@ class Router:
             "messages":   [{"role": "user", "content": message}],
         }
 
-        try:
-            response = requests.post(
-                CLAUDE_API_URL,
-                headers = headers,
-                json    = payload,
-                timeout = 60,
-            )
-            response.raise_for_status()
-            data  = response.json()
-            reply = data["content"][0]["text"].strip()
-            logger.info(f"Claude 回复成功，长度={len(reply)}")
-            return reply
+        max_retries = 2
+        error_msg = None
 
-        except requests.exceptions.ConnectionError:
-            return "（线上 API 连接失败，请检查网络）"
-        except requests.exceptions.Timeout:
-            return "（线上 API 响应超时，请稍后重试）"
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 401:
-                return "（API Key 无效，请检查 ANTHROPIC_API_KEY 配置）"
-            return f"（线上 API 请求失败：{e}）"
-        except (KeyError, IndexError) as e:
-            return f"（解析云端模型响应失败：{e}）"
-        finally:
-            # 无论成功还是失败，用完立即回到本地模式
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    CLAUDE_API_URL,
+                    headers = headers,
+                    json    = payload,
+                    timeout = 60,
+                )
+                response.raise_for_status()
+                data  = response.json()
+                reply = data["content"][0]["text"].strip()
+                logger.info(f"Claude 回复成功，长度={len(reply)}")
+                with self._lock:
+                    self._reset()
+                return reply
+
+            except requests.exceptions.ConnectionError:
+                error_msg = "（线上 API 连接失败，请检查网络）"
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+            except requests.exceptions.Timeout:
+                error_msg = "（线上 API 响应超时，请稍后重试）"
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+            except requests.exceptions.HTTPError as e:
+                if (e.response is not None
+                        and e.response.status_code == 401):
+                    error_msg = "（API Key 无效，请检查 ANTHROPIC_API_KEY 配置）"
+                else:
+                    status = (e.response.status_code
+                              if e.response is not None else "N/A")
+                    error_msg = f"（线上 API 请求失败：HTTP {status}）"
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
+                        continue
+            except (KeyError, IndexError) as e:
+                error_msg = f"（解析云端模型响应失败：{e}）"
+
+            # 不可重试的错误或最终重试失败 → 退出循环
+            break
+
+        # 处理完（无论成功或失败），回到本地模式
+        with self._lock:
             self._reset()
+        return error_msg if error_msg else "（线上 API 调用失败）"
 
     # -------------------------------------------------------------------------
     # 内部方法：自动触发检测

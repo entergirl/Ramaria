@@ -12,6 +12,8 @@ src/ramaria/config.py — 运行时参数配置
 from __future__ import annotations
 
 import os
+import sys
+import threading
 from pathlib import Path
 
 
@@ -195,3 +197,34 @@ TIME_PERIOD_OPTIONS: list[str] = ["清晨", "上午", "下午", "傍晚", "夜�
 # 留空时自动通过 IP 定位；填写后优先使用此值（推荐使用英文城市名）
 # 示例：WEATHER_CITY=Shanghai  或  WEATHER_CITY=Beijing
 WEATHER_CITY: str = os.environ.get("WEATHER_CITY", "")
+
+
+# =============================================================================
+# 线程安全配置更新
+# =============================================================================
+# 配置变量是模块级全局变量，admin.py 通过 _reload_config_values() 修改它们。
+# 多属性更新时（如同时修改 API_URL 和 MODEL_NAME），若不加锁，读取线程
+# （llm_client / router）可能看到新旧混合状态。
+#
+# _config_lock 保证批量 setattr() 的原子性：
+#   写入方（admin）：with _config_lock: setattr(config, k1, v1); setattr(config, k2, v2)
+#   读取方：单个属性读取在 CPython GIL 下是原子的，无需加锁
+
+_config_lock = threading.RLock()
+
+
+def update_runtime_config(values: dict) -> None:
+    """
+    线程安全地批量更新模块级配置变量。
+
+    参数：
+        values — {属性名: 新值} 映射，键必须是本模块中已定义的变量名
+
+    用法：
+        from ramaria.config import update_runtime_config
+        update_runtime_config({"LOCAL_API_URL": "...", "LOCAL_MODEL_NAME": "..."})
+    """
+    with _config_lock:
+        for key, value in values.items():
+            if hasattr(sys.modules[__name__], key):
+                setattr(sys.modules[__name__], key, value)

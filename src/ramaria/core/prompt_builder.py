@@ -27,6 +27,7 @@ context 字典结构（所有字段均为可选）：
 from __future__ import annotations
 
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -314,13 +315,14 @@ class PromptBuilder:
 
 # 模块级单例，避免重复读取文件
 _default_builder: PromptBuilder | None = None
+_builder_lock = threading.Lock()
 
 
 def get_builder(
     persona_path: str | Path = DEFAULT_PERSONA_PATH,
 ) -> PromptBuilder:
     """
-    获取模块级单例 PromptBuilder。
+    获取模块级单例 PromptBuilder（线程安全）。
 
     首次调用时初始化，后续复用同一实例。
     若需切换 persona 文件，请先调用 reset_builder()。
@@ -333,7 +335,10 @@ def get_builder(
     """
     global _default_builder
     if _default_builder is None:
-        _default_builder = PromptBuilder(persona_path)
+        with _builder_lock:
+            # 双重检查：避免两个线程同时首次调用时创建两个实例
+            if _default_builder is None:
+                _default_builder = PromptBuilder(persona_path)
     return _default_builder
 
 
@@ -348,7 +353,8 @@ def reset_builder() -> None:
     正常业务运行中不需要调用此函数。
     """
     global _default_builder
-    _default_builder = None
+    with _builder_lock:
+        _default_builder = None
     logger.debug("PromptBuilder 单例已重置，下次调用将重新从文件初始化")
 
 

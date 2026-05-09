@@ -170,8 +170,10 @@ class SessionManager:
             if sid is None:
                 logger.debug("没有活跃 session，无需关闭")
                 return
-            self._close_and_summarize(sid)
             self._current_session_id = None
+
+        # 锁外执行阻塞 I/O（DB 写入 + 向量索引 + LLM 调用）
+        self._close_and_summarize(sid)
 
     # -------------------------------------------------------------------------
     # 内部方法：启动流程
@@ -279,9 +281,12 @@ class SessionManager:
             )
             with self._lock:
                 # 二次确认：避免拿到锁之前 session 已被其他路径关闭
-                if self._current_session_id == sid:
-                    self._close_and_summarize(sid)
-                    self._current_session_id = None
+                if self._current_session_id != sid:
+                    return
+                self._current_session_id = None
+
+            # 锁外执行阻塞 I/O，避免其他线程等待
+            self._close_and_summarize(sid)
 
     # -------------------------------------------------------------------------
     # 内部方法：线程B — L2 定时检查

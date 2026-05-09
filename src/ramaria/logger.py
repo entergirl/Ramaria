@@ -54,10 +54,9 @@ LOG_LEVEL_NAMES = {
 # =============================================================================
 
 # 当前线程的追踪ID
+# 使用 ContextVar 而非全局字典，确保每个异步任务/线程独立持有，
+# 任务结束时自动回收，无内存泄漏风险
 _trace_id_var: ContextVar[Optional[str]] = ContextVar('trace_id', default=None)
-
-# 全局追踪ID存储（用于异步场景）
-_global_trace_ids: Dict[str, str] = {}
 
 
 def get_trace_id() -> Optional[str]:

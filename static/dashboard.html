@@ -1036,6 +1036,14 @@
         // =========================================================================
 
         /**
+         * 从 meta 标签读取 API key
+         */
+        function _getApiKey() {
+            const meta = document.querySelector('meta[name="api-key"]');
+            return meta ? meta.getAttribute('content') || '' : '';
+        }
+
+        /**
          * 页面初始化时加载 .env 配置
          *
          * 调用流程：
@@ -1096,9 +1104,13 @@
             showTip('cfg-tip', '保存中…', 'loading');
 
             try {
+                const apiKey = _getApiKey();
                 const res  = await fetch('/api/admin/config', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...(apiKey ? { 'X-API-Key': apiKey } : {})
+                    },
                     body: JSON.stringify({ values })
                 });
                 const data = await res.json();
@@ -1257,9 +1269,13 @@
             showTip('set-tip', '保存中…', 'loading');
 
             try {
+                const apiKey = _getApiKey();
                 const res = await fetch('/api/settings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        ...(apiKey ? { 'X-API-Key': apiKey } : {})
+                    },
                     body: JSON.stringify({
                         debounce_seconds:  parseFloat(document.getElementById('set-debounce').value),
                         push_enabled:      document.getElementById('set-push-enabled').checked ? 1 : 0,

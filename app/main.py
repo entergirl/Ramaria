@@ -410,17 +410,58 @@ async def index():
     return HTMLResponse(content=html)
 
 
+@app.get("/loading", response_class=HTMLResponse)
+async def loading():
+    """返回加载页面（static/loading.html），注入 API key 元标签。"""
+    from fastapi import HTTPException
+    from app.dependencies import get_admin_api_key
+
+    loading_file = _STATIC_DIR / "loading.html"
+    if not loading_file.exists():
+        raise HTTPException(
+            status_code = 503,
+            detail      = f"加载页面未找到：{loading_file}",
+        )
+    html = loading_file.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
-    """返回系统总览页面（static/dashboard.html）。"""
+    """返回系统总览页面（static/dashboard.html），注入 API key 元标签。"""
     from fastapi import HTTPException
+    from app.dependencies import get_admin_api_key
+
     dashboard_file = _STATIC_DIR / "dashboard.html"
     if not dashboard_file.exists():
         raise HTTPException(
             status_code = 503,
             detail      = f"页面未找到：{dashboard_file}",
         )
-    return HTMLResponse(content=dashboard_file.read_text(encoding="utf-8"))
+    html = dashboard_file.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
+
+
+@app.get("/memory", response_class=HTMLResponse)
+async def memory():
+    """返回记忆查看器页面（static/memory.html），注入 API key 元标签。"""
+    from fastapi import HTTPException
+    from app.dependencies import get_admin_api_key
+
+    memory_file = _STATIC_DIR / "memory.html"
+    if not memory_file.exists():
+        raise HTTPException(
+            status_code = 503,
+            detail      = f"页面未找到：{memory_file}",
+        )
+    html = memory_file.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
 
 
 # =============================================================================

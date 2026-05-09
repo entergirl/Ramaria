@@ -35,11 +35,16 @@ _STATIC_DIR = Path(__file__).parents[3] / "static"
 
 @router.get("/import", response_class=HTMLResponse)
 async def import_page():
-    """返回聊天记录导入页面（static/import.html）。"""
+    """返回聊天记录导入页面（static/import.html），注入 API key 元标签。"""
+    from app.dependencies import get_admin_api_key
+
     import_html = _STATIC_DIR / "import.html"
     if not import_html.exists():
         raise HTTPException(status_code=503, detail="import.html 未找到")
-    return HTMLResponse(content=import_html.read_text(encoding="utf-8"))
+    html = import_html.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
 
 
 # =============================================================================

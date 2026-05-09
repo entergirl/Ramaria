@@ -861,8 +861,18 @@ async function fetchL3() {
  * @param {'l1'|'l2'} layer
  * @param {number}     id
  */
+function _getApiKey() {
+  const meta = document.querySelector('meta[name="api-key"]');
+  return meta ? meta.getAttribute('content') || '' : '';
+}
+
 async function deleteMemory(layer, id) {
-  const resp = await fetch(`/api/memory/${layer}/${id}`, { method: 'DELETE' });
+  const apiKey = _getApiKey();
+  const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+  const resp = await fetch(`/api/memory/${layer}/${id}`, {
+    method:  'DELETE',
+    headers: headers,
+  });
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));

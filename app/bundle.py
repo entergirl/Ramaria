@@ -545,7 +545,7 @@ def main() -> None:
     # 先打开窗口让用户看到加载动画，提升启动体验
     global _webview_window
 
-    loading_url = _BASE_URL + "/static/loading.html"
+    loading_url = _BASE_URL + "/loading"
 
     try:
         logger.info(f"创建 WebView 窗口（显示加载页面）…")

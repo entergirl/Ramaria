@@ -756,7 +756,9 @@ async function testApiConnection() {
 
   try {
     await saveField('LOCAL_API_URL', url);
-    const resp = await fetch('/api/admin/status');
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+    const resp = await fetch('/api/admin/status', { headers });
     const data = await resp.json();
     const svc  = data.checks?.inference_service;
 
@@ -862,6 +864,14 @@ E_rules = """
 不给选项。不说"你是想A还是B"。
 """`;
 
+        /**
+         * 从 meta 标签读取 API key
+         */
+        function _getApiKey() {
+            const meta = document.querySelector('meta[name="api-key"]');
+            return meta ? meta.getAttribute('content') || '' : '';
+        }
+
 async function loadPersona() {
   const editor = document.getElementById('persona-editor');
   try {
@@ -885,7 +895,9 @@ async function loadPersonaDefault() {
   editor.value = DEFAULT_PERSONA;
   // 同时尝试加载 example 文件
   try {
-    const resp = await fetch('/api/persona/example');
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+    const resp = await fetch('/api/persona/example', { headers });
     if (resp.ok) {
       const text = await resp.text();
       if (text && text.trim()) editor.value = text;
@@ -910,9 +922,13 @@ async function savePersona() {
   status.className   = 'field-status checking';
 
   try {
+    const apiKey = _getApiKey();
     const resp = await fetch('/api/persona/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 
+        'Content-Type': 'text/plain',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {})
+      },
       body: content,
     });
     if (resp.ok) {
@@ -945,9 +961,13 @@ async function saveField(key, value) {
   if (key === 'EMBEDDING_MODEL') {
     value = value.replace(/\\/g, '/');
   }
+  const apiKey = _getApiKey();
   await fetch('/api/admin/config', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'X-API-Key': apiKey } : {})
+    },
     body:    JSON.stringify({ values: { [key]: value } }),
   });
 }
@@ -1005,9 +1025,13 @@ async function finishSetup() {
   // Step A：保存 .env 配置
   updateInitLine('init-save', 'wait', '保存配置中…');
   try {
+    const apiKey = _getApiKey();
     const resp = await fetch('/api/admin/config', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'X-API-Key': apiKey } : {})
+      },
       body:    JSON.stringify({ values }),
     });
     const data = await resp.json();
@@ -1024,9 +1048,13 @@ async function finishSetup() {
   const personaStatus  = document.getElementById('persona-status')?.className;
   if (personaContent && !personaStatus?.includes('ok')) {
     try {
+      const apiKey = _getApiKey();
       await fetch('/api/persona/save', {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        headers: { 
+          'Content-Type': 'text/plain',
+          ...(apiKey ? { 'X-API-Key': apiKey } : {})
+        },
         body: personaContent,
       });
     } catch (_) { /* 静默，不阻断 */ }
@@ -1036,7 +1064,7 @@ async function finishSetup() {
   // 后续的数据库初始化等重量级操作由 loading.html 触发 POST /api/admin/init 来执行
   document.getElementById('init-done').style.display = 'flex';
   updateInitLine('init-done', 'ok', '配置已保存，即将进入启动界面…');
-  setTimeout(() => { window.location.href = '/static/loading.html'; }, 1200);
+  setTimeout(() => { window.location.href = '/loading'; }, 1200);
 }
 
 function updateInitLine(id, state, text) {

@@ -300,6 +300,12 @@
     pollTimer = setTimeout(poll, POLL_INTERVAL);
   }
 
+  /** 从 meta 标签获取 API key */
+  function _getApiKey() {
+    const meta = document.querySelector('meta[name="api-key"]');
+    return meta ? meta.getAttribute('content') || '' : '';
+  }
+
   /** 触发后端初始化，然后开始轮询 */
   async function start() {
     // 先检查是否已初始化完成（避免重复调用 init）
@@ -318,9 +324,15 @@
       console.log('[Loading] 检查初始化状态失败，继续初始化:', e);
     }
 
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+
     console.log('[Loading] 触发初始化…');
     try {
-      const resp = await fetch('/api/admin/init', { method: 'POST' });
+      const resp = await fetch('/api/admin/init', {
+        method: 'POST',
+        headers: headers,
+      });
       const data = await resp.json();
       console.log('[Loading] init 响应:', data);
     } catch (e) {

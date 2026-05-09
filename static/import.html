@@ -630,6 +630,16 @@ document.getElementById('btn-import').addEventListener('click', async () => {
 });
 
 
+
+// ============================================================
+// 从 meta 标签读取 API key
+// ============================================================
+function _getApiKey() {
+  const meta = document.querySelector('meta[name="api-key"]');
+  return meta ? meta.getAttribute('content') || '' : '';
+}
+
+
 // ============================================================
 // 通用请求函数（preview / confirm 共用）
 // ============================================================
@@ -648,7 +658,12 @@ async function doRequest(action) {
   document.getElementById('btn-import').disabled  = true;
 
   try {
-    const resp = await fetch(url, { method: 'POST', body: form });
+    const apiKey = _getApiKey();
+    const resp = await fetch(url, { 
+      method: 'POST', 
+      body: form,
+      headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+    });
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -786,7 +801,9 @@ function renderImportResult(data) {
 // ============================================================
 async function refreshPendingCount() {
   try {
-    const resp = await fetch('/import/qq/pending_l1');
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+    const resp = await fetch('/import/qq/pending_l1', { headers });
     const data = await resp.json();
     const cnt  = data.count;
     const el   = document.getElementById('pending-count-text');
@@ -808,7 +825,11 @@ async function refreshPendingCount() {
 // ============================================================
 async function startL1() {
   try {
-    const resp = await fetch('/import/qq/start_l1', { method: 'POST' });
+    const apiKey = _getApiKey();
+    const resp = await fetch('/import/qq/start_l1', { 
+      method: 'POST',
+      headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+    });
     const data = await resp.json();
 
     if (!resp.ok) {
@@ -836,7 +857,11 @@ async function startL1() {
 // ============================================================
 async function stopL1() {
   try {
-    await fetch('/import/qq/stop_l1', { method: 'POST' });
+    const apiKey = _getApiKey();
+    await fetch('/import/qq/stop_l1', { 
+      method: 'POST',
+      headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
+    });
     showToast('已发送停止请求，等待当前 session 处理完毕…');
   } catch (e) {
     showToast(`停止请求失败：${e.message}`, 'error');
@@ -862,7 +887,9 @@ function stopPolling() {
 
 async function pollProgress() {
   try {
-    const resp = await fetch('/import/qq/l1_progress');
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+    const resp = await fetch('/import/qq/l1_progress', { headers });
     const data = await resp.json();
     updateProgressUI(data);
 
@@ -985,7 +1012,9 @@ function onBatchFinished(data) {
 // ============================================================
 (async () => {
   try {
-    const resp = await fetch('/import/qq/pending_l1');
+    const apiKey = _getApiKey();
+    const headers = apiKey ? { 'X-API-Key': apiKey } : {};
+    const resp = await fetch('/import/qq/pending_l1', { headers });
     if (resp.ok) {
       const data = await resp.json();
       const cnt  = data.count;
@@ -998,7 +1027,10 @@ function onBatchFinished(data) {
       }
 
       // 同时查询批处理是否正在运行（刷新页面后恢复显示进度）
-      const progResp = await fetch('/import/qq/l1_progress');
+      const apiKey = _getApiKey();
+      const progResp = await fetch('/import/qq/l1_progress', {
+        headers: apiKey ? { 'X-API-Key': apiKey } : {},
+      });
       if (progResp.ok) {
         const progData = await progResp.json();
         if (['running', 'waiting'].includes(progData.status)) {

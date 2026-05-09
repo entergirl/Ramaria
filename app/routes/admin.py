@@ -347,20 +347,30 @@ def _ensure_persona_exists() -> None:
 
 @router.get("/api/admin/setup/page", response_class=HTMLResponse)
 async def admin_setup_page():
-    """返回配置向导 HTML 页面（static/setup.html）。"""
+    """返回配置向导 HTML 页面（static/setup.html），注入 API key 元标签。"""
+    from app.dependencies import get_admin_api_key
+
     setup_html = _STATIC_DIR / "setup.html"
     if not setup_html.exists():
         return HTMLResponse("<h1>setup.html 未找到</h1>", status_code=404)
-    return HTMLResponse(content=setup_html.read_text(encoding="utf-8"))
+    html = setup_html.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
 
 
 @router.get("/api/admin/launcher/page", response_class=HTMLResponse)
 async def admin_launcher_page():
-    """返回启动过渡页 HTML（static/launcher.html）。"""
+    """返回启动过渡页 HTML（static/launcher.html），注入 API key 元标签。"""
+    from app.dependencies import get_admin_api_key
+
     launcher_html = _STATIC_DIR / "launcher.html"
     if not launcher_html.exists():
         return HTMLResponse("<h1>launcher.html 未找到</h1>", status_code=404)
-    return HTMLResponse(content=launcher_html.read_text(encoding="utf-8"))
+    html = launcher_html.read_text(encoding="utf-8")
+    api_key_meta = f'<meta name="api-key" content="{get_admin_api_key()}">'
+    html = html.replace("</head>", f"  {api_key_meta}\n</head>", 1)
+    return HTMLResponse(content=html)
 
 
 # =============================================================================

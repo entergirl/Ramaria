@@ -165,9 +165,9 @@ L1 生成后，系统自动从摘要中提取新信息静默写入画像，发�
 ```
 Ramaria/
 ├── app/                              # FastAPI 应用层
-│   ├── main.py                       # 服务入口，lifespan 管理
+│   ├── main.py                       # 服务入口，lifespan 管理，支持懒加载初始化
 │   ├── bundle.py                     # 桌面版主入口（PyInstaller 打包入口）
-│   ├── dependencies.py               # 全局单例（SessionManager、Router、WebSocket 连接池）
+│   ├── dependencies.py               # 全局单例、API Key 验证依赖
 │   ├── core/
 │   │   ├── env_checker.py            # 环境检测与配置读写
 │   │   └── db_initializer.py         # 数据库初始化调度
@@ -181,9 +181,10 @@ Ramaria/
 │       ├── settings.py               # 配置读写接口
 │       └── admin.py                  # 管理面板 API（环境检测/配置向导/数据库初始化）
 ├── src/ramaria/                      # 核心业务包
-│   ├── config.py                     # 全局配置中心
+│   ├── config.py                     # 全局配置中心（支持热更新）
 │   ├── constants.py                  # 静态常量定义
-│   ├── logger.py                     # 统一日志管理
+│   ├── logger.py                     # 统一日志管理（支持追踪 ID）
+│   ├── exceptions.py                 # 自定义异常类
 │   ├── core/                         # 核心模块
 │   │   ├── llm_client.py             # LLM 请求封装（本地 / 云端统一接口）
 │   │   ├── router.py                 # 任务路由层
@@ -206,9 +207,10 @@ Ramaria/
 │   │   ├── weather.py                # 天气查询
 │   │   └── web_fetcher.py            # 网页内容获取
 │   ├── importer/                     # 数据导入模块
-│   └── adapters/                     # 外部接口适配
-│       ├── mcp/                      # MCP Server
-│       └── telegram/                 # Telegram Bot 桥接
+│   ├── adapters/                     # 外部接口适配
+│   │   ├── mcp/                      # MCP Server
+│   │   └── telegram/                 # Telegram Bot 桥接
+│   └── backends/                     # 后端扩展接口
 ├── app/system/                       # 系统集成
 │   ├── tray.py                       # 系统托盘图标
 │   └── autostart.py                  # 开机自启动
@@ -220,12 +222,14 @@ Ramaria/
 │   ├── check_env.py                  # 环境检查脚本
 │   └── health_check.py               # 启动前健康检查
 ├── static/                           # 前端静态资源
-│   ├── index.html                    # 主对话界面
+│   ├── index.html                    # 主对话界面（支持草稿自动保存）
 │   ├── setup.html                    # 配置向导（5 步引导）
 │   ├── launcher.html                 # 启动过渡页
+│   ├── loading.html                  # 应用初始化加载页（懒加载进度展示）
+│   ├── dashboard.html                # 系统总览页面
 │   ├── import.html                   # 聊天记录导入界面
 │   ├── memory.html                   # 记忆查看器
-│   ├── css/                          # 样式文件
+│   ├── css/                          # 样式文件（CSS 变量系统）
 │   └── js/                           # 前端脚本
 ├── config/                           # 配置文件
 │   ├── persona.toml                  # 人设配置
@@ -239,7 +243,7 @@ Ramaria/
 ├── docker-compose.yml                # Docker Compose 配置
 ├── ramaria.spec                      # PyInstaller 打包配置
 ├── build.bat                         # Windows 一键打包脚本
-├── pyproject.toml                    # 项目元信息与依赖
+├── pyproject.toml                    # 项目元信息与依赖（版本 0.7.0）
 ├── .env.example                      # 环境变量模板
 └── README.md
 ```
@@ -332,7 +336,17 @@ bash linux/start.sh            # Linux / macOS
 
 EXE 一键分发、首次启动配置向导、配置热更新、数据库列级校验、打包后 DLL 与 WebView2 修复。
 
-### v0.7 — 智能化升级（规划中）
+### v0.7 — 安全增强与体验升级（2026-05-09）
+
+- API 安全增强：Admin API Key 验证机制、安全响应头中间件
+- 启动体验优化：初始化加载界面、懒加载初始化、进度追踪
+- 配置热更新扩展：嵌入模型热更新、模式切换状态实时显示
+- 用户体验改进：输入框草稿自动保存与恢复
+- 后端优化：线程安全配置更新、API 重试机制、数据库连接管理优化
+- 日志系统重构：支持追踪 ID，便于问题排查
+- 前端样式统一：CSS 变量系统、颜色系统规范化
+
+### v0.8 — 智能化升级（规划中）
 
 LoRA 微调、D3.js 知识图谱可视化、移动端适配、CUDA 加速。
 

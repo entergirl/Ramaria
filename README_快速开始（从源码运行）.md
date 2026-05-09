@@ -505,3 +505,13 @@ rm -rf data/chroma_db
 # 重新初始化数据库
 python scripts/setup_db.py
 ```
+---
+
+## 技术支持
+
+- 项目地址：https://github.com/entergirl/Ramaria
+- 问题反馈：https://github.com/entergirl/Ramaria/issues
+
+---
+
+祝使用愉快！🪸

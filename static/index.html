@@ -6,9 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#fdf2f0">
 <title>珊瑚菌 · Ramaria</title>
-<!-- Google Fonts -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Google Fonts 已移除，使用 variables.css 中的系统字体栈回退 -->
 <!-- 全局 CSS 变量 -->
 <link rel="stylesheet" href="/static/css/variables.css">
 <style>
@@ -890,19 +888,45 @@ function newChat() {
 }
 
 // ─── 加载会话列表 ────────────────────────────────────────────────
+// 带重试机制：首次失败后自动重试 2 次（间隔递增），全部失败后显示错误并提供手动重试按钮
+let _sessionListRetryCount = 0;
+const _SESSION_LIST_MAX_RETRIES = 3;
+
 async function loadSessionList() {
   const container = document.getElementById('session-list');
   if (!container) return;
 
   try {
     const sessions = await API.getSessions();
+    _sessionListRetryCount = 0;  // 成功后重置计数
     renderSessionList(sessions);
   } catch (err) {
-    console.error('加载会话列表失败:', err);
+    _sessionListRetryCount++;
+    console.error(`加载会话列表失败 (第${_sessionListRetryCount}次):`, err);
+    
+    if (_sessionListRetryCount < _SESSION_LIST_MAX_RETRIES) {
+      // 自动重试，间隔递增：1s → 2s → 3s
+      const delay = _sessionListRetryCount * 1000;
+      container.innerHTML = `
+        <div class="session-item empty-state">
+          <div class="session-title">正在加载…</div>
+          <div class="session-preview">第 ${_sessionListRetryCount} 次重试中</div>
+        </div>`;
+      setTimeout(() => loadSessionList(), delay);
+      return;
+    }
+    
+    // 全部重试失败，显示错误并提供手动重试
+    const errMsg = err.message || String(err);
     container.innerHTML = `
       <div class="session-item empty-state">
         <div class="session-title">加载失败</div>
-        <div class="session-preview">请刷新页面重试</div>
+        <div class="session-preview" style="margin-bottom:12px">${errMsg}</div>
+        <button class="retry-btn" onclick="loadSessionList()" 
+                style="padding:6px 16px;border-radius:6px;border:1px solid var(--border-default);
+                       background:var(--surface);color:var(--text-2);cursor:pointer;font-size:0.8rem">
+          🔄 点击重试
+        </button>
       </div>`;
   }
 }
@@ -1057,22 +1081,57 @@ function sendMessage() {
   const emptyState = document.getElementById('empty-state');
   if (emptyState) emptyState.remove();
 
-  // 渲染用户消息（使用 UI 模块）
+  // 先渲染用户消息气泡（即时反馈）
   UI.appendBubble(content, 'user', false, false, new Date().toISOString());
   input.value = '';
   UI.autoResizeTextarea(input);
 
-  // 显示打字动画
+  // ── 优先通过 WebSocket 发送 ──
+  if (_ws && _ws.readyState === WebSocket.OPEN) {
+    UI.showTyping();
+    AppState.setLoading(true);
+    const sent = API.wsSendChat(_ws, content);
+    if (!sent) {
+      UI.hideTyping();
+      AppState.setLoading(false);
+      UI.showToast('消息发送失败，请检查网络连接', 'error');
+    }
+    return;
+  }
+
+  // ── WebSocket 未连接时的处理 ──
+  // 尝试触发 WebSocket 重连
+  if (typeof connectWebSocket === 'function') {
+    connectWebSocket();
+  }
+
+  // ── HTTP 兜底：POST /chat（兼容性保障，避免完全无法发消息）──
   UI.showTyping();
   AppState.setLoading(true);
-
-  // 通过 WebSocket 发送消息
-  const sent = API.wsSendChat(_ws, content);
-  if (!sent) {
-    UI.hideTyping();
-    AppState.setLoading(false);
-    UI.showToast('消息发送失败，请检查网络连接', 'error');
-  }
+  API.chat(content)
+    .then(data => {
+      UI.hideTyping();
+      UI.renderAssistantReply(data.reply, data.mode);
+      AppState.setSessionId(data.session_id);
+      AppState.setLoading(false);
+      // 更新模式徽章
+      if (data.mode === 'online') {
+        UI.updateModeUI('online');
+        AppState.setOnline(true);
+        setTimeout(() => { UI.updateModeUI('local'); AppState.setOnline(false); }, 2000);
+      } else if (data.mode === 'confirm') {
+        UI.updateModeUI('pending');
+      } else {
+        if (!AppState.isOnline) UI.updateModeUI('local');
+      }
+      document.getElementById('user-input')?.focus();
+    })
+    .catch(err => {
+      UI.hideTyping();
+      AppState.setLoading(false);
+      UI.showToast('发送失败：' + (err.message || '请稍后重试'), 'error');
+      console.error('[HTTP fallback] 发送失败:', err);
+    });
 }
 
 // appendMessage 已由 UI.appendBubble 替代，此函数保留用于兼容性

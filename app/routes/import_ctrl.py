@@ -26,7 +26,8 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 # 静态文件目录（相对于项目根目录）
-_STATIC_DIR = Path(__file__).parents[3] / "static"
+# 本文件位于 app/routes/import_ctrl.py → parents[2] = 项目根目录
+_STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
 
 
 # =============================================================================

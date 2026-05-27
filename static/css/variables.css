@@ -8,7 +8,7 @@
   · CSS变量       — 全平台现代浏览器 (Chrome 49+, Firefox 31+)
   ============================================================================= */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Google Fonts 已内联移除，使用系统字体栈回退，确保离线环境可用 */
 
 /* ── 兼容性回退色 (oklch/color-mix 不支持时) ── */
 @supports not (color: oklch(0 0 0)) {

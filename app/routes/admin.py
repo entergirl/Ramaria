@@ -94,11 +94,17 @@ def _reload_config_values(values: dict[str, str]) -> None:
     import ramaria.config as config
 
     _CONFIG_KEY_MAP = {
+        "LLM_MODE":                 "LLM_MODE",
         "LOCAL_API_URL":            "LOCAL_API_URL",
         "LOCAL_MODEL_NAME":         "LOCAL_MODEL_NAME",
         "LOCAL_TEMPERATURE":        "LOCAL_TEMPERATURE",
         "LOCAL_MAX_TOKENS_SUMMARY": "LOCAL_MAX_TOKENS_SUMMARY",
         "LOCAL_MAX_TOKENS_CHAT":    "LOCAL_MAX_TOKENS_CHAT",
+        "API_KEY":                  "API_KEY",
+        "API_BASE_URL":             "API_BASE_URL",
+        "API_MODEL_NAME":           "API_MODEL_NAME",
+        "API_TEMPERATURE":          "API_TEMPERATURE",
+        "API_MAX_TOKENS":           "API_MAX_TOKENS",
         "SERVER_HOST":              "SERVER_HOST",
         "SERVER_PORT":              "SERVER_PORT",
         "EMBEDDING_MODEL":          "EMBEDDING_MODEL",
@@ -110,6 +116,8 @@ def _reload_config_values(values: dict[str, str]) -> None:
         "LOCAL_TEMPERATURE":        float,
         "LOCAL_MAX_TOKENS_SUMMARY": int,
         "LOCAL_MAX_TOKENS_CHAT":    int,
+        "API_TEMPERATURE":          float,
+        "API_MAX_TOKENS":           int,
         "SERVER_PORT":              int,
     }
 

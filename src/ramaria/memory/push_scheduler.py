@@ -414,11 +414,19 @@ class PushScheduler:
             str  — 生成的消息文本
             None — 任何步骤失败时返回 None
         """
-        # ── 检查本地模型是否已配置 ──────────────────────────────────────────
+        # ── 检查 LLM 是否已配置 ────────────────────────────────────────────
+        # v0.7.0：根据 LLM_MODE 检查对应的必填项是否已填写
         import os
-        if not os.environ.get("LOCAL_API_URL") or not os.environ.get("LOCAL_MODEL_NAME"):
-            logger.debug("本地模型未配置，跳过推送消息生成")
-            return None
+        from ramaria.config import LLM_MODE
+
+        if LLM_MODE == "api":
+            if not os.environ.get("API_KEY") or not os.environ.get("API_BASE_URL"):
+                logger.debug("线上 API 未配置（API_KEY / API_BASE_URL 缺失），跳过推送消息生成")
+                return None
+        else:
+            if not os.environ.get("LOCAL_API_URL") or not os.environ.get("LOCAL_MODEL_NAME"):
+                logger.debug("本地模型未配置，跳过推送消息生成")
+                return None
 
         # ── 读取身份信息 ──────────────────────────────────────────────────────
         try:

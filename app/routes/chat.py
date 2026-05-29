@@ -382,12 +382,21 @@ def _build_context(session_id: int, user_message: str | None = None) -> dict:
 
 def _call_local(messages: list[dict]) -> str:
     """
-    调用本地 Qwen 模型，返回回复文本。
+    调用 LLM 模型（本地或线上 API），返回回复文本。
     失败时返回固定提示文本，不向上抛出异常。
+
+    v0.7.0：错误消息根据 LLM_MODE 动态切换，提供更准确的故障排查提示。
     """
     result = call_local_chat(messages, caller="chat")
     if result is None:
-        return "（错误：本地模型调用失败，请确认 LM Studio 服务已启动）"
+        from ramaria.config import LLM_MODE
+        if LLM_MODE == "api":
+            return (
+                "（错误：线上 API 调用失败，请检查网络连接和 API_KEY 配置。" 
+                "如持续失败，可在设置中切换回本地模型模式）"
+            )
+        else:
+            return "（错误：本地模型调用失败，请确认 LM Studio / Ollama 服务已启动）"
     return result
 
 

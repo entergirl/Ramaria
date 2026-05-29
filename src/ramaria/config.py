@@ -138,8 +138,26 @@ L2_TRIGGER_DAYS: int = 7
 
 
 # =============================================================================
+# LLM 模式选择（本地 vs 线上 API）
+# =============================================================================
+#
+# "local" — 使用本地推理服务（LM Studio / Ollama），全量本地运行，隐私保护
+# "api"   — 使用线上 API（OpenAI 兼容格式），快速启动，无硬件负担
+#
+# 注意：嵌入模型（向量检索）始终走本地，不受此模式影响。
+#
+# 切换方式：
+#   1. 在 .env 中设置 LLM_MODE=api 并填入 API_KEY
+#   2. 在配置向导中选择对应模式
+#   3. 运行时通过 POST /api/admin/config 热切换
+
+LLM_MODE: str = os.environ.get("LLM_MODE", "local")  # "local" 或 "api"
+
+
+# =============================================================================
 # 本地模型（LM Studio / Ollama，兼容 OpenAI API 格式）
 # =============================================================================
+# 仅在 LLM_MODE="local" 时生效
 
 def _safe_float(env_key: str, default: float) -> float:
     """安全地将环境变量转换为 float，非法值时返回默认值。"""
@@ -162,6 +180,28 @@ LOCAL_MODEL_NAME:          str   = os.environ.get("LOCAL_MODEL_NAME", "qwen/qwen
 LOCAL_TEMPERATURE:         float = _safe_float("LOCAL_TEMPERATURE", 0.3)
 LOCAL_MAX_TOKENS_SUMMARY:  int   = _safe_int("LOCAL_MAX_TOKENS_SUMMARY", 512)
 LOCAL_MAX_TOKENS_CHAT:     int   = _safe_int("LOCAL_MAX_TOKENS_CHAT", 1024)
+
+
+# =============================================================================
+# 线上 API 模型（OpenAI 兼容格式）
+# =============================================================================
+# 仅在 LLM_MODE="api" 时生效
+#
+# 兼容的服务商（均支持 /v1/chat/completions）：
+#   · DeepSeek：API_BASE_URL=https://api.deepseek.com/v1/chat/completions
+#              API_MODEL_NAME=deepseek-chat
+#   · OpenAI：  API_BASE_URL=https://api.openai.com/v1/chat/completions
+#              API_MODEL_NAME=gpt-4o
+#   · 智谱：    API_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
+#              API_MODEL_NAME=glm-4-plus
+#   · 通义千问：API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+#              API_MODEL_NAME=qwen-plus
+
+API_KEY:         str   = os.environ.get("API_KEY", "")
+API_BASE_URL:    str   = os.environ.get("API_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+API_MODEL_NAME:  str   = os.environ.get("API_MODEL_NAME", "deepseek-chat")
+API_TEMPERATURE: float = _safe_float("API_TEMPERATURE", 0.3)
+API_MAX_TOKENS:  int   = _safe_int("API_MAX_TOKENS", 2048)
 
 
 # =============================================================================

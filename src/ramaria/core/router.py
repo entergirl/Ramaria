@@ -2,23 +2,30 @@
 src/ramaria/core/router.py — 任务路由层
 
 职责：
-    负责判断当前消息是否需要切换到云端API处理，
+    负责判断当前消息是否需要切换到 Claude API 处理，
     并管理线上/本地模式的全局状态。
 
 设计原则：
-    · 本地模型是主体，负责日常对话和记忆维护
-    · 云端模型是一次性专家工具，处理完当前消息立即回到本地模式
-    · 云端模型不注入任何记忆上下文，只拿到用户的当前消息
-    · 自动检测到可能需要云端模型时，先向用户发确认询问，不直接调用
+    · 本地模型（或线上 API）是主体，负责日常对话和记忆维护
+    · Claude 是一次性专家工具，处理完当前消息立即回到默认模式
+    · Claude 不注入任何记忆上下文，只拿到用户的当前消息
+    · 自动检测到可能需要 Claude 时，先向用户发确认询问，不直接调用
+
+LLM 双模式说明（v0.7.0 新增）：
+    · LLM 后端由 ramaria.config.LLM_MODE 控制，与 Claude 路由是两层独立概念
+    · LLM_MODE="local"：日常对话走本地推理服务（如 Ollama）
+    · LLM_MODE="api"：  日常对话走线上 API（如 DeepSeek），无需本地 GPU
+    · Claude 路由行为不变：无论 LLM_MODE 是何值，
+      用户在对话中切换后仍可求助 Claude 处理复杂任务（前提是配置了 ANTHROPIC_API_KEY）
 
 状态机：
     模式状态（mode）：
-        "local"   — 默认状态，消息走本地模型
-        "online"  — 当前消息走云端模型API（处理完后自动回到 local）
+        "local"   — 默认状态，消息走默认 LLM（本地模型或线上 API）
+        "online"  — 当前消息走 Claude API（处理完后自动回到 local）
 
     API 开关（api_enabled）：
         True  — 允许自动检测和手动切换到 Claude（默认）
-        False — 完全禁用 Claude，所有消息强制走本地
+        False — 完全禁用 Claude，所有消息强制走默认 LLM
 
     确认等待状态（waiting_confirm）：
         True  — 上一条消息触发了自动检测，正在等待用户确认
@@ -140,14 +147,18 @@ class Router:
                 "api_enabled":     bool,
                 "waiting_confirm": bool,
                 "mode":            str,   # "local" / "pending"
+                "llm_mode":        str,   # "local" / "api"（v0.7.0 新增）
             }
         """
+        from ramaria.config import LLM_MODE
+
         with self._lock:
             mode = "pending" if self._waiting_confirm else "local"
             return {
                 "api_enabled":     self._api_enabled,
                 "waiting_confirm": self._waiting_confirm,
                 "mode":            mode,
+                "llm_mode":        LLM_MODE,
             }
 
     # -------------------------------------------------------------------------

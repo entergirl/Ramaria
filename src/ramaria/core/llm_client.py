@@ -1,16 +1,21 @@
 """
-src/ramaria/core/llm_client.py — 本地模型调用公共模块
+src/ramaria/core/llm_client.py — LLM 调用公共模块
 
 职责：
-    1. 封装对本地模型服务（Ollama / LM Studio）的 HTTP 请求
-    2. 提供思考链剥离工具函数
+    1. 封装对 LLM 服务的 HTTP 请求（兼容 OpenAI API 格式）
+    2. 支持双模式运行：
+       · 本地模式 —— 调用本地推理服务（Ollama / LM Studio）
+       · API 模式 —— 调用线上 API（DeepSeek / OpenAI / 智谱 等）
+    3. 提供思考链剥离工具函数
 
 对外暴露三个函数：
     strip_thinking()     — 剥离模型思考链，提取 JSON 文本（摘要类任务用）
     call_local_summary() — 摘要类任务（L1/L2 生成、冲突检测、画像提取）
     call_local_chat()    — 对话类任务（日常聊天，需要更长回复空间）
 
-    
+模式选择：
+    通过 ramaria.config.LLM_MODE 控制（"local" 或 "api"），
+    默认 "local" 保证向后兼容。运行时可通过 POST /api/admin/config 热切换。
 """
 
 import json
@@ -174,6 +179,11 @@ def _call(
     """
     实际发起 HTTP 请求的内部函数，被 call_local_summary 和 call_local_chat 共用。
 
+    根据 ramaria.config.LLM_MODE 自动切换后端：
+        · "local" → 调用本地推理服务（LOCAL_API_URL + LOCAL_MODEL_NAME）
+        · "api"   → 调用线上 API（API_BASE_URL + API_MODEL_NAME + Bearer 认证）
+        · 其他值  → 视为 local，兜底降级
+
     参数：
         messages   — OpenAI 格式消息列表
         max_tokens — 最大生成 token 数
@@ -181,21 +191,47 @@ def _call(
 
     返回：str 或 None
     """
+    mode = _config.LLM_MODE.lower().strip()
+
+    if mode == "api":
+        api_url     = _config.API_BASE_URL
+        model_name  = _config.API_MODEL_NAME
+        temperature = _config.API_TEMPERATURE
+        api_key     = _config.API_KEY
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type":  "application/json",
+        }
+        mode_label = "线上API"
+    else:
+        api_url     = _config.LOCAL_API_URL
+        model_name  = _config.LOCAL_MODEL_NAME
+        temperature = _config.LOCAL_TEMPERATURE
+        api_key     = ""
+
+        headers = {}
+        mode_label = "本地"
+
     payload = {
-        "model":       _config.LOCAL_MODEL_NAME,
+        "model":       model_name,
         "messages":    messages,
-        "temperature": _config.LOCAL_TEMPERATURE,
+        "temperature": temperature,
         "max_tokens":  max_tokens,
         # 关闭流式，避免 Ollama 下首 token 丢失导致回复截断
         "stream":      False,
     }
 
-    api_url = _config.LOCAL_API_URL
     trace_id = get_trace_id() or "-"
 
     try:
-        session = _get_session()
-        response = session.post(api_url, json=payload, timeout=120)
+        session  = _get_session()
+        response = session.post(
+            api_url,
+            json=payload,
+            headers=headers,
+            timeout=120,
+        )
         response.raise_for_status()
         data = response.json()
         raw_content = data["choices"][0]["message"]["content"].strip()
@@ -211,46 +247,61 @@ def _call(
             f"LLM 调用成功",
             caller=caller,
             trace_id=trace_id,
-            content_length=len(cleaned)
+            mode=mode_label,
+            model=model_name,
+            content_length=len(cleaned),
         )
         return cleaned
 
     except requests.exceptions.ConnectionError as e:
         logger.exception(
-            f"无法连接到本地模型",
+            f"无法连接到{mode_label}模型",
             caller=caller,
             api_url=api_url,
+            mode=mode_label,
             error_code=ErrorCode.R010001.code,
-            trace_id=trace_id
+            trace_id=trace_id,
         )
         return None
 
     except requests.exceptions.Timeout as e:
         logger.exception(
-            f"LLM 请求超时",
+            f"{mode_label} LLM 请求超时",
             caller=caller,
+            mode=mode_label,
             timeout=120,
             error_code=ErrorCode.R010002.code,
-            trace_id=trace_id
+            trace_id=trace_id,
         )
         return None
 
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response else None
+
+        # API 模式下 401/403 提供更明确的错误提示
+        detail = ""
+        if mode == "api" and status_code == 401:
+            detail = "API Key 无效或已过期，请检查 .env 中的 API_KEY 配置"
+        elif mode == "api" and status_code == 403:
+            detail = "API 访问被拒绝，请检查账号权限或配额"
+
         logger.exception(
-            f"LLM HTTP 请求失败",
+            f"{mode_label} LLM HTTP 请求失败",
             caller=caller,
+            mode=mode_label,
             status_code=status_code,
+            detail=detail,
             error_code=ErrorCode.R010005.code,
-            trace_id=trace_id
+            trace_id=trace_id,
         )
         return None
 
     except (KeyError, IndexError, json.JSONDecodeError) as e:
         logger.exception(
-            f"解析模型响应结构失败",
+            f"解析{mode_label}模型响应结构失败",
             caller=caller,
+            mode=mode_label,
             error_code=ErrorCode.R010003.code,
-            trace_id=trace_id
+            trace_id=trace_id,
         )
         return None

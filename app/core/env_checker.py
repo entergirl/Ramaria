@@ -131,8 +131,16 @@ _VENV_PYTHON  = (
     else _VENV_DIR / "bin" / "python"
 )
 
-# .env 中必须有值的三个配置项
-_REQUIRED_ENV_KEYS = ["LOCAL_API_URL", "LOCAL_MODEL_NAME", "EMBEDDING_MODEL"]
+# 嵌入模型始终必填（两种模式共享）
+_EMBEDDING_REQUIRED = ["EMBEDDING_MODEL"]
+
+# 各模式的额外必填项
+_LOCAL_REQUIRED = ["LOCAL_API_URL", "LOCAL_MODEL_NAME"]
+_API_REQUIRED   = ["API_KEY", "API_BASE_URL", "API_MODEL_NAME"]
+
+# 向后兼容：旧版 .env 没有 LLM_MODE 时默认走本地
+_LOCAL_REQUIRED_KEYS = _EMBEDDING_REQUIRED + _LOCAL_REQUIRED
+_API_REQUIRED_KEYS   = _EMBEDDING_REQUIRED + _API_REQUIRED
 
 # 将 /v1/chat/completions 等路径替换为 /v1/models 用于推理服务检测
 _MODELS_PATH_RE = re.compile(r"/v1/.*$")
@@ -364,7 +372,14 @@ def check_dependencies() -> CheckResult:
 
 
 def check_env_file() -> CheckResult:
-    """检测 .env 文件是否存在，且三个必填项均已填写。"""
+    """
+    检测 .env 文件是否存在，且当前模式的必填项均已填写。
+
+    v0.7.0：必填项根据 LLM_MODE 动态判定。
+        · local 模式：LOCAL_API_URL + LOCAL_MODEL_NAME + EMBEDDING_MODEL
+        · api   模式：API_KEY + API_BASE_URL + API_MODEL_NAME + EMBEDDING_MODEL
+        · 向后兼容：LLM_MODE 未设置时默认视为 local
+    """
     env_file = _get_env_file()
     if not env_file.exists():
         return CheckResult(
@@ -374,19 +389,41 @@ def check_env_file() -> CheckResult:
         )
 
     env_vals = get_all_env_values()
-    missing  = [k for k in _REQUIRED_ENV_KEYS if not env_vals.get(k, "").strip()]
+
+    # 读取 LLM_MODE，未设置时默认 local（向后兼容）
+    llm_mode = env_vals.get("LLM_MODE", "local").strip().lower()
+    if not llm_mode:
+        llm_mode = "local"
+
+    # 根据模式选择必填项列表
+    if llm_mode == "api":
+        required_keys = _API_REQUIRED_KEYS
+        mode_label    = "线上 API 模式"
+    else:
+        required_keys = _LOCAL_REQUIRED_KEYS
+        mode_label    = "本地模型模式"
+
+    missing = [k for k in required_keys if not env_vals.get(k, "").strip()]
 
     if missing:
         return CheckResult(
             ok=False,
-            message=f"必填项未配置：{', '.join(missing)}",
+            message=f"必填项未配置（{mode_label}）：{', '.join(missing)}",
             detail="请打开配置向导补充填写这些字段。",
-            data={"missing": missing, "filled": [k for k in _REQUIRED_ENV_KEYS if k not in missing]},
+            data={
+                "missing":   missing,
+                "llm_mode":  llm_mode,
+                "mode_label": mode_label,
+            },
         )
     return CheckResult(
         ok=True,
-        message=".env 配置完整",
-        data={"missing": [], "filled": _REQUIRED_ENV_KEYS},
+        message=f".env 配置完整（{mode_label}）",
+        data={
+            "missing":   [],
+            "llm_mode":  llm_mode,
+            "mode_label": mode_label,
+        },
     )
 
 
@@ -426,6 +463,30 @@ def check_embedding_model() -> CheckResult:
 
 
 def check_inference_service() -> CheckResult:
+    """
+    检测 LLM 后端服务的连通性。
+
+    v0.7.0：根据 LLM_MODE 选择检测目标。
+        · local 模式：检测本地推理服务是否可达（GET /v1/models，超时 3s）
+        · api   模式：检测 API 服务的连通性（HEAD 请求，超时 5s）
+        · 向后兼容：LLM_MODE 未设置时默认走 local
+
+    对 API 模式，只做基础连通性验证（不消耗 token），不验证 API Key 有效性。
+    """
+    import urllib.error
+    import urllib.request
+
+    # 读取 LLM_MODE（未设置时默认 local）
+    llm_mode = get_env_value("LLM_MODE") or "local"
+    llm_mode = llm_mode.strip().lower()
+
+    if llm_mode == "api":
+        return _check_api_service()
+    else:
+        return _check_local_inference_service()
+
+
+def _check_local_inference_service() -> CheckResult:
     """
     检测本地推理服务是否可达（GET /v1/models，超时 3s）。
     从 LOCAL_API_URL 推断 /v1/models 端点地址。
@@ -468,6 +529,77 @@ def check_inference_service() -> CheckResult:
         )
     except Exception as e:
         return CheckResult(ok=False, message="推理服务检测失败", detail=str(e))
+
+
+def _check_api_service() -> CheckResult:
+    """
+    检测线上 API 服务的连通性（v0.7.0 新增）。
+
+    不做 API Key 有效性验证（避免消耗 token 或触发认证错误），
+    仅验证 API 基础 URL 可达性。
+    """
+    import urllib.error
+    import urllib.request
+
+    api_base_url = get_env_value("API_BASE_URL")
+    if not api_base_url:
+        return CheckResult(
+            ok=False,
+            message="API_BASE_URL 未配置",
+            detail="请在配置向导中填写线上 API 地址。",
+        )
+
+    # 从完整路径提取根域名做连通性检测
+    # 示例：https://api.deepseek.com/v1/chat/completions → https://api.deepseek.com
+    from urllib.parse import urlparse
+    parsed  = urlparse(api_base_url)
+    root_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    try:
+        req = urllib.request.Request(root_url, method="HEAD")
+        # API 服务通常不支持 HEAD，会返回 405 或 404，但只要连接成功就算通过
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status < 500:
+                return CheckResult(
+                    ok=True,
+                    message="线上 API 服务可达",
+                    data={"url": root_url, "http_status": resp.status},
+                )
+            return CheckResult(
+                ok=False,
+                message=f"线上 API 服务响应异常（HTTP {resp.status}）",
+                detail="请确认 API 地址是否正确。",
+                data={"url": root_url},
+            )
+    except urllib.error.HTTPError as e:
+        # 405/404 等也是正常的（HEAD 方法可能不支持），能连上就算通过
+        if e.code and e.code < 500:
+            return CheckResult(
+                ok=True,
+                message="线上 API 服务可达",
+                data={"url": root_url, "http_status": e.code},
+            )
+        return CheckResult(
+            ok=False,
+            message=f"线上 API 服务响应异常（HTTP {e.code}）",
+            detail="请确认 API 地址是否正确。",
+            data={"url": root_url},
+        )
+    except urllib.error.URLError:
+        return CheckResult(
+            ok=False,
+            message="无法连接到线上 API 服务",
+            detail=(
+                f"无法连接到 {root_url}\n"
+                "请检查网络连接，或确认 API_BASE_URL 配置正确。\n"
+                "常见问题：\n"
+                "  · 是否需要代理/VPN 才能访问\n"
+                "  · URL 是否包含完整路径（如 /v1/chat/completions）"
+            ),
+            data={"url": root_url},
+        )
+    except Exception as e:
+        return CheckResult(ok=False, message="线上 API 服务检测失败", detail=str(e))
 
 
 def check_database() -> CheckResult:

@@ -850,6 +850,66 @@ textarea#user-input::placeholder { color: var(--text-3); }
 <script src="/static/js/app.js"></script>
 
 <script>
+// ─── api.js 加载失败时的内联回退（确保核心功能不依赖外部 JS 文件） ──
+if (typeof API === 'undefined') {
+  console.warn('[Ramaria] 外部 api.js 未加载/执行，启用内联回退');
+  const __ak = (document.querySelector('meta[name="api-key"]')||{}).content||'';
+  async function __req(url, opts={}) {
+    const h = {'Content-Type':'application/json'};
+    if (__ak) h['X-API-Key'] = __ak;
+    if (opts.headers) Object.assign(h, opts.headers);
+    let r; try { r = await fetch(url, {...opts, headers:h}); }
+    catch(e) { throw new Error('网络连接失败，请检查网络后重试（'+e.message+'）'); }
+    if (!r.ok) { let d='HTTP '+r.status; try { const b=await r.json(); if(b.detail)d=b.detail; } catch(_){} throw new Error(d); }
+    return r.json();
+  }
+  window.API = {
+    _isFallback: true,  // 标记：标识这是内联回退版本
+    async chat(c)       { return __req('/chat',{method:'POST',body:JSON.stringify({content:c})}); },
+    async save()        { return __req('/save',{method:'POST'}); },
+    async getRouterStatus()   { return __req('/router/status'); },
+    async toggleRouter(on)    { return __req('/router/toggle',{method:'POST',body:JSON.stringify({online:on})}); },
+    async getSessions()       { return __req('/api/sessions'); },
+    async getSessionMessages(id) { return __req('/api/sessions/'+id+'/messages'); },
+    connectWs({onMessage,onOpen,onClose,onError}) {
+      const p = location.protocol==='https:'?'wss:':'ws:';
+      const u = p+'//'+location.host+'/ws'+(__ak?'?api_key='+encodeURIComponent(__ak):'');
+      const ws = new WebSocket(u);
+      ws.onopen=()=>{console.log('[WS-回退] 已连接');if(onOpen)onOpen();};
+      ws.onmessage=e=>{try{onMessage(JSON.parse(e.data));}catch(x){console.error('[WS] 解析失败',x);}};
+      ws.onclose=e=>{console.log('[WS] 断开',e.code);if(onClose)onClose(e);};
+      ws.onerror=e=>{console.error('[WS] 错误',e);if(onError)onError(e);};
+      return ws;
+    },
+    wsSendChat(ws,c) { if(!ws||ws.readyState!==WebSocket.OPEN)return false; ws.send(JSON.stringify({type:'chat',content:c})); return true; },
+    async getSettings()     { return __req('/api/settings'); },
+    async saveSettings(s)   { return __req('/api/settings',{method:'POST',body:JSON.stringify(s)}); },
+  };
+}
+
+// ─── 启动诊断：检测各模块加载状态（帮助排查前端 JS 加载问题）──────
+(function() {
+  var diag = {
+    time:     new Date().toISOString(),
+    url:      location.href,
+    protocol: location.protocol,
+    host:     location.host,
+    AppState: typeof AppState !== 'undefined',
+    API_ext:  typeof API !== 'undefined' && !(API._isFallback),
+    API_fb:   typeof API !== 'undefined' && API._isFallback === true,
+    UI:       typeof UI !== 'undefined',
+    apiKeyMeta: !!document.querySelector('meta[name="api-key"]'),
+  };
+  console.log('[Ramaria-诊断]', JSON.stringify(diag));
+  if (!diag.AppState) console.error('[Ramaria-诊断] ✗ state.js 未加载 — 页面功能将严重受限');
+  if (!diag.API_ext && !diag.API_fb) console.error('[Ramaria-诊断] ✗ api.js 未加载且无回退 — 所有 API 调用将失败');
+  if (diag.API_fb)       console.warn('[Ramaria-诊断] ⚠ 使用内联回退（外部 api.js 加载失败，原因可能是 MIME 类型/缓存/路径问题）');
+  if (diag.API_ext)      console.log('[Ramaria-诊断] ✓ 外部 api.js 正常加载');
+  if (!diag.UI)          console.error('[Ramaria-诊断] ✗ ui.js 未加载');
+  if (!diag.apiKeyMeta)  console.warn('[Ramaria-诊断] ⚠ 未找到 api-key meta 标签，API 调用可能因缺少认证而失败');
+  window.__ramaria_diag = diag;
+})();
+
 // ─── 侧边栏 ─────────────────────────────────────────────────────
 function toggleSidebar() {
   const s = document.getElementById('sidebar');
@@ -916,18 +976,57 @@ async function loadSessionList() {
       return;
     }
     
-    // 全部重试失败，显示错误并提供手动重试
+    // 全部重试失败，显示详细诊断信息
+    const diag  = window.__ramaria_diag || {};
     const errMsg = err.message || String(err);
+    const errName = err.name || 'Error';
+    
+    // 诊断摘要
+    var diagLines = [];
+    if (!diag.API_ext && !diag.API_fb) diagLines.push('✗ 外部 api.js 未加载（无内联回退）');
+    if (diag.API_fb)                  diagLines.push('⚠ 外部 api.js 加载失败，已启用内联回退');
+    if (diag.API_ext)                 diagLines.push('✓ 外部 api.js 已正常加载');
+    if (!diag.AppState)               diagLines.push('✗ state.js 未加载');
+    if (!diag.apiKeyMeta)             diagLines.push('⚠ 缺少 api-key meta 标签');
+    var diagHtml = diagLines.length ? diagLines.map(function(l){return '<div style="font-size:0.72rem;color:var(--text-3)">'+l+'</div>';}).join('') : '';
+    
+    // 可能的修复建议
+    var hintHtml = '';
+    if (errName === 'ReferenceError' || (diag.API_fb && !errMsg.includes('HTTP'))) {
+      hintHtml = '<div style="margin-top:8px;font-size:0.7rem;color:var(--text-dim);line-height:1.5">'
+        + '💡 请打开浏览器开发者工具（F12），查看 Console 和 Network 标签：<br>'
+        + '　· 检查 /static/js/api.js 是否返回 200<br>'
+        + '　· 检查是否有 MIME type 警告<br>'
+        + '　· 查看完整报错堆栈信息</div>';
+    }
+    
     container.innerHTML = `
       <div class="session-item empty-state">
         <div class="session-title">加载失败</div>
-        <div class="session-preview" style="margin-bottom:12px">${errMsg}</div>
-        <button class="retry-btn" onclick="loadSessionList()" 
-                style="padding:6px 16px;border-radius:6px;border:1px solid var(--border-default);
-                       background:var(--surface);color:var(--text-2);cursor:pointer;font-size:0.8rem">
-          🔄 点击重试
-        </button>
+        <div class="session-preview" style="margin-bottom:4px;font-family:var(--font-mono);font-size:0.75rem;color:var(--color-error)">${errName}: ${errMsg}</div>
+        ${diagHtml}
+        ${hintHtml}
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="loadSessionList()" 
+                  style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-default);
+                         background:var(--surface);color:var(--text-2);cursor:pointer;font-size:0.78rem">
+            🔄 重试
+          </button>
+          <button onclick="console.log(JSON.stringify(window.__ramaria_diag,null,2));alert('诊断数据已输出到 Console（F12）')" 
+                  style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-default);
+                         background:var(--surface);color:var(--text-2);cursor:pointer;font-size:0.78rem">
+            📋 查看诊断
+          </button>
+        </div>
       </div>`;
+    
+    console.error('[Ramaria] loadSessionList 全部重试失败:', {
+      error:     errMsg,
+      errorName: errName,
+      stack:     err.stack,
+      retries:   _sessionListRetryCount,
+      diag:      diag,
+    });
   }
 }
 

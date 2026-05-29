@@ -58,7 +58,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from ramaria.logger import get_logger
+from ramaria.logger import get_logger, set_trace_id, clear_trace_id, generate_trace_id
 
 logger = get_logger(__name__)
 
@@ -381,6 +381,65 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+# =============================================================================
+# HTTP 访问日志中间件（诊断前端加载问题）
+# =============================================================================
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    """HTTP 访问日志中间件（符合项目日志规范：含 trace_id）。
+
+    分类策略：
+        · /static/ 路径 → DEBUG 级别（静态资源）
+        · /api/admin/init-progress → 跳过轮询噪音
+        · 其他 API/页面 → INFO 级别
+        · 4xx/5xx → 升级到 WARNING，记录响应状态码
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # 生成请求级追踪 ID
+        trace_id = generate_trace_id()
+        set_trace_id(trace_id)
+
+        path = request.url.path
+        method = request.method
+
+        # 跳过高频轮询（减少日志噪音）
+        skip_log = path == "/api/admin/init-progress"
+
+        try:
+            response: Response = await call_next(request)
+            status = response.status_code
+
+            if not skip_log:
+                if path.startswith("/static/"):
+                    # 静态文件：DEBUG 级别；404 升级为 WARNING（可能影响前端功能）
+                    if status >= 400:
+                        logger.warning(
+                            "静态资源请求异常",
+                            path=path, method=method, status=status,
+                            note="可能影响前端JS/CSS加载"
+                        )
+                    else:
+                        logger.debug(f"{method} {path} → {status}")
+                else:
+                    # API / 页面路由
+                    if status >= 400:
+                        logger.warning(
+                            "HTTP 请求异常",
+                            path=path, method=method, status=status
+                        )
+                    else:
+                        logger.info(f"{method} {path} → {status}")
+
+            return response
+
+        finally:
+            clear_trace_id()
+
+
+app.add_middleware(AccessLogMiddleware)
 
 # 挂载静态文件目录（配置向导、加载页、聊天界面等所有前端资源）
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")

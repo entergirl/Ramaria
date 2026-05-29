@@ -172,14 +172,20 @@ async def admin_status():
     """
     执行全部环境检测，返回每一项的 ok / message / detail。
     同时返回顶层 can_start 字段，供前端决定是否显示「立即启动」按钮。
+
+    v0.7.0：返回中加入 llm_mode 字段。
     """
+    from app.core.env_checker import get_current_llm_mode
+
     checks    = run_all_checks()
     can_start, failed_items = can_start_directly()
+    llm_mode  = get_current_llm_mode()
 
     return JSONResponse({
         "ok":         can_start,
         "can_start":  can_start,
         "failed":     failed_items,
+        "llm_mode":   llm_mode,
         "checks":     checks,
     })
 

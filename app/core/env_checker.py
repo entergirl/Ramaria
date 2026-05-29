@@ -837,6 +837,8 @@ def run_all_checks() -> dict[str, dict]:
     """
     执行全部检测项，返回可直接 JSON 序列化的字典。
     供 admin.py 的 GET /api/admin/status 接口调用。
+
+    v0.7.0：返回值中加入 llm_mode 字段。
     """
     try:
         port = int(get_env_value("SERVER_PORT") or "8000")
@@ -857,10 +859,22 @@ def run_all_checks() -> dict[str, dict]:
     return {name: result.to_dict() for name, result in checks.items()}
 
 
+def get_current_llm_mode() -> str:
+    """
+    获取当前 LLM 运行模式。
+
+    v0.7.0：从 .env 读取 LLM_MODE，未设置时默认返回 "local"。
+    """
+    mode = get_env_value("LLM_MODE") or "local"
+    return mode.strip().lower()
+
+
 def can_start_directly() -> tuple[bool, list[str]]:
     """
     快速判断是否可以跳过向导直接启动服务。
     只检测阻塞启动的必要项，不检测推理服务（允许先启动再连接）。
+
+    v0.7.0：返回值中加入 llm_mode 信息。
 
     返回：
         (True,  [])          — 可直接启动

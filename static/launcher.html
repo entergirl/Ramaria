@@ -267,6 +267,8 @@
 // 根据检测结果更新各检测项状态，
 // 全部通过时自动跳转到聊天界面，
 // 有未通过项时显示"配置向导"按钮。
+//
+// v0.7.0：推理服务标签根据 LLM_MODE 动态显示
 // ============================================================
 
 const CHECK_LABELS = {
@@ -279,6 +281,9 @@ const CHECK_LABELS = {
 
 // 关键检测项（这些失败时需要显示配置向导）
 const BLOCKING_CHECKS = ['env_file', 'embedding_model'];
+
+// 当前 LLM 模式（从后端检测结果中读取）
+let currentLLMMode = 'local';
 
 let pollTimer  = null;
 let pollCount  = 0;
@@ -323,6 +328,11 @@ async function pollStatus() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
 
+    // v0.7.0：读取 LLM_MODE，更新推理服务标签
+    currentLLMMode = data.llm_mode || 'local';
+    const svcLabel = currentLLMMode === 'api' ? '线上 API' : '推理服务';
+    CHECK_LABELS.inference_service = svcLabel;
+
     const checks = data.checks || {};
     const keys   = Object.keys(CHECK_LABELS);
 
@@ -355,7 +365,11 @@ async function pollStatus() {
         // 只有推理服务等"可选"项失败，继续轮询
         const inferenceCheck = checks['inference_service'];
         if (inferenceCheck && !inferenceCheck.ok) {
-          setHint('推理服务未启动（LM Studio 或 Ollama），请先启动…');
+          if (currentLLMMode === 'api') {
+            setHint('线上 API 连接失败，请检查网络和 API Key。可先进入后在设置中修复。');
+          } else {
+            setHint('推理服务未启动（LM Studio 或 Ollama），可先进入后手动启动。');
+          }
         } else {
           setHint('部分检测未通过，继续等待…');
         }

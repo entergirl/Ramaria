@@ -289,7 +289,12 @@ def _wait_for_service() -> bool:
     poll_count = 0
 
     print(f"\n  [启动] 等待后台服务就绪…")
-    print(f"  [启动] 确保本地模型推理服务已启动（LM Studio / Ollama）\n")
+    # v0.7.0：根据 LLM_MODE 显示对应的提示
+    llm_mode = os.environ.get("LLM_MODE", "local").strip().lower()
+    if llm_mode == "api":
+        print(f"  [启动] 使用线上 API 模式（{os.environ.get('API_MODEL_NAME', 'N/A')}）\n")
+    else:
+        print("  [启动] 确保本地模型推理服务已启动（LM Studio / Ollama）\n")
 
     while time.time() < deadline:
         try:
@@ -316,24 +321,45 @@ def _wait_for_service() -> bool:
 
     elapsed = time.time() - start_time
     print(f"\n  [错误] ❌ 启动超时（{elapsed:.0f}s）")
-    print(
-        f"\n  可能的原因：\n"
-        f"    1. 本地模型推理服务未启动\n"
-        f"       → 请先启动 LM Studio 或 Ollama\n\n"
-        f"    2. .env 中的配置不正确\n"
-        f"       → 检查 LOCAL_API_URL 是否指向推理服务\n"
-        f"       → 检查 LOCAL_MODEL_NAME 是否正确\n"
-        f"       → 检查 EMBEDDING_MODEL 路径是否存在\n\n"
-        f"    3. 嵌入模型加载缓慢\n"
-        f"       → 等待更长时间（2-3 分钟）再试\n"
-        f"       → 查看日志：logs/coral.log\n\n"
-        f"  调试步骤：\n"
-        f"    1. 查看日志文件了解详细错误：logs/coral.log\n"
-        f"    2. 尝试手动访问：{_BASE_URL}\n"
-        f"    3. 验证推理服务：\n"
-        f"       - LM Studio: http://localhost:1234/v1/models\n"
-        f"       - Ollama: http://localhost:11434/api/tags\n"
-    )
+
+    # v0.7.0：根据 LLM_MODE 显示对应的诊断建议
+    llm_mode = os.environ.get("LLM_MODE", "local").strip().lower()
+    if llm_mode == "api":
+        print(
+            f"\n  可能的原因：\n"
+            f"    1. 线上 API 连接失败\n"
+            f"       → 检查网络连接和 API_KEY 配置\n"
+            f"       → 确认 API_BASE_URL 地址正确\n\n"
+            f"    2. .env 中的配置不正确\n"
+            f"       → 检查 API_KEY 和 API_BASE_URL 是否填写\n"
+            f"       → 检查 EMBEDDING_MODEL 路径是否存在\n\n"
+            f"    3. 嵌入模型加载缓慢\n"
+            f"       → 等待更长时间（2-3 分钟）再试\n"
+            f"       → 查看日志：logs/coral.log\n\n"
+            f"  调试步骤：\n"
+            f"    1. 查看日志文件了解详细错误：logs/coral.log\n"
+            f"    2. 尝试手动访问：{_BASE_URL}\n"
+            f"    3. 验证 API 连通性：curl {os.environ.get('API_BASE_URL', '')}"
+        )
+    else:
+        print(
+            f"\n  可能的原因：\n"
+            f"    1. 本地模型推理服务未启动\n"
+            f"       → 请先启动 LM Studio 或 Ollama\n\n"
+            f"    2. .env 中的配置不正确\n"
+            f"       → 检查 LOCAL_API_URL 是否指向推理服务\n"
+            f"       → 检查 LOCAL_MODEL_NAME 是否正确\n"
+            f"       → 检查 EMBEDDING_MODEL 路径是否存在\n\n"
+            f"    3. 嵌入模型加载缓慢\n"
+            f"       → 等待更长时间（2-3 分钟）再试\n"
+            f"       → 查看日志：logs/coral.log\n\n"
+            f"  调试步骤：\n"
+            f"    1. 查看日志文件了解详细错误：logs/coral.log\n"
+            f"    2. 尝试手动访问：{_BASE_URL}\n"
+            f"    3. 验证推理服务：\n"
+            f"       - LM Studio: http://localhost:1234/v1/models\n"
+            f"       - Ollama: http://localhost:11434/api/tags\n"
+        )
     return False
 
 

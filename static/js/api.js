@@ -11,6 +11,7 @@
  *   API.save()              — POST /save，手动保存 session
  *   API.getRouterStatus()   — GET  /router/status，查询路由状态
  *   API.toggleRouter(bool)  — POST /router/toggle，切换路由模式
+ *   API.setLLMMode(mode)    — POST /router/llm-mode，切换 LLM 模式（v0.7.0）
  *
  * 错误处理约定：
  *   所有函数在失败时抛出 Error，调用方用 try/catch 处理，
@@ -127,6 +128,20 @@ const API = (() => {
       return _request('/router/toggle', {
         method: 'POST',
         body: JSON.stringify({ online }),
+      });
+    },
+
+    /**
+     * 切换 LLM 运行模式（v0.7.0 新增）。
+     *
+     * @param {'local'|'api'} mode - 目标模式
+     * @returns {Promise<{ok: boolean, mode: string, message: string}>}
+     * @throws {Error}
+     */
+    async setLLMMode(mode) {
+      return _request('/router/llm-mode', {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
       });
     },
 

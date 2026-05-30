@@ -266,18 +266,72 @@ function toggleTheme() {
 
 /**
  * 页面加载后立即向后端查询路由状态，
- * 确保 Toggle 和徽章与后端实际状态一致。
+ * 确保 LLM 模式徽章和 Claude 路由状态与后端一致。
  * 避免刷新页面后 UI 与后端状态不一致的问题。
+ *
+ * v0.7.0：优先同步 LLM_MODE，同时保留 Claude 路由状态。
  */
 async function syncStatus() {
   try {
     const data = await API.getRouterStatus();
+
+    // v0.7.0：同步 LLM 模式
+    const llmMode = data.llm_mode || 'local';
+    AppState.setLLMMode(llmMode);
+    UI.updateLLMModeBadge(llmMode);
+
+    // 同步 Claude 路由状态（保留兼容）
     const isOnline = data.mode === 'pending';
     AppState.setOnline(isOnline);
-    UI.updateModeUI(data.mode || 'local');
+    if (isOnline) {
+      UI.updateModeUI('pending');
+    }
   } catch (_) {
     // 同步失败时保持默认本地状态，不影响使用
-    UI.updateModeUI('local');
+    UI.updateLLMModeBadge('local');
+  }
+}
+
+
+/* =============================================================================
+   LLM 模式切换（v0.7.0 新增）
+   ============================================================================= */
+
+/**
+ * 切换 LLM 运行模式（本地部署 ↔ 线上 API）。
+ * 由 index.html 的 mode-badge 按钮触发。
+ *
+ * 流程：
+ *   1. 弹出确认对话框
+ *   2. 用户确认后调用后端 API
+ *   3. 后端验证并更新配置
+ *   4. 更新前端 UI 和状态
+ *   5. 显示 Toast 提示
+ */
+async function toggleLLMMode() {
+  const currentMode = AppState.llmMode;
+  const targetMode = currentMode === 'api' ? 'local' : 'api';
+  const targetLabel = targetMode === 'api' ? '线上 API' : '本地部署';
+
+  const confirmed = confirm(
+    `确定切换到「${targetLabel}」模式？\n\n`
+    + '切换后，将在启动下一组对话时生效。\n'
+    + '当前对话不受影响。'
+  );
+  if (!confirmed) return;
+
+  try {
+    const data = await API.setLLMMode(targetMode);
+
+    // 更新状态和 UI
+    AppState.setLLMMode(data.mode);
+    UI.updateLLMModeBadge(data.mode);
+
+    // 显示提示
+    UI.showToast(data.message || '将在下一组对话时生效', 'success', 3000);
+
+  } catch (err) {
+    UI.showToast(`切换失败：${err.message}`, 'error');
   }
 }
 
@@ -825,10 +879,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 按 'M' 键切换模式
+      // 按 'M' 键切换 LLM 模式（v0.7.0）
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
-        toggleMode();
+        toggleLLMMode();
         return;
       }
       

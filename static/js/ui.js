@@ -261,7 +261,37 @@ const UI = (() => {
 
 
   /**
-   * 更新顶部模式状态徽章。
+   * 更新顶部 LLM 模式徽章（v0.7.0 新增）。
+   * 显示当前 LLM 运行模式：本地部署 或 线上 API。
+   *
+   * @param {'local'|'api'} mode
+   */
+  function updateLLMModeBadge(mode) {
+    const dot  = document.getElementById('mode-dot');
+    const text = document.getElementById('mode-text');
+    if (!dot || !text) return;
+
+    // 清除 Claude Router 状态类（保持 LLM 模式显示为主状态）
+    const badge = document.getElementById('mode-badge');
+    if (badge) {
+      badge.classList.remove('online', 'pending');
+      if (mode === 'api') badge.classList.add('online');
+      badge.setAttribute('title', mode === 'api' ? '点击切换到本地部署' : '点击切换到线上 API');
+    }
+
+    dot.className = 'mode-dot';
+    if (mode === 'api') {
+      dot.classList.add('online');
+      text.textContent = '线上 API';
+    } else {
+      text.textContent = '本地部署';
+    }
+  }
+
+  /**
+   * 更新顶部模式状态徽章（Claude 路由状态）。
+   * 用于临时显示 Claude 的 pending/online 状态。
+   * 保留以兼容原有逻辑。
    *
    * @param {'local'|'online'|'pending'} mode
    */
@@ -1039,6 +1069,7 @@ const UI = (() => {
     renderAssistantReply,
     showTyping,
     hideTyping,
+    updateLLMModeBadge,
     updateModeUI,
     appendSysNotice,
     showToast,

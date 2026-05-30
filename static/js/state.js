@@ -7,13 +7,15 @@
  *
  * 暴露给其他模块的接口：
  *   AppState.isLoading          — 只读，是否正在等待后端回复
- *   AppState.isOnline           — 只读，是否处于线上模式
+ *   AppState.isOnline           — 只读，是否处于线上模式（Claude 路由）
+ *   AppState.llmMode            — 只读，当前 LLM 运行模式 'local' | 'api'（v0.7.0）
  *   AppState.currentSessionId   — 只读，当前 session id（number | null）
  *   AppState.currentTheme       — 只读，当前主题 'light' | 'dark'
  *   AppState.wsStatus           — 只读，WebSocket 连接状态
  *
  *   AppState.setLoading(bool)   — 设置加载状态，同步更新发送按钮
  *   AppState.setOnline(bool)    — 设置线上模式，同步更新 toggle
+ *   AppState.setLLMMode(mode)   — 设置 LLM 模式，同步更新 badge（v0.7.0）
  *   AppState.setSessionId(id)   — 更新 session id，同步更新顶部标签
  *   AppState.setTheme(theme)    — 切换主题，持久化到 localStorage
  *   AppState.toggleTheme()      — 在 light / dark 间切换
@@ -25,6 +27,7 @@ const AppState = (() => {
   // ── 内部私有状态（外部不可直接修改） ──
   let _isLoading        = false;
   let _isOnline         = false;
+  let _llmMode          = 'local';   // v0.7.0: LLM 运行模式
   let _currentSessionId = null;
   let _currentTheme     = 'light';
   let _wsStatus = 'disconnected';   // WebSocket 连接状态
@@ -34,6 +37,7 @@ const AppState = (() => {
     /* 只读 getter */
     get isLoading()        { return _isLoading; },
     get isOnline()         { return _isOnline; },
+    get llmMode()          { return _llmMode; },
     get currentSessionId() { return _currentSessionId; },
     get currentTheme()     { return _currentTheme; },
 
@@ -60,6 +64,22 @@ const AppState = (() => {
       if (badge) {
         badge.classList.remove('online', 'pending');
         if (online) badge.classList.add('online');
+      }
+    },
+
+    /**
+     * 设置 LLM 运行模式（v0.7.0 新增）。
+     * 同步更新 mode-badge 显示。
+     * @param {'local'|'api'} mode
+     */
+    setLLMMode(mode) {
+      _llmMode = mode;
+      // 同步更新 badge CSS 类和按钮 title
+      const badge = document.getElementById('mode-badge');
+      if (badge) {
+        badge.classList.remove('online', 'pending');
+        if (mode === 'api') badge.classList.add('online');
+        badge.setAttribute('title', mode === 'api' ? '点击切换到本地部署' : '点击切换到线上 API');
       }
     },
 
